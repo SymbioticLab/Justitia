@@ -26,7 +26,7 @@ void destroy_connection(void *context);
 void on_connect(void *context);
 //void send_mr(void *context);
 void register_MR(void *context);
-void send_sz(void *context);
+void send_info(void *context);
 void set_mode(enum mode m);
 void checkpoint(int i);
 void measure_time();

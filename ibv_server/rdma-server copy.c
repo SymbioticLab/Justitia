@@ -1,4 +1,5 @@
 // NOTE: This is a modified version of rdma-server.c for a single direction communication.
+// NOTENOTE: This version is then updated for the small MR reuse / flow control model
 #include "rdma-common.h"
 
 static int on_connect_request(struct rdma_cm_id *id);
@@ -81,7 +82,7 @@ int on_connection(struct rdma_cm_id *id)
 
 int on_disconnect(struct rdma_cm_id *id)
 {
-  printf("disconnected.\n");
+  printf("peer disconnected.\n");
 
   destroy_connection(id->context);
   return 0;
