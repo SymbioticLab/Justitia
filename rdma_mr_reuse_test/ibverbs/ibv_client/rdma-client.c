@@ -13,10 +13,10 @@ static int on_route_resolved(struct rdma_cm_id *id);
 static void usage(const char *argv0);
 long RDMA_BUFFER_SIZE;
 int NUM_WR;
-int NUM_TASK = 1000;
-double throughput[1000];
-long lat_arr[1000];
-long time_arr[1000];
+int NUM_TASK = 10000;
+//double throughput[1000];
+//long lat_arr[1000];
+//long time_arr[1000];
 
 int main(int argc, char **argv)
 {
@@ -26,7 +26,7 @@ int main(int argc, char **argv)
   struct rdma_event_channel *ec = NULL;
 
   
-  if (argc != 6)
+  if (argc != 7)
     usage(argv[0]);
 
   RDMA_BUFFER_SIZE = atol(argv[4]);
@@ -60,11 +60,13 @@ int main(int argc, char **argv)
   rdma_destroy_event_channel(ec);
   checkpoint(5);
   measure_time();
-  int i;
-  for (i = 0; i < NUM_TASK; i++) {
-    fprintf(f, "%d\t%ld\t\t%ld\t\t%.4f\n", i+1, time_arr[i], lat_arr[i], throughput[i]);
-  }
-  fclose(f);
+  //FILE *f = fopen(argv[6], "w");
+  //fprintf(f, "\tTime(us)\tLatency(us)\tThroughput(Gbps)\n");
+  //int i;
+  //for (i = 0; i < NUM_TASK; i++) {
+  //  fprintf(f, "%d\t%ld\t\t%ld\t\t%.4f\n", i+1, time_arr[i], lat_arr[i], throughput[i]);
+  //}
+  //fclose(f);
   return 0;
 }
 
@@ -135,6 +137,6 @@ int on_route_resolved(struct rdma_cm_id *id)
 
 void usage(const char *argv0)
 {
-  fprintf(stderr, "usage: %s <mode> <server-address> <server-port> <size> <num_wr>\n  mode = \"read\", \"write\"\n", argv0);
+  fprintf(stderr, "usage: %s <mode> <server-address> <server-port> <size> <num_wr> <output_file>\n  mode = \"read\", \"write\"\n", argv0);
   exit(1);
 }

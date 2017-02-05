@@ -5,14 +5,15 @@
 // NOTE*: This one is used to test scalability. memcpy will be turned off. Only one MR in server.
 #include "rdma-common.h"
 #include <inttypes.h>
+//#include <errno.h>
 
 extern long RDMA_BUFFER_SIZE;
 extern int NUM_WR;
 extern int NUM_TASK;   // indicates how many RDMA_WRITEs in between each reg/dereg
-extern double throughput[];
-extern long lat_arr[];
-extern long time_arr[];
-int IDX = 0;
+//extern double throughput[];
+//extern long lat_arr[];
+//extern long time_arr[];
+//int IDX = 0;
 
 struct timeval tv[13];
 
@@ -257,12 +258,12 @@ void on_completion(struct ibv_wc *wc)
     
     if (conn->chunks_sent == NUM_WR) {
       checkpoint(12);
-      long latency = (long)(tv[12].tv_sec * 1000000 + tv[12].tv_usec) - (long)(tv[11].tv_sec * 1000000 + tv[11].tv_usec);
-      lat_arr[IDX] = latency;
-      long current_time = (long)(tv[12].tv_sec * 1000000 + tv[12].tv_usec) - (long)(tv[0].tv_sec * 1000000 + tv[0].tv_usec);
-      time_arr[IDX] = current_time;
-      throughput[IDX] = 8 * RDMA_BUFFER_SIZE / 1000 / (double)latency;
-      IDX++;
+      //long latency = (long)(tv[12].tv_sec * 1000000 + tv[12].tv_usec) - (long)(tv[11].tv_sec * 1000000 + tv[11].tv_usec);
+      //lat_arr[IDX] = latency;
+      //long current_time = (long)(tv[12].tv_sec * 1000000 + tv[12].tv_usec) - (long)(tv[0].tv_sec * 1000000 + tv[0].tv_usec);
+      //time_arr[IDX] = current_time;
+      //throughput[IDX] = 8 * RDMA_BUFFER_SIZE / 1000 / (double)latency;
+      //IDX++;
       conn->task_done++;
       conn->chunks_sent = 0;
 //      printf("Task #%i completetd.\n", conn->task_done);
@@ -304,11 +305,13 @@ void * poll_cq(void *ctx)
 {
   struct ibv_cq *cq;
   struct ibv_wc wc;
-
+  int i = 0;
   while (1) {
     TEST_NZ(ibv_get_cq_event(s_ctx->comp_channel, &cq, &ctx));
     ibv_ack_cq_events(cq, 1);
     TEST_NZ(ibv_req_notify_cq(cq, 0));
+    i++;
+    //if (i % 1000 == 0) { printf("i = %d\n", i); }
 
     while (ibv_poll_cq(cq, 1, &wc))
       on_completion(&wc);
@@ -487,7 +490,7 @@ void read_next_chunk(struct connection *conn, int i, long mr_size) {
 }
 
 void send_next_chunk(struct connection *conn, long mr_size) {
-//  printf("Posting RDMA_WRITE_WITH_IMM work request for chunk #%d... in task #%d\n", conn->chunks_sent+1, conn->task_done + 1);
+  //printf("Posting RDMA_WRITE_WITH_IMM work request for chunk #%d... in task #%d\n", conn->chunks_sent+1, conn->task_done + 1);
   struct ibv_send_wr wr, *bad_wr = NULL;
   struct ibv_sge sge;
   
@@ -509,6 +512,12 @@ void send_next_chunk(struct connection *conn, long mr_size) {
 //  printf("0x%" PRIXPTR "\n", sge.addr);
   sge.length = mr_size;
   sge.lkey = conn->rdma_local_mr->lkey;
+
+  //if (ibv_post_send(conn->qp, &wr, &bad_wr) < 0) {
+  //      printf("ibv_post_send failed: %s\n", strerror(errno));
+  //      exit(1);
+  //}
+  //usleep(500);
   
   TEST_NZ(ibv_post_send(conn->qp, &wr, &bad_wr));
   conn->chunks_sent++;
