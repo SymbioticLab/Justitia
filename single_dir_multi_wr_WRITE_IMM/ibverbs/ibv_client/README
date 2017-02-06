@@ -1,0 +1,1 @@
+measure_gettime_latency is used to calibrate the time overheads from time_stamp()
