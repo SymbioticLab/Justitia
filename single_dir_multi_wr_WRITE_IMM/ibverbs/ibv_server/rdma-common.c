@@ -67,7 +67,7 @@ static void build_qp_attr(struct ibv_qp_init_attr *qp_attr);
 //static char * get_peer_message_region(struct connection *conn);
 static void on_completion(struct ibv_wc *);
 static void * poll_cq(void *);
-static void post_recv_send(struct connection *conn);
+//static void post_recv_send(struct connection *conn);
 static void post_receives(struct connection *conn);
 static void register_memory(struct connection *conn);
 static void register_mem_for_remote(struct connection *conn, long buffer_size);
@@ -104,6 +104,7 @@ void build_connection(struct rdma_cm_id *id)
   conn->connected = 0;
 
   register_memory(conn);
+  //post_recv_send(conn); // for the last done mesg
   post_receives(conn);
 }
 
@@ -190,6 +191,7 @@ void destroy_connection(void *context)
 void on_completion(struct ibv_wc *wc)
 {
   struct connection *conn = (struct connection *)(uintptr_t)wc->wr_id;
+  //printf("E: recv_state: %d\n", conn->recv_state);
 
   if (wc->status != IBV_WC_SUCCESS) {
 //    printf("error wc status #: %d\n", wc->status);
@@ -200,12 +202,7 @@ void on_completion(struct ibv_wc *wc)
   if (wc->opcode == IBV_WC_RECV) {
     if (conn->recv_state == RS_MR_SENT) {
     }
-    if (conn->recv_msg->type == TASK_DONE) {
-      printf("Receiving done msg from client. Ready to perform memcpy.\n");
-      post_recv_send(conn);
-      // Perform memcpy...
-      send_done_message(conn);
-    } else if (conn->recv_msg->type == MSG_DONE) {
+    if (conn->recv_msg->type == MSG_DONE) {
       send_done_message(conn);
       printf("Received done msg from client. Ready to disconnect.\n");
       rdma_disconnect(conn->id);
@@ -216,17 +213,24 @@ void on_completion(struct ibv_wc *wc)
   if (wc->opcode == IBV_WC_RECV_RDMA_WITH_IMM) {
     //else if (conn->recv_state == RS_SZ_RECV) {
     if (conn->recv_state == RS_INIT) {
-      conn->recv_state++;
+      //conn->recv_state++;
       register_mem_for_remote(conn, ntohl(wc->imm_data));
       printf("Registered memory region for the specified data size(%u)\n", ntohl(wc->imm_data));
       
       printf("Sending MSG_MR to the client...\n");
       send_mr(conn);
-      post_recv_send(conn);
-      //post_receives(conn);  // rearm for done msg
-      conn->recv_state++;
+      post_receives(conn);  // rearm for done msg
+      conn->recv_state = RS_MR_SENT;
       
-    }
+    } else if (conn->recv_state == RS_MR_SENT) { 
+      printf("Received WRITE_IMM op from client. Ready to perform memcpy.\n"); 
+      if (ntohl(wc->imm_data) != 0x0088) {
+        post_receives(conn); // rearm for next WRITE_IMM
+      }
+      // perform memcpy...
+      send_done_message(conn);
+
+    }     
     /*
     if (conn->recv_state == RS_DONE_RECV) {
       if (ntohl(wc->imm_data) != 0x0083) {
@@ -266,7 +270,8 @@ void * poll_cq(void *ctx)
   return NULL;
 }
 
-void post_recv_send(struct connection *conn)
+//void post_recv_send(struct connection *conn)
+void post_receives(struct connection *conn)
 {
   struct ibv_recv_wr wr, *bad_wr = NULL;
   struct ibv_sge sge;
@@ -283,6 +288,7 @@ void post_recv_send(struct connection *conn)
   TEST_NZ(ibv_post_recv(conn->qp, &wr, &bad_wr)); 
 }
 
+/*
 void post_receives(struct connection *conn)
 { // since we know we all msgs we are gonna receive are zero-byte msgs:
   struct ibv_recv_wr wr, *bad_wr = NULL;
@@ -300,6 +306,7 @@ void post_receives(struct connection *conn)
 
   TEST_NZ(ibv_post_recv(conn->qp, &wr, &bad_wr));
 }
+*/
 
 void register_memory(struct connection *conn)
 {
