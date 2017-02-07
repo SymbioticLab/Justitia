@@ -410,12 +410,13 @@ void perform_rdma_op(struct connection *conn)
     memset(new_wr, 0, sizeof(struct ibv_send_wr));
     
     new_wr->wr_id = (uintptr_t)conn;
-    new_wr->opcode = (s_mode == M_WRITE) ? IBV_WR_RDMA_WRITE : IBV_WR_RDMA_READ;
+    //new_wr->opcode = (s_mode == M_WRITE) ? IBV_WR_RDMA_WRITE : IBV_WR_RDMA_READ;
+    new_wr->opcode = IBV_WR_SEND; 
     new_wr->sg_list = &sge;
     new_wr->num_sge = 1;
     new_wr->send_flags = 0; //covered by memset though
-    new_wr->wr.rdma.remote_addr = (uintptr_t)(conn->peer_mr.addr + RDMA_BUFFER_SIZE/NUM_WR * i);
-    new_wr->wr.rdma.rkey = conn->peer_mr.rkey;
+    //new_wr->wr.rdma.remote_addr = (uintptr_t)(conn->peer_mr.addr + RDMA_BUFFER_SIZE/NUM_WR * i);
+    //new_wr->wr.rdma.rkey = conn->peer_mr.rkey;
     
     sge.addr = (uintptr_t)(conn->rdma_local_region + RDMA_BUFFER_SIZE/NUM_WR * i);
     sge.length = RDMA_BUFFER_SIZE/NUM_WR;
@@ -436,12 +437,13 @@ void perform_rdma_op(struct connection *conn)
   memset(new_wr, 0, sizeof(struct ibv_send_wr));
   
   new_wr->wr_id = (uintptr_t)conn;
-  new_wr->opcode = (s_mode == M_WRITE) ? IBV_WR_RDMA_WRITE : IBV_WR_RDMA_READ;
+  //new_wr->opcode = (s_mode == M_WRITE) ? IBV_WR_RDMA_WRITE : IBV_WR_RDMA_READ;
+  new_wr->opcode = IBV_WR_SEND; 
   new_wr->sg_list = &sge;
   new_wr->num_sge = 1;
   new_wr->send_flags = IBV_SEND_SIGNALED;
-  new_wr->wr.rdma.remote_addr = (uintptr_t)(conn->peer_mr.addr + RDMA_BUFFER_SIZE/NUM_WR * i);
-  new_wr->wr.rdma.rkey = conn->peer_mr.rkey;
+  //new_wr->wr.rdma.remote_addr = (uintptr_t)(conn->peer_mr.addr + RDMA_BUFFER_SIZE/NUM_WR * i);
+  //new_wr->wr.rdma.rkey = conn->peer_mr.rkey;
   
   sge.addr = (uintptr_t)(conn->rdma_local_region + RDMA_BUFFER_SIZE/NUM_WR * i);
   sge.length = RDMA_BUFFER_SIZE/NUM_WR;
@@ -501,6 +503,7 @@ void send_onetaskdone_msg(struct connection *conn) {  // change to using rdma se
   while (!conn->connected);
 
   TEST_NZ(ibv_post_send(conn->qp, &wr, &bad_wr));
+  printf("sending send_onetaskdone_msg \n");
 }
 
 void send_done_message(struct connection *conn) {  // here a zero-byte message is enough to do the work; no need to reg extra mem
