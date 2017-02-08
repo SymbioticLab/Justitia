@@ -201,7 +201,7 @@ void on_completion(struct ibv_wc *wc)
     if (conn->recv_state == RS_MR_SENT) {
     }
     if (conn->recv_msg->type == TASK_DONE) {
-      printf("Receiving done msg from client. Ready to perform memcpy.\n");
+      //printf("Receiving done msg from client. Ready to perform memcpy.\n");
       post_recv_send(conn);
       // Perform memcpy...
       send_done_message(conn);
