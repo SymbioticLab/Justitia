@@ -1,0 +1,9 @@
+address resolved.
+route resolved.
+Size message sent to the server.
+Client received and copied server's MR key. Posting RDMA WRITE work request.
+RDMA write operation completed with success.
+MSG_DONE sent successfully. Client is ready to disconnect.
+disconnected.
+1.setup time  2.RDMA R/W latency  3.cleanup time  4.total time
+  7167          216774182           1482            216782831
