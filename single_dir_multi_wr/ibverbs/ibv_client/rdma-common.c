@@ -7,7 +7,7 @@
 extern long RDMA_BUFFER_SIZE;
 extern int NUM_WR;
 struct timeval tv[10];
-int NUM_TASK = 1000;
+int NUM_TASK = 1000000;
 
 struct message {
   enum {
@@ -252,7 +252,7 @@ void on_completion(struct ibv_wc *wc)
       if (conn->task_done == NUM_TASK) {
         send_done_message(conn);
       } else {
-        printf("conn->task_done = %d\n", conn->task_done);
+        //printf("conn->task_done = %d\n", conn->task_done);
         send_onetaskdone_msg(conn);
       }
     } 
@@ -459,7 +459,7 @@ void perform_rdma_op(struct connection *conn)
   TEST_NZ(ibv_post_send(conn->qp, wr_head, &bad_wr));
   // finish sending rdma op
   conn->task_done++;
-  printf("done posting new send request (task #%d)\n", conn->task_done);
+  //printf("done posting new send request (task #%d)\n", conn->task_done);
 }
 /*
 void send_onetaskdone_msg(struct connection *conn)

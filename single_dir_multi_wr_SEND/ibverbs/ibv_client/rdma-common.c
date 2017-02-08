@@ -229,10 +229,10 @@ void on_completion(struct ibv_wc *wc)
 
       while (!conn->mr_ready);
       
-      if (s_mode == M_WRITE)
-        printf("Posting RDMA WRITE work request.\n");
-      else
-        printf("Posting RDMA READ work request.\n");
+      //if (s_mode == M_WRITE)
+      //  printf("Posting RDMA WRITE work request.\n");
+      //else
+      //  printf("Posting RDMA READ work request.\n");
       
       checkpoint(3);
       post_done_receives(conn);
@@ -252,7 +252,7 @@ void on_completion(struct ibv_wc *wc)
       if (conn->task_done == NUM_TASK) {
         send_done_message(conn);
       } else {
-        printf("conn->task_done = %d\n", conn->task_done);
+        //printf("conn->task_done = %d\n", conn->task_done);
         send_onetaskdone_msg(conn);
       }
     } 
@@ -461,7 +461,7 @@ void perform_rdma_op(struct connection *conn)
   TEST_NZ(ibv_post_send(conn->qp, wr_head, &bad_wr));
   // finish sending rdma op
   conn->task_done++;
-  printf("done posting new send request (task #%d)\n", conn->task_done);
+  //printf("done posting new send request (task #%d)\n", conn->task_done);
 }
 /*
 void send_onetaskdone_msg(struct connection *conn)
@@ -503,7 +503,7 @@ void send_onetaskdone_msg(struct connection *conn) {  // change to using rdma se
   while (!conn->connected);
 
   TEST_NZ(ibv_post_send(conn->qp, &wr, &bad_wr));
-  printf("sending send_onetaskdone_msg \n");
+  //printf("sending send_onetaskdone_msg \n");
 }
 
 void send_done_message(struct connection *conn) {  // here a zero-byte message is enough to do the work; no need to reg extra mem
