@@ -216,7 +216,7 @@ void on_completion(struct ibv_wc *wc)
       printf("Received done msg from client. Ready to disconnect.\n");
       rdma_disconnect(conn->id);
     } else {
-      printf("Receiving data msg from client. Ready to perform memcpy.\n");
+      //printf("Receiving data msg from client. Ready to perform memcpy.\n");
       post_recv_data(conn);
       // Perform memcpy...
       send_done_message(conn);

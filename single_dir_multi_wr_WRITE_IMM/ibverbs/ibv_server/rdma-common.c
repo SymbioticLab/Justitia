@@ -223,7 +223,7 @@ void on_completion(struct ibv_wc *wc)
       conn->recv_state = RS_MR_SENT;
       
     } else if (conn->recv_state == RS_MR_SENT) { 
-      printf("Received WRITE_IMM op from client. Ready to perform memcpy.\n"); 
+      //printf("Received WRITE_IMM op from client. Ready to perform memcpy.\n"); 
       if (ntohl(wc->imm_data) != 0x0088) {
         post_receives(conn); // rearm for next WRITE_IMM
       }
