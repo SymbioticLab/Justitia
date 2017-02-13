@@ -1,5 +1,6 @@
 // NOTE: This file should really be called rdma-serverside.c since this is used exclusively for the server in the
 // single direction communication. I don't bother change the name so that I don't have to modify the Makefile.
+// NOTE: noACK version for RDMA WRITE/READ
 #include "rdma-common.h"
 //#include <inttypes.h>
 
@@ -200,17 +201,16 @@ void on_completion(struct ibv_wc *wc)
   if (wc->opcode == IBV_WC_RECV) {
     if (conn->recv_state == RS_MR_SENT) {
     }
-    if (conn->recv_msg->type == TASK_DONE) {
+    if (conn->recv_msg->type == TASK_DONE) { // NO ACK
       //printf("Receiving done msg from client. Ready to perform memcpy.\n");
-      post_recv_send(conn);
+      //post_recv_send(conn);
       // Perform memcpy...
-      send_done_message(conn);
+      //send_done_message(conn);
     } else if (conn->recv_msg->type == MSG_DONE) {
       send_done_message(conn);
       printf("Received done msg from client. Ready to disconnect.\n");
       rdma_disconnect(conn->id);
     }
-
   }
 
   if (wc->opcode == IBV_WC_RECV_RDMA_WITH_IMM) {
@@ -219,7 +219,7 @@ void on_completion(struct ibv_wc *wc)
       conn->recv_state++;
       register_mem_for_remote(conn, ntohl(wc->imm_data));
       printf("Registered memory region for the specified data size(%u)\n", ntohl(wc->imm_data));
-      
+
       printf("Sending MSG_MR to the client...\n");
       send_mr(conn);
       post_recv_send(conn);

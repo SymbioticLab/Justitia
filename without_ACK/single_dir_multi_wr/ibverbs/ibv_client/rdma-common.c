@@ -1,13 +1,14 @@
 // NOTE: This file should really be called rdma-clientside.c since this is used exclusively for the client in the
 // single direction communication. I don't bother change the name so that I don't have to modify the Makefile.
 // NOTE: This version is used to test the performance of multi wr
+// NOTE: no ACK version for RDMA WRITE/READ
 #include "rdma-common.h"
 #include <inttypes.h>
 
 extern long RDMA_BUFFER_SIZE;
 extern int NUM_WR;
 struct timeval tv[10];
-int NUM_TASK = 1000000;
+int NUM_TASK = 1000;
 
 struct message {
   enum {
@@ -79,7 +80,7 @@ static void * poll_cq(void *);
 static void post_receives(struct connection *conn);
 static void register_memory(struct connection *conn);
 static void register_memory_local(struct connection *conn);
-static void send_onetaskdone_msg(struct connection *conn);
+//static void send_onetaskdone_msg(struct connection *conn);
 static void send_done_message(struct connection *conn);
 static void send_size_message(struct connection *conn);
 static void perform_rdma_op(struct connection *conn);
@@ -248,12 +249,13 @@ void on_completion(struct ibv_wc *wc)
       conn->send_state++;
     }
     else if (conn->send_state == SS_SZ_SENT) {
-
       if (conn->task_done == NUM_TASK) {
         send_done_message(conn);
-      } else {
+        printf("sent done message to the server.\n");
+      } else { // NO ACK
+        perform_rdma_op(conn);  
         //printf("conn->task_done = %d\n", conn->task_done);
-        send_onetaskdone_msg(conn);
+        //send_onetaskdone_msg(conn);
       }
     } 
 
@@ -277,8 +279,10 @@ void on_completion(struct ibv_wc *wc)
     }
     // receive the cp done msg from server and perform the next RDMA op 
     if (conn->task_done != NUM_TASK) {
-      post_done_receives(conn);
-      perform_rdma_op(conn);
+      // shouldn't enter here
+      printf("received msg from server, conn->task_done = %d\n", conn->task_done);
+      //post_done_receives(conn);
+      //perform_rdma_op(conn);
       //send_onetaskdone_msg(conn);
     } else {
       conn->send_state++;
@@ -459,7 +463,7 @@ void perform_rdma_op(struct connection *conn)
   TEST_NZ(ibv_post_send(conn->qp, wr_head, &bad_wr));
   // finish sending rdma op
   conn->task_done++;
-  //printf("done posting new send request (task #%d)\n", conn->task_done);
+  printf("done posting new send request (task #%d)\n", conn->task_done);
 }
 /*
 void send_onetaskdone_msg(struct connection *conn)
@@ -479,6 +483,7 @@ void send_onetaskdone_msg(struct connection *conn)
   TEST_NZ(ibv_post_send(conn->qp, &wr, &bad_wr));
 }
 */
+/*
 void send_onetaskdone_msg(struct connection *conn) {  // change to using rdma send
   
   struct ibv_send_wr wr, *bad_wr = NULL;
@@ -502,7 +507,7 @@ void send_onetaskdone_msg(struct connection *conn) {  // change to using rdma se
 
   TEST_NZ(ibv_post_send(conn->qp, &wr, &bad_wr));
 }
-
+*/
 void send_done_message(struct connection *conn) {  // here a zero-byte message is enough to do the work; no need to reg extra mem
 
   struct ibv_send_wr wr, *bad_wr = NULL;
