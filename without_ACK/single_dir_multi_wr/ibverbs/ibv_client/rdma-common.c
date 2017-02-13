@@ -463,7 +463,7 @@ void perform_rdma_op(struct connection *conn)
   TEST_NZ(ibv_post_send(conn->qp, wr_head, &bad_wr));
   // finish sending rdma op
   conn->task_done++;
-  printf("done posting new send request (task #%d)\n", conn->task_done);
+  //printf("done posting new send request (task #%d)\n", conn->task_done);
 }
 /*
 void send_onetaskdone_msg(struct connection *conn)
