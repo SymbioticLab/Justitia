@@ -79,11 +79,11 @@ static void * poll_cq(void *);
 static void post_receives(struct connection *conn);
 static void register_memory(struct connection *conn);
 static void register_memory_local(struct connection *conn);
-static void send_onetaskdone_msg(struct connection *conn);
+//static void send_onetaskdone_msg(struct connection *conn);
 static void send_done_message(struct connection *conn);
 static void send_size_message(struct connection *conn);
 static void perform_rdma_op(struct connection *conn);
-static void post_done_receives(struct connection *conn);
+//static void post_done_receives(struct connection *conn);
 //static void send_message(struct connection *conn);
 
 static struct context *s_ctx = NULL;
@@ -161,8 +161,8 @@ void build_qp_attr(struct ibv_qp_init_attr *qp_attr)
   qp_attr->recv_cq = s_ctx->cq;
   qp_attr->qp_type = IBV_QPT_RC;
 
-  qp_attr->cap.max_send_wr = 15000;
-  qp_attr->cap.max_recv_wr = 15000;
+  qp_attr->cap.max_send_wr = 150;
+  qp_attr->cap.max_recv_wr = 150;
   qp_attr->cap.max_send_sge = 1;
   qp_attr->cap.max_recv_sge = 1;
 }
@@ -235,7 +235,7 @@ void on_completion(struct ibv_wc *wc)
       //  printf("Posting RDMA READ work request.\n");
       
       checkpoint(3);
-      post_done_receives(conn);
+      //post_done_receives(conn);
       perform_rdma_op(conn);
       
     } else {
@@ -249,12 +249,14 @@ void on_completion(struct ibv_wc *wc)
     }
     else if (conn->send_state == SS_SZ_SENT) {
 
+      /*
       if (conn->task_done == NUM_TASK) {
         send_done_message(conn);
       } else {
         //printf("conn->task_done = %d\n", conn->task_done);
         send_onetaskdone_msg(conn);
       }
+      */
     } 
 
     /*
@@ -269,17 +271,34 @@ void on_completion(struct ibv_wc *wc)
       rdma_disconnect(conn->id);
     }
     */
-  }
-  else if (wc->opcode == IBV_WC_RECV_RDMA_WITH_IMM) {
+  } else if (wc->opcode == IBV_WC_RECV_RDMA_WITH_IMM) {
     if (ntohl(wc->imm_data) != 0x0083) {
       printf("imm_data: %x\n", ntohl(wc->imm_data));
       die("on_completion: the IMM MSG received from server might not be DONE MSG. Check if the input data size set is set to be 131\n");
     }
     // receive the cp done msg from server and perform the next RDMA op 
     if (conn->task_done != NUM_TASK) {
-      post_done_receives(conn);
-      perform_rdma_op(conn);
+      //post_done_receives(conn);
+      //perform_rdma_op(conn);
       //send_onetaskdone_msg(conn);
+    } else {
+      /*
+      conn->send_state++;
+      checkpoint(4);
+      if (s_mode == M_WRITE)
+        printf("RDMA write operation completed with success.\n");
+      else
+        printf("RDMA read operation completed with success.\n");
+      send_done_message(conn);
+      printf("MSG_DONE sent successfully. Client is ready to disconnect.\n");
+      rdma_disconnect(conn->id);
+      */
+    }
+
+  } else if (wc->opcode == IBV_WC_SEND) {
+    if (conn->task_done < NUM_TASK) {
+      //usleep(1);
+      perform_rdma_op(conn);
     } else {
       conn->send_state++;
       checkpoint(4);
@@ -287,11 +306,10 @@ void on_completion(struct ibv_wc *wc)
         printf("RDMA write operation completed with success.\n");
       else
         printf("RDMA read operation completed with success.\n");
-      //send_done_message(conn);
+      send_done_message(conn);
       printf("MSG_DONE sent successfully. Client is ready to disconnect.\n");
       rdma_disconnect(conn->id);
     }
-
   }
 
 }
@@ -334,7 +352,7 @@ void post_receives(struct connection *conn)
 
   TEST_NZ(ibv_post_recv(conn->qp, &wr, &bad_wr));
 }
-
+/*
 void post_done_receives(struct connection *conn)
 {
   struct ibv_recv_wr wr, *bad_wr = NULL;
@@ -346,7 +364,7 @@ void post_done_receives(struct connection *conn)
 
   TEST_NZ(ibv_post_recv(conn->qp, &wr, &bad_wr));
 }
-
+*/
 void register_memory(struct connection *conn)
 {
   conn->send_msg = malloc(sizeof(struct message));
@@ -481,6 +499,7 @@ void send_onetaskdone_msg(struct connection *conn)
   TEST_NZ(ibv_post_send(conn->qp, &wr, &bad_wr));
 }
 */
+/*
 void send_onetaskdone_msg(struct connection *conn) {  // change to using rdma send
   
   struct ibv_send_wr wr, *bad_wr = NULL;
@@ -505,7 +524,7 @@ void send_onetaskdone_msg(struct connection *conn) {  // change to using rdma se
   TEST_NZ(ibv_post_send(conn->qp, &wr, &bad_wr));
   //printf("sending send_onetaskdone_msg \n");
 }
-
+*/
 void send_done_message(struct connection *conn) {  // here a zero-byte message is enough to do the work; no need to reg extra mem
 
   struct ibv_send_wr wr, *bad_wr = NULL;

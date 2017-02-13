@@ -5,6 +5,8 @@
 
 //extern long RDMA_BUFFER_SIZE;
 
+int COUNT;
+
 struct message {
   enum {
     MSG_MR,
@@ -107,6 +109,8 @@ void build_connection(struct rdma_cm_id *id)
 
   conn->connected = 0;
 
+  COUNT = 0;
+
   register_memory(conn);
   post_receives(conn);
 }
@@ -148,8 +152,8 @@ void build_qp_attr(struct ibv_qp_init_attr *qp_attr)
   qp_attr->recv_cq = s_ctx->cq;
   qp_attr->qp_type = IBV_QPT_RC;
 
-  qp_attr->cap.max_send_wr = 150;
-  qp_attr->cap.max_recv_wr = 150;
+  qp_attr->cap.max_send_wr = 1500;
+  qp_attr->cap.max_recv_wr = 1500;
   qp_attr->cap.max_send_sge = 1;
   qp_attr->cap.max_recv_sge = 1;
 }
@@ -202,8 +206,6 @@ void on_completion(struct ibv_wc *wc)
   }
 
   if (wc->opcode == IBV_WC_RECV) {
-    if (conn->recv_state == RS_MR_SENT) {
-    }
     if (conn->recv_msg->type == TASK_DONE) {
       /*
       printf("Receiving done msg from client. Ready to perform memcpy.\n");
@@ -217,9 +219,23 @@ void on_completion(struct ibv_wc *wc)
       rdma_disconnect(conn->id);
     } else {
       //printf("Receiving data msg from client. Ready to perform memcpy.\n");
+
       post_recv_data(conn);
+      /*
+      printf("COUNT = %d\n", COUNT);
+      if (COUNT == 0) {
+        int i;
+        for (i = 0; i < 1000; i++) {
+          post_recv_data(conn);
+        }
+      }
+      COUNT++;
+      if (COUNT == 1000) {
+        COUNT = 0;
+      }
+      */
       // Perform memcpy...
-      send_done_message(conn);
+      //send_done_message(conn);
     }
 
   }
@@ -235,6 +251,9 @@ void on_completion(struct ibv_wc *wc)
       printf("Sending MSG_MR to the client...\n");
       send_mr(conn);
       post_recv_data(conn);
+      post_recv_data(conn);
+      post_recv_data(conn);
+
       //post_receives(conn);  // rearm for done msg
       conn->recv_state++;
       
@@ -295,6 +314,8 @@ void post_recv_data(struct connection *conn)
   //printf("sge.length = %d\n", sge.length);
 
   TEST_NZ(ibv_post_recv(conn->qp, &wr, &bad_wr)); 
+
+  //printf("post RR for task #%d\n", COUNT++);
 }
 /*
 void post_recv_send(struct connection *conn)
