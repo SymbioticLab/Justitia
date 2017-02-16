@@ -200,8 +200,8 @@ void on_completion(struct ibv_wc *wc)
   }
 
   if (wc->opcode == IBV_WC_RECV) {
-    if (conn->recv_state == RS_MR_SENT) {
-    }
+    //if (conn->recv_state == RS_MR_SENT) {
+    //}
     if (conn->recv_msg->type == MSG_DONE) {
       send_done_message(conn);
       printf("Received done msg from client. Ready to disconnect.\n");

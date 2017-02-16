@@ -8,6 +8,7 @@ extern long RDMA_BUFFER_SIZE;
 extern int NUM_WR;
 struct timeval tv[10];
 int NUM_TASK = 1000000;
+long ACK_LAT = 0;
 
 struct message {
   enum {
@@ -253,6 +254,7 @@ void on_completion(struct ibv_wc *wc)
         send_done_message(conn);
       } else {
         //printf("conn->task_done = %d\n", conn->task_done);
+        checkpoint(6);
         send_onetaskdone_msg(conn);
       }
     } 
@@ -276,6 +278,8 @@ void on_completion(struct ibv_wc *wc)
       die("on_completion: the IMM MSG received from server might not be DONE MSG. Check if the input data size set is set to be 131\n");
     }
     // receive the cp done msg from server and perform the next RDMA op 
+    checkpoint(7);
+    ACK_LAT += (long)(tv[7].tv_sec * 1000000 + tv[7].tv_usec) - (long)(tv[6].tv_sec * 1000000 + tv[6].tv_usec);
     if (conn->task_done != NUM_TASK) {
       post_done_receives(conn);
       perform_rdma_op(conn);
@@ -628,6 +632,7 @@ void measure_time() {
   
   printf("1.setup time  2.RDMA R/W latency  3.cleanup time  4.total time\n");
   printf("  %-14ld%-20ld%-16ld%ld\n", period[1],period[2],period[3],period[4]);
+  printf("Total Ack Latency: %ld\n", ACK_LAT);
 //  printf("5.adr_resolve 6.route_resolve     7.build_conn    8.get_sz_msg\n");
 //  printf("  %-14ld%-20ld%-16ld%ld\n", period[5],period[6],period[0],period[7]);
 }

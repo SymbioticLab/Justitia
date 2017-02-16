@@ -37,9 +37,9 @@ int main(int argc, char **argv)
 
   TEST_Z(ec = rdma_create_event_channel());
   TEST_NZ(rdma_create_id(ec, &conn, NULL, RDMA_PS_TCP));
-  checkpoint(6);
+  //checkpoint(6);
   TEST_NZ(rdma_resolve_addr(conn, NULL, addr->ai_addr, TIMEOUT_IN_MS));
-  checkpoint(7);
+  //checkpoint(7);
   freeaddrinfo(addr);
 
   

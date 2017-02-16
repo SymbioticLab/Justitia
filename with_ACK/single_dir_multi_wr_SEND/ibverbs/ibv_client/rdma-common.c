@@ -8,6 +8,7 @@ extern long RDMA_BUFFER_SIZE;
 extern int NUM_WR;
 struct timeval tv[10];
 int NUM_TASK = 1000;
+long ACK_LAT = 0;
 
 struct message {
   enum {
@@ -79,7 +80,7 @@ static void * poll_cq(void *);
 static void post_receives(struct connection *conn);
 static void register_memory(struct connection *conn);
 static void register_memory_local(struct connection *conn);
-static void send_onetaskdone_msg(struct connection *conn);
+//static void send_onetaskdone_msg(struct connection *conn);
 static void send_done_message(struct connection *conn);
 static void send_size_message(struct connection *conn);
 static void perform_rdma_op(struct connection *conn);
@@ -161,8 +162,8 @@ void build_qp_attr(struct ibv_qp_init_attr *qp_attr)
   qp_attr->recv_cq = s_ctx->cq;
   qp_attr->qp_type = IBV_QPT_RC;
 
-  qp_attr->cap.max_send_wr = 15000;
-  qp_attr->cap.max_recv_wr = 15000;
+  qp_attr->cap.max_send_wr = 1500;
+  qp_attr->cap.max_recv_wr = 1500;
   qp_attr->cap.max_send_sge = 1;
   qp_attr->cap.max_recv_sge = 1;
 }
@@ -253,7 +254,7 @@ void on_completion(struct ibv_wc *wc)
         send_done_message(conn);
       } else {
         //printf("conn->task_done = %d\n", conn->task_done);
-        send_onetaskdone_msg(conn);
+        //send_onetaskdone_msg(conn);
       }
     } 
 
@@ -276,6 +277,8 @@ void on_completion(struct ibv_wc *wc)
       die("on_completion: the IMM MSG received from server might not be DONE MSG. Check if the input data size set is set to be 131\n");
     }
     // receive the cp done msg from server and perform the next RDMA op 
+    checkpoint(7); 
+    ACK_LAT += (long)(tv[7].tv_sec * 1000000 + tv[7].tv_usec) - (long)(tv[6].tv_sec * 1000000 + tv[6].tv_usec);
     if (conn->task_done != NUM_TASK) {
       post_done_receives(conn);
       perform_rdma_op(conn);
@@ -292,6 +295,10 @@ void on_completion(struct ibv_wc *wc)
       rdma_disconnect(conn->id);
     }
 
+  } else if (wc->opcode == IBV_WC_SEND) {
+    if (conn->send_state == SS_SZ_SENT) {
+      checkpoint(6); 
+    }
   }
 
 }
@@ -481,6 +488,7 @@ void send_onetaskdone_msg(struct connection *conn)
   TEST_NZ(ibv_post_send(conn->qp, &wr, &bad_wr));
 }
 */
+/*
 void send_onetaskdone_msg(struct connection *conn) {  // change to using rdma send
   
   struct ibv_send_wr wr, *bad_wr = NULL;
@@ -505,7 +513,7 @@ void send_onetaskdone_msg(struct connection *conn) {  // change to using rdma se
   TEST_NZ(ibv_post_send(conn->qp, &wr, &bad_wr));
   //printf("sending send_onetaskdone_msg \n");
 }
-
+*/
 void send_done_message(struct connection *conn) {  // here a zero-byte message is enough to do the work; no need to reg extra mem
 
   struct ibv_send_wr wr, *bad_wr = NULL;
@@ -631,6 +639,7 @@ void measure_time() {
   
   printf("1.setup time  2.RDMA R/W latency  3.cleanup time  4.total time\n");
   printf("  %-14ld%-20ld%-16ld%ld\n", period[1],period[2],period[3],period[4]);
+  printf("Total Ack Latency: %ld\n", ACK_LAT);
 //  printf("5.adr_resolve 6.route_resolve     7.build_conn    8.get_sz_msg\n");
 //  printf("  %-14ld%-20ld%-16ld%ld\n", period[5],period[6],period[0],period[7]);
 }
