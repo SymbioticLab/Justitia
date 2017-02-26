@@ -16,6 +16,7 @@ int NUM_WR;
 int NUM_TASK = Ntask;
 long time_arr[Ntask];
 long task_done_sofar[Ntask];
+long lat_arr[Ntask];
 
 int main(int argc, char **argv)
 {
@@ -62,10 +63,10 @@ int main(int argc, char **argv)
   checkpoint(5);
   measure_time();
   FILE *f = fopen(argv[6], "w");
-  fprintf(f, "\tTime(us)\tTask_done\n");
+  fprintf(f, "\tTime(us)\tLatency\t\tTask_done\n");
   int i;
   for (i = 0; i < NUM_TASK; i++) {
-    fprintf(f, "%d\t%ld\t\t%ld\n", i, time_arr[i], task_done_sofar[i]);
+    fprintf(f, "%d\t%ld\t\t%ld\t\t%ld\n", i, time_arr[i], lat_arr[i], task_done_sofar[i]);
   } 
   fclose(f);
   return 0;

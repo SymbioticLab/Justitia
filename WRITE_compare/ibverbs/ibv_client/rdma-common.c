@@ -11,6 +11,7 @@ struct timeval tv[10];
 extern int NUM_TASK;
 extern long time_arr[];
 extern long task_done_sofar[];
+extern long lat_arr[];
 
 struct message {
   enum {
@@ -255,16 +256,18 @@ void on_completion(struct ibv_wc *wc)
         checkpoint(6);
         task_done_sofar[conn->task_done - 1] = conn->task_done;
         time_arr[conn->task_done - 1] = (long)(tv[6].tv_sec * 1000000 + tv[6].tv_usec) - (long)(tv[0].tv_sec * 1000000 + tv[0].tv_usec);
+        lat_arr[conn->task_done - 1] = (long)(tv[6].tv_sec * 1000000 + tv[6].tv_usec) - (long)(tv[3].tv_sec * 1000000 + tv[3].tv_usec);
       }
       if (conn->task_done == NUM_TASK) {
         send_done_message(conn);
         printf("sent done message to the server.\n");
       } else { // NO ACK
-        perform_rdma_op(conn);  
+        checkpoint(3);
+        perform_rdma_op(conn);
         //printf("conn->task_done = %d\n", conn->task_done);
         //send_onetaskdone_msg(conn);
       }
-    } 
+    }
 
     /*
     if (conn->send_state == SS_RDMA_SENT && conn->recv_state == RS_MR_RECV) { // this prevents sending done and disconnect again after we receive the done msg wc successfully. As you may have noticed, checking RS_MR_RECV is actually not needed in this simple situation. I put it there for a more clear look and a debugger for future code modification
