@@ -3,6 +3,8 @@
 
 const int TIMEOUT_IN_MS = 500; /* ms */
 
+#define Ntask 1000
+
 static int on_addr_resolved(struct rdma_cm_id *id);
 static int on_connection(struct rdma_cm_id *id);
 static int on_disconnect(struct rdma_cm_id *id);
@@ -11,6 +13,10 @@ static int on_route_resolved(struct rdma_cm_id *id);
 static void usage(const char *argv0);
 long RDMA_BUFFER_SIZE;
 int NUM_WR;
+int NUM_TASK = Ntask;
+long time_arr[Ntask];
+long task_done_sofar[Ntask];
+long lat_arr[Ntask];
 
 int main(int argc, char **argv)
 {
@@ -20,7 +26,7 @@ int main(int argc, char **argv)
   struct rdma_event_channel *ec = NULL;
 
   
-  if (argc != 6)
+  if (argc != 7)
     usage(argv[0]);
 
   RDMA_BUFFER_SIZE = atol(argv[4]);
@@ -37,9 +43,9 @@ int main(int argc, char **argv)
 
   TEST_Z(ec = rdma_create_event_channel());
   TEST_NZ(rdma_create_id(ec, &conn, NULL, RDMA_PS_TCP));
-  checkpoint(6);
+  //checkpoint(6);
   TEST_NZ(rdma_resolve_addr(conn, NULL, addr->ai_addr, TIMEOUT_IN_MS));
-  checkpoint(7);
+  //checkpoint(7);
   freeaddrinfo(addr);
 
   
@@ -56,6 +62,13 @@ int main(int argc, char **argv)
   rdma_destroy_event_channel(ec);
   checkpoint(5);
   measure_time();
+  FILE *f = fopen(argv[6], "w");
+  fprintf(f, "\tTime(us)\tLatency\t\tTask_done\n");
+  int i;
+  for (i = 0; i < NUM_TASK; i++) {
+    fprintf(f, "%d\t%ld\t\t%ld\t\t%ld\n", i, time_arr[i], lat_arr[i], task_done_sofar[i]);
+  } 
+  fclose(f);
   return 0;
 }
 
