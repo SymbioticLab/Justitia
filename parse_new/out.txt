@@ -1,4 +1,4 @@
-median latency: 230
+median latency: 227.09
 total sample points: 1000
 99th index: 989
-99th percentile latency: 239
+99th percentile latency: 237

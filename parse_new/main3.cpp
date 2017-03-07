@@ -22,7 +22,7 @@ int main(int argc, const char * argv[]) {
     //}
     
     string line;
-    vector<int> latency;
+    vector<float> latency;
     float data1, data2, data3, data4;
     getline(cin,line);  // skip the first line
     
@@ -39,7 +39,7 @@ int main(int argc, const char * argv[]) {
     float median_lat = -1;
     if (latency.size() % 2 == 0) {
         int n = latency.size() / 2;
-        median_lat = (float)(latency[n - 1] + latency[n]) / 2;
+        median_lat = (float)(latency[n - 1] + latency[n]) / (float)2;
     } else {
         int n = latency.size() / 2 + 1;
         median_lat = latency[n];
