@@ -86,6 +86,7 @@ static int page_size;
 
 cycles_t	*tposted;
 cycles_t	*tcompleted;
+int 		Optype;
 struct pingpong_context {
 	struct ibv_context *context;
 	struct ibv_pd      *pd;
@@ -318,7 +319,6 @@ static struct pingpong_dest *pp_server_exch_dest(int connfd, const struct pingpo
 
 	n = read(connfd, msg, sizeof msg);
 	printf("n = %ld, sizeof(msg) = %ld\n", n, sizeof msg);
-	perror("Error");
 	if (n != sizeof msg) {
 		perror("server read");
 		fprintf(stderr, "%d/%d: Couldn't read remote address\n", n, (int) sizeof msg);
@@ -468,7 +468,7 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev,
 	 * The Consumer is not allowed to assign Remote Write or Remote Atomic to
 	 * a Memory Region that has not been assigned Local Write. */
 	ctx->mr = ibv_reg_mr(ctx->pd, ctx->buf, size * 2 * user_parm->numofqps,
-			     IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_LOCAL_WRITE);
+			     IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_READ);
 	if (!ctx->mr) {
 		fprintf(stderr, "Couldn't allocate MR\n");
 		return NULL;
@@ -509,7 +509,7 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev,
 		attr.qp_state        = IBV_QPS_INIT;
 		attr.pkey_index      = 0;
 		attr.port_num        = port;
-		attr.qp_access_flags = IBV_ACCESS_REMOTE_WRITE;
+		attr.qp_access_flags = IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_READ;
 
 		if (ibv_modify_qp(ctx->qp[counter], &attr,
 				  IBV_QP_STATE              |
@@ -628,6 +628,8 @@ static void usage(const char *argv0)
 	printf("  %s <host>     connect to server at <host>\n", argv0);
 	printf("\n");
 	printf("Options:\n");
+	printf("  -o  --output 				output file dir for latency logging (required for sender!)\n");
+	printf("  -O  --Optype=<int>		RDMA OP Type(W:0, R:1:) Default=WRITE\n");
 	printf("  -p, --port=<port>         listen on/connect to port <port> (default 18515)\n");
 	printf("  -d, --ib-dev=<dev>        use IB device <dev> (default first device found)\n");
 	printf("  -i, --ib-port=<port>      use port <port> of IB device (default 1)\n");
@@ -711,12 +713,26 @@ int run_iter(struct pingpong_context *ctx, struct user_parameters *user_param,
 	
 	ctx->wr.sg_list    = &ctx->list;
 	ctx->wr.num_sge    = 1;
-	ctx->wr.opcode     = IBV_WR_RDMA_WRITE;
+	if (Optype == 0) {
+	  ctx->wr.opcode     = IBV_WR_RDMA_WRITE;
+	} else if (Optype == 1) {
+		printf("PICK READ");
+	  ctx->wr.opcode     = IBV_WR_RDMA_READ;
+	} else {
+	  ctx->wr.opcode     = IBV_WR_RDMA_WRITE;
+	}
     inline_size        = user_param->inline_size;
 	if (size > inline_size) {/* complaince to perf_main */
 		ctx->wr.send_flags = IBV_SEND_SIGNALED;
 	} else {
-		ctx->wr.send_flags = IBV_SEND_SIGNALED | IBV_SEND_INLINE;
+		if (Optype == 0) {
+		  ctx->wr.send_flags = IBV_SEND_SIGNALED | IBV_SEND_INLINE;
+		} else if (Optype == 1) {
+	 	  ctx->wr.send_flags = IBV_SEND_SIGNALED;
+		} else {
+		  printf("Unhandled Optype when setting INLINE flag. Check the actual code pls.\n");
+		  exit(EXIT_FAILURE);
+		}
 	}
 	ctx->wr.next       = NULL;
 
@@ -858,6 +874,7 @@ int run_iter(struct pingpong_context *ctx, struct user_parameters *user_param,
 int main(int argc, char *argv[])
 {
 	cycles_t   	START_cycle;
+	Optype = 0;
 	START_cycle = get_cycles();
 	struct ibv_device      **dev_list;
 	struct ibv_device	*ib_dev;
@@ -916,10 +933,11 @@ int main(int argc, char *argv[])
 			{ .name = "noPeak",         .has_arg = 0, .val = 'N' },
 			{ .name = "CPU-freq",       .has_arg = 0, .val = 'F' },
 			{ .name = "output", 		.has_arg = 1, .val = 'o' },
+			{ .name = "Optype", 		.has_arg = 1, .val = 'O' },
 			{ 0 }
 		};
 
-		c = getopt_long(argc, argv, "p:d:i:m:q:g:c:s:n:t:I:u:S:x:baVNFo:", long_options, NULL);
+		c = getopt_long(argc, argv, "p:d:i:m:q:g:c:s:n:t:I:u:S:x:baVNFo:O:", long_options, NULL);
 		if (c == -1)
 			break;
 
@@ -1026,6 +1044,10 @@ int main(int argc, char *argv[])
 
 		case 'o':
 			output_filename = optarg;
+			break;
+
+		case 'O':
+			Optype = strtol(optarg, NULL, 0);
 			break;
 
 		default:
