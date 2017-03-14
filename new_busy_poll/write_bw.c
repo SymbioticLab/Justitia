@@ -1147,6 +1147,8 @@ int main(int argc, char *argv[])
 			return 1;
 		}
 	}
+	
+	noPeak = 1;  // always turn off find peak
 
 	if (optind == argc - 1)
 		user_param.servername = strdupa(argv[optind]);

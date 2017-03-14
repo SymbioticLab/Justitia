@@ -779,7 +779,7 @@ static void print_report(unsigned int iters, unsigned size, int duplex,
 			}
 	}
 	*/
-	
+
 	cycles_to_units = get_cpu_mhz(no_cpu_freq_fail) * 1000000;
 
 	tsize = duplex ? 2 : 1;
@@ -1253,6 +1253,8 @@ int main(int argc, char *argv[])
 			return 1;
 		}
 	}
+			
+	noPeak = 1; // always turn off find peak
 
 	if (optind == argc - 1)
 		user_param.servername = strdupa(argv[optind]);
