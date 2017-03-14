@@ -69,7 +69,7 @@ struct user_parameters {
 	int connection_type;
 	int mtu;
 	int all; /* run all msg size */
-	int iters;
+	long iters;
 	int tx_depth;
     int numofqps;
     int maxpostsofqpiniteration;
