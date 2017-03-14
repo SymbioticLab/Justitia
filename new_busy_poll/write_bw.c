@@ -956,7 +956,7 @@ int run_iter(struct pingpong_context *ctx, struct user_parameters *user_param,
 	      //here the id is the index to the qp num
 	      ctx->ccnt[(int)wc.wr_id] = ctx->ccnt[(int)wc.wr_id]+1;
 	      totccnt += 1;
-		  printf("<2>totscnt: %d, totccnt: %d\n", totscnt, totccnt);
+		  //printf("<2>totscnt: %d, totccnt: %d\n", totscnt, totccnt);
 		}
 
 	}
