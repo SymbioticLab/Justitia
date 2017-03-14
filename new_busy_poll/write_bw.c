@@ -685,22 +685,26 @@ static void usage(const char *argv0)
 	printf("  -F, --CPU-freq            do not fail even if cpufreq_ondemand module is loaded\n");
 }
 
-static void print_report(unsigned int iters, unsigned size, int duplex,
+static void print_report(long iters, long size, int duplex,
 			 cycles_t *tposted, cycles_t *tcompleted, struct user_parameters *user_param,
 			 int noPeak, int no_cpu_freq_fail, const char *filename, cycles_t START_cycle)
 {
+	printf("From print_report: iters = %d\n", iters);
 	double cycles_to_units;
 	unsigned long tsize;	/* Transferred size, in megabytes */
-	int i, j;
+	long i, j;
 	int opt_posted = 0, opt_completed = 0;
 	cycles_t opt_delta;
 	cycles_t t;
 
 
 	opt_delta = tcompleted[opt_posted] - tposted[opt_completed];
+	//long cnt = 0;
 
+	// When num iters are large, find the peak takes FOREVER
+	/*
 	if (!noPeak) {
-		/* Find the peak bandwidth unless asked not to in command line*/
+		// Find the peak bandwidth unless asked not to in command line
 		for (i = 0; i < iters * user_param->numofqps; ++i)
 		  for (j = i; j < iters * user_param->numofqps; ++j) {
 		    t = (tcompleted[j] - tposted[i]) / (j - i + 1);
@@ -709,9 +713,11 @@ static void print_report(unsigned int iters, unsigned size, int duplex,
 		      opt_posted = i;
 		      opt_completed = j;
 		    }
+		    cnt++;
+		    printf("@@@cnt: %ld\n", cnt);
 		  }
 	}
-	
+	*/
 	cycles_to_units = get_cpu_mhz(no_cpu_freq_fail) * 1000000;
 
 	tsize = duplex ? 2 : 1;
@@ -735,7 +741,7 @@ int run_iter(struct pingpong_context *ctx, struct user_parameters *user_param,
 {
 	printf("BOTH entered?\n");
     struct ibv_qp           *qp;
-    int                      totscnt, totccnt ;
+    long                      totscnt, totccnt ;
     int                      index ,warmindex;
     int                      inline_size;
     struct ibv_send_wr *bad_wr;
@@ -950,11 +956,10 @@ int run_iter(struct pingpong_context *ctx, struct user_parameters *user_param,
 	      //here the id is the index to the qp num
 	      ctx->ccnt[(int)wc.wr_id] = ctx->ccnt[(int)wc.wr_id]+1;
 	      totccnt += 1;
-		  //printf("<2>totscnt: %d, totccnt: %d\n", totscnt, totccnt);
+		  printf("<2>totscnt: %d, totccnt: %d\n", totscnt, totccnt);
 		}
 
 	}
-
 	return(0);
 }
 
@@ -1372,7 +1377,6 @@ int main(int argc, char *argv[])
 	} else {
 		rem_dest[0] = pp_server_exch_dest(sockfd, &my_dest[0], &user_param);
 	}
-
 	if (write(sockfd, "done", sizeof "done") != sizeof "done"){
 		perror("write");
 		fprintf(stderr, "Couldn't write to socket\n");

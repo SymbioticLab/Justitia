@@ -765,8 +765,9 @@ static void print_report(unsigned int iters, unsigned size, int duplex,
 
 	opt_delta = tcompleted[opt_posted] - tposted[opt_completed];
 
+	/*
 	if (!noPeak) {
-		/* Find the peak bandwidth, unless asked not to in command line */
+		// Find the peak bandwidth, unless asked not to in command line 
 		for (i = 0; i < iters; ++i)
 			for (j = i; j < iters; ++j) {
 				t = (tcompleted[j] - tposted[i]) / (j - i + 1);
@@ -777,7 +778,8 @@ static void print_report(unsigned int iters, unsigned size, int duplex,
 				}
 			}
 	}
-
+	*/
+	
 	cycles_to_units = get_cpu_mhz(no_cpu_freq_fail) * 1000000;
 
 	tsize = duplex ? 2 : 1;
