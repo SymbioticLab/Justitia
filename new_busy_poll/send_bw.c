@@ -482,7 +482,7 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev,
 		}
 	} else {
 		ctx->mr = ibv_reg_mr(ctx->pd, ctx->buf, size * 2,
-				     IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_LOCAL_WRITE);
+				     IBV_ACCESS_REMOTE_WRITE| IBV_ACCESS_REMOTE_READ | IBV_ACCESS_LOCAL_WRITE);
 		if (!ctx->mr) {
 			fprintf(stderr, "Couldn't allocate MR\n");
 			return NULL;
@@ -710,10 +710,12 @@ static int pp_connect_ctx(struct pingpong_context *ctx, int port, int my_psn,
 		}
 		ctx->recv_list.lkey = ctx->mr->lkey;
 		for (i = 0; i < ctx->rx_depth; ++i)
+			printf("***DEBUG: Prepost receive\n");
 			if (ibv_post_recv(ctx->qp, &ctx->rwr, &bad_wr_recv)) {
 				fprintf(stderr, "Couldn't post recv: counter=%d\n", i);
 				return 14;
 			}
+
 	}
 	post_recv = ctx->rx_depth;
 	return 0;
@@ -726,6 +728,7 @@ static void usage(const char *argv0)
 	printf("  %s <host>     connect to server at <host>\n", argv0);
 	printf("\n");
 	printf("Options:\n");
+	printf("  -o  --output 				  output file dir for latency logging (used for sender)\n");
 	printf("  -p, --port=<port>           listen on/connect to port <port> (default 18515)\n");
 	printf("  -d, --ib-dev=<dev>          use IB device <dev> (default first device found)\n");
 	printf("  -i, --ib-port=<port>        use port <port> of IB device (default 1)\n");
@@ -749,7 +752,8 @@ static void usage(const char *argv0)
 }
 
 static void print_report(unsigned int iters, unsigned size, int duplex,
-			 cycles_t *tposted, cycles_t *tcompleted, int noPeak, int no_cpu_freq_fail)
+			 cycles_t *tposted, cycles_t *tcompleted, int noPeak, int no_cpu_freq_fail,
+			 const char *filename, cycles_t START_cycle)
 {
 	double cycles_to_units;
 	unsigned long tsize;	/* Transferred size, in megabytes */
@@ -781,6 +785,17 @@ static void print_report(unsigned int iters, unsigned size, int duplex,
 	printf("%7d        %d            %7.2f               %7.2f\n",
 	       size,iters,!(noPeak) * tsize * cycles_to_units / opt_delta / 0x100000,
 	       tsize * iters * cycles_to_units /(tcompleted[iters - 1] - tposted[0]) / 0x100000);
+	FILE *f = fopen(filename, "w");
+	fprintf(f, "Task_cnt\tTime(us)\t\tLatency\n");
+	double cpu_mhz = get_cpu_mhz(no_cpu_freq_fail);
+	double curr_time_us, lat_us;
+	for (i = 0; i < iters; ++i) {
+		curr_time_us = (double)(tcompleted[i] - START_cycle) / cpu_mhz;
+		lat_us = (double)(tcompleted[i] - tposted[i]) / cpu_mhz;
+		fprintf(f, "%d\t\t%.2f\t\t%.2f\n", i + 1, curr_time_us, lat_us);
+	}
+	fclose(f);
+
 }
 int run_iter_bi(struct pingpong_context *ctx, struct user_parameters *user_param,
 		struct pingpong_dest *rem_dest, int size)
@@ -938,7 +953,9 @@ int run_iter_uni(struct pingpong_context *ctx, struct user_parameters *user_para
 	rcnt = 0;
 	qp = ctx->qp;
 	if (!user_param->servername) {
+		printf("Greetings. I'm server.\n");
 		while (rcnt < user_param->iters) {
+			//printf("scnt: %d, rcnt: %d\n", scnt, rcnt);
 			int ne;
 			struct ibv_wc wc;
 			/*Server is polling on recieve first */
@@ -965,9 +982,10 @@ int run_iter_uni(struct pingpong_context *ctx, struct user_parameters *user_para
 					if (wc.status != IBV_WC_SUCCESS) {
 						fprintf(stderr, "Completion wth error at %s:\n",
 							user_param->servername ? "client" : "server");
+    					printf("error wc status: %s\n", ibv_wc_status_str(wc.status));
 						fprintf(stderr, "Failed status %d: wr_id %d syndrom 0x%x\n",
 							wc.status, (int) wc.wr_id, wc.vendor_err);
-						fprintf(stderr, "scnt=%d, ccnt=%d\n",
+						fprintf(stderr, "rcnt=%d, ccnt=%d\n",
 							scnt, ccnt);
 						return 1;
 					}
@@ -989,6 +1007,7 @@ int run_iter_uni(struct pingpong_context *ctx, struct user_parameters *user_para
 	} else {
 		/* client is posting and not receiving. */
 		while (scnt < user_param->iters || ccnt < user_param->iters) {
+			//printf("scnt: %d, ccnt: %d\n", scnt, ccnt);
 			while (scnt < user_param->iters && (scnt - ccnt) < user_param->tx_depth ) {
 				struct ibv_send_wr *bad_wr;
 				tposted[scnt] = get_cycles();
@@ -1027,6 +1046,7 @@ int run_iter_uni(struct pingpong_context *ctx, struct user_parameters *user_para
 					if (wc.status != IBV_WC_SUCCESS) {
 						fprintf(stderr, "Completion wth error at %s:\n",
 							user_param->servername ? "client" : "server");
+    					printf("error wc status: %s\n", ibv_wc_status_str(wc.status));
 						fprintf(stderr, "Failed status %d: wr_id %d syndrom 0x%x\n",
 							wc.status, (int) wc.wr_id, wc.vendor_err);
 						fprintf(stderr, "scnt=%d, ccnt=%d\n",
@@ -1048,6 +1068,8 @@ int run_iter_uni(struct pingpong_context *ctx, struct user_parameters *user_para
 
 int main(int argc, char *argv[])
 {
+	cycles_t   	START_cycle;
+	START_cycle = get_cycles();
 	struct ibv_device      **dev_list;
 	struct ibv_device	*ib_dev;
 	struct pingpong_context *ctx;
@@ -1056,10 +1078,11 @@ int main(int argc, char *argv[])
 	struct user_parameters  user_param;
 	struct ibv_device_attr device_attribute;
 	char                    *ib_devname = NULL;
+	char					*output_filename = "temp_out.txt";
 	int                      port = 18515;
 	int                      ib_port = 1;
 	long long                size = 65536;
-	int			            sockfd;
+	int			             sockfd;
 	int                      i = 0;
 	int                      size_max_pow = 24;
 	int                      noPeak = 0;/*noPeak == 0: regular peak-bw calculation done*/
@@ -1071,7 +1094,8 @@ int main(int argc, char *argv[])
 	memset(&user_param, 0, sizeof(struct user_parameters));
 	user_param.mtu = 0;
 	user_param.iters = 1000;
-	user_param.tx_depth = 300;
+	//user_param.tx_depth = 300;
+	user_param.tx_depth = 1;
 	user_param.servername = NULL;
 	user_param.use_event = 0;
 	user_param.duplex = 0;
@@ -1103,10 +1127,11 @@ int main(int argc, char *argv[])
 			{ .name = "mcg",            .has_arg = 0, .val = 'g' },
 			{ .name = "noPeak",         .has_arg = 0, .val = 'N' },
 			{ .name = "CPU-freq",       .has_arg = 0, .val = 'F' },
+			{ .name = "output", 		.has_arg = 1, .val = 'o' },
 			{ 0 }
 		};
 
-		c = getopt_long(argc, argv, "p:d:i:m:c:s:n:t:I:r:u:S:x:ebaVgNF", long_options, NULL);
+		c = getopt_long(argc, argv, "p:d:i:m:c:s:n:t:I:r:u:S:x:ebaVgNFo:O:", long_options, NULL);
 		if (c == -1)
 			break;
 
@@ -1193,8 +1218,12 @@ int main(int argc, char *argv[])
 				usage(argv[0]);
 				return 1;
 			}
-
 			break;
+
+		case 'o':
+			output_filename = optarg;
+			break;
+
 
 		case 'b':
 			user_param.duplex = 1;
@@ -1448,7 +1477,7 @@ int main(int argc, char *argv[])
 					return 17;
 			}
 			if (user_param.servername) {
-				print_report(user_param.iters, size, user_param.duplex, tposted, tcompleted, noPeak, no_cpu_freq_fail);
+				print_report(user_param.iters, size, user_param.duplex, tposted, tcompleted, noPeak, no_cpu_freq_fail, output_filename, START_cycle);
 				/* sync again for the sake of UC/UC */
 				rem_dest = pp_client_exch_dest(sockfd, &my_dest, &user_param);
 			} else
@@ -1465,7 +1494,7 @@ int main(int argc, char *argv[])
 		}
 
 		if (user_param.servername)
-			print_report(user_param.iters, size, user_param.duplex, tposted, tcompleted, noPeak, no_cpu_freq_fail);
+			print_report(user_param.iters, size, user_param.duplex, tposted, tcompleted, noPeak, no_cpu_freq_fail, output_filename, START_cycle);
 	}
 
 	/* close sockets */

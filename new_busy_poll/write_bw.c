@@ -98,7 +98,9 @@ struct pingpong_context {
 	long long           size;
 	int                 tx_depth;
 	struct ibv_sge      list;
+	struct ibv_sge 		recv_list;
     struct ibv_send_wr  wr;
+    struct ibv_recv_wr  rwr;
     int                 *scnt;
     int                 *ccnt;
 	union ibv_gid       dgid;
@@ -411,7 +413,6 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev,
 	struct ibv_device_attr device_attr;
 	int counter;
 
-	printf("**DEBUG: size = %lld\n", size);
 
 	ctx = malloc(sizeof *ctx);
 	if (!ctx)
@@ -473,7 +474,6 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev,
 		fprintf(stderr, "Couldn't allocate MR\n");
 		return NULL;
 	}
-	printf("**DEBUG: size = %lld\n", size);
 
 	ctx->cq = ibv_create_cq(ctx->context, tx_depth * user_parm->numofqps , NULL, NULL, 0);
 	if (!ctx->cq) {
@@ -505,6 +505,7 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev,
 			fprintf(stderr, "Couldn't create QP\n");
 			return NULL;
 		}
+		printf("ibv_create_qp success, counter = %d\n", counter);
 	
 		attr.qp_state        = IBV_QPS_INIT;
 		attr.pkey_index      = 0;
@@ -618,6 +619,39 @@ static int pp_connect_ctx(struct pingpong_context *ctx, int port, int my_psn,
 		}
 
 	}
+	/*
+	if (!user_parm->servername) { // server
+		int i;
+		struct ibv_recv_wr      *bad_wr_recv;
+		//struct ibv_recv_wr wr, *bad_wr_recv = NULL;
+		//struct ibv_sge sge;
+		//recieve
+		ctx->rwr.wr_id      = 0;
+		ctx->rwr.sg_list    = &ctx->recv_list;
+		ctx->rwr.num_sge    = 1;
+		ctx->rwr.next       = NULL;
+
+		//wr.wr_id = 0;
+  		//wr.next = NULL;
+	  	//wr.sg_list = &sge;
+  		//wr.num_sge = 1;
+
+		//sge.addr = (uintptr_t) ctx->buf; 
+		//sge.length = ctx->size;
+		//sge.lkey = ctx->mr->lkey;
+		ctx->recv_list.addr = (uintptr_t) ctx->buf;
+		ctx->recv_list.length = ctx->size;
+		ctx->recv_list.lkey = ctx->mr->lkey;
+		printf("***DEBUG: Prepost receive\n");
+		//if (ibv_post_recv(ctx->qp[0], &wr, &bad_wr_recv)) {
+		if (ibv_post_recv(ctx->qp[0], &ctx->rwr, &bad_wr_recv)) {
+			fprintf(stderr, "Couldn't post recv: counter=%d\n", i);
+			return 14;
+		}
+	}	
+	printf("***DDDD\n");
+	*/
+
 	return 0;
 }
 
@@ -628,8 +662,8 @@ static void usage(const char *argv0)
 	printf("  %s <host>     connect to server at <host>\n", argv0);
 	printf("\n");
 	printf("Options:\n");
-	printf("  -o  --output 				output file dir for latency logging (required for sender!)\n");
-	printf("  -O  --Optype=<int>		RDMA OP Type(W:0, R:1:) Default=WRITE\n");
+	printf("  -o  --output 				output file dir for latency logging (used for sender)\n");
+	printf("  -O  --Optype=<int>		RDMA OP Type(W:0, R:1, WIMM:2) Default=WRITE\n");
 	printf("  -p, --port=<port>         listen on/connect to port <port> (default 18515)\n");
 	printf("  -d, --ib-dev=<dev>        use IB device <dev> (default first device found)\n");
 	printf("  -i, --ib-port=<port>      use port <port> of IB device (default 1)\n");
@@ -699,7 +733,7 @@ static void print_report(unsigned int iters, unsigned size, int duplex,
 int run_iter(struct pingpong_context *ctx, struct user_parameters *user_param,
 	     struct pingpong_dest **rem_dest, int size)
 {
-
+	printf("BOTH entered?\n");
     struct ibv_qp           *qp;
     int                      totscnt, totccnt ;
     int                      index ,warmindex;
@@ -716,8 +750,11 @@ int run_iter(struct pingpong_context *ctx, struct user_parameters *user_param,
 	if (Optype == 0) {
 	  ctx->wr.opcode     = IBV_WR_RDMA_WRITE;
 	} else if (Optype == 1) {
-		printf("PICK READ");
+		printf("PICK READ\n");
 	  ctx->wr.opcode     = IBV_WR_RDMA_READ;
+	} else if (Optype == 2) {
+	  printf("PICK WRITE IMM");
+	  ctx->wr.opcode     = IBV_WR_RDMA_WRITE_WITH_IMM;
 	} else {
 	  ctx->wr.opcode     = IBV_WR_RDMA_WRITE;
 	}
@@ -727,7 +764,7 @@ int run_iter(struct pingpong_context *ctx, struct user_parameters *user_param,
 	} else {
 		if (Optype == 0) {
 		  ctx->wr.send_flags = IBV_SEND_SIGNALED | IBV_SEND_INLINE;
-		} else if (Optype == 1) {
+		} else if (Optype == 1 || Optype == 2) {
 	 	  ctx->wr.send_flags = IBV_SEND_SIGNALED;
 		} else {
 		  printf("Unhandled Optype when setting INLINE flag. Check the actual code pls.\n");
@@ -735,6 +772,15 @@ int run_iter(struct pingpong_context *ctx, struct user_parameters *user_param,
 		}
 	}
 	ctx->wr.next       = NULL;
+
+	// recv wr
+	ctx->rwr.wr_id      = 0;
+	ctx->rwr.sg_list    = &ctx->recv_list;
+	ctx->rwr.num_sge    = 1;
+	ctx->rwr.next       = NULL;
+	ctx->recv_list.addr = (uintptr_t) ctx->buf;
+	ctx->recv_list.lkey = ctx->mr->lkey;
+	ctx->recv_list.length = ctx->size;
 
 	totscnt = 0;
 	totccnt = 0;
@@ -822,59 +868,100 @@ int run_iter(struct pingpong_context *ctx, struct user_parameters *user_param,
 	  //printf("<2>totscnt: %d, totccnt: %d\n", totscnt, totccnt);
 	}
 	*/
+	if (!user_param->servername) { // server
+		printf("Greetings. I'm server.\n");
+		int ne;
+		int rcnt = 0;
+		struct ibv_wc wc;
+		struct ibv_recv_wr *bad_wr_recv;
 
-	while (totccnt < (user_param->iters * user_param->numofqps)) {
+		while (rcnt < user_param->iters * user_param->numofqps) {
+			++rcnt;
+			if (ibv_post_recv(ctx->qp[0], &ctx->rwr, &bad_wr_recv)) {
+				fprintf(stderr, "Couldn't post recv: rcnt=%d\n",
+					rcnt);
+				return 15;
+			}
+			do {
+				ne = ibv_poll_cq(ctx->cq, 1, &wc);
+				if (ne) {
+					if (wc.status != IBV_WC_SUCCESS) {
+						fprintf(stderr, "Completion wth error at %s:\n",
+							user_param->servername ? "client" : "server");
+    					printf("error wc status: %s\n", ibv_wc_status_str(wc.status));
+						fprintf(stderr, "Failed status %d: wr_id %d syndrom 0x%x\n",
+							wc.status, (int) wc.wr_id, wc.vendor_err);
+						fprintf(stderr, "rcnt=%d\n", rcnt);
+						return 1;
+					}
+					
 
-	//while (totscnt < (user_param->iters * user_param->numofqps)  || totccnt < (user_param->iters * user_param->numofqps) ) {
-	  //int CNT = 0;
-	  // main loop to run over all the qps and post each time n messages
-	  for (index =0 ; index < user_param->numofqps ; index++) {
-        ctx->wr.wr.rdma.remote_addr = rem_dest[index]->vaddr;
-        ctx->wr.wr.rdma.rkey = rem_dest[index]->rkey;
-        qp = ctx->qp[index];
-        ctx->wr.wr_id      = index ;
-	    tposted[totscnt] = get_cycles();
-	    if (ibv_post_send(qp, &ctx->wr, &bad_wr)) {
-            fprintf(stderr, "Couldn't post send: qp index = %d qp scnt=%d total scnt %d\n",
-                    index,ctx->scnt[index],totscnt);
-            return 1;
-	    }     
-	    ctx->scnt[index]= ctx->scnt[index]+1;
-	    ++totscnt;
-	    //printf("<1>totscnt: %d, totccnt: %d\n", totscnt, totccnt);
-	  }
-	  //printf("CNT: %d\n", CNT);
-	  // finished posting now polling
-      int ne;
-      do {
-        ne = ibv_poll_cq(ctx->cq, 1, &wc);
-      } while (ne == 0);
-      tcompleted[totccnt] = get_cycles();
-      if (ne < 0) {
-        fprintf(stderr, "poll CQ failed %d\n", ne);
-        return 1;
-      }
-      if (wc.status != IBV_WC_SUCCESS) {
-        fprintf(stderr, "Completion wth error at %s:\n",
-	        user_param->servername ? "client" : "server");
-        fprintf(stderr, "Failed status %d: wr_id %d\n",
-	        wc.status, (int) wc.wr_id);
-        fprintf(stderr, "qp index %d ,qp scnt=%d, qp ccnt=%d total scnt %d total ccnt %d\n",
-	        (int)wc.wr_id, ctx->scnt[(int)wc.wr_id], ctx->ccnt[(int)wc.wr_id], totscnt, totccnt);
-        return 1;
-      }
-      //here the id is the index to the qp num
-      ctx->ccnt[(int)wc.wr_id] = ctx->ccnt[(int)wc.wr_id]+1;
-      totccnt += 1;
-	  //printf("<2>totscnt: %d, totccnt: %d\n", totscnt, totccnt);
+				}
+			} while (ne == 0 );	
+		}
+		
+
+		if (ne < 0) {
+			fprintf(stderr, "Poll Recieve CQ failed %d\n", ne);
+			return 12;
+		}
+	} else { // client
+
+		while (totccnt < (user_param->iters * user_param->numofqps)) {
+
+		//while (totscnt < (user_param->iters * user_param->numofqps)  || totccnt < (user_param->iters * user_param->numofqps) ) {
+		  //int CNT = 0;
+		  // main loop to run over all the qps and post each time n messages
+		  for (index =0 ; index < user_param->numofqps ; index++) {
+	        ctx->wr.wr.rdma.remote_addr = rem_dest[index]->vaddr;
+	        ctx->wr.wr.rdma.rkey = rem_dest[index]->rkey;
+	        qp = ctx->qp[index];
+	        ctx->wr.wr_id      = index ;
+		    tposted[totscnt] = get_cycles();
+		    if (ibv_post_send(qp, &ctx->wr, &bad_wr)) {
+	            fprintf(stderr, "Couldn't post send: qp index = %d qp scnt=%d total scnt %d\n",
+	                    index,ctx->scnt[index],totscnt);
+	            return 1;
+		    }     
+		    ctx->scnt[index]= ctx->scnt[index]+1;
+		    ++totscnt;
+		    //printf("<1>totscnt: %d, totccnt: %d\n", totscnt, totccnt);
+		  }
+		  //printf("CNT: %d\n", CNT);
+		  // finished posting now polling
+	      int ne;
+	      do {
+	        ne = ibv_poll_cq(ctx->cq, 1, &wc);
+	      } while (ne == 0);
+	      tcompleted[totccnt] = get_cycles();
+	      if (ne < 0) {
+	        fprintf(stderr, "poll CQ failed %d\n", ne);
+	        return 1;
+	      }
+	      if (wc.status != IBV_WC_SUCCESS) {
+	        fprintf(stderr, "Completion wth error at %s:\n",
+		        user_param->servername ? "client" : "server");
+	        fprintf(stderr, "Failed status %d: wr_id %d\n",
+		        wc.status, (int) wc.wr_id);
+	        fprintf(stderr, "qp index %d ,qp scnt=%d, qp ccnt=%d total scnt %d total ccnt %d\n",
+		        (int)wc.wr_id, ctx->scnt[(int)wc.wr_id], ctx->ccnt[(int)wc.wr_id], totscnt, totccnt);
+	        return 1;
+	      }
+	      //here the id is the index to the qp num
+	      ctx->ccnt[(int)wc.wr_id] = ctx->ccnt[(int)wc.wr_id]+1;
+	      totccnt += 1;
+		  //printf("<2>totscnt: %d, totccnt: %d\n", totscnt, totccnt);
+		}
+
 	}
+
 	return(0);
 }
 
 int main(int argc, char *argv[])
 {
-	cycles_t   	START_cycle;
 	Optype = 0;
+	cycles_t   	START_cycle;
 	START_cycle = get_cycles();
 	struct ibv_device      **dev_list;
 	struct ibv_device	*ib_dev;
@@ -888,7 +975,7 @@ int main(int argc, char *argv[])
 	int                      port = 18515;
 	int                      ib_port = 1;
 	long long                size = 65536;
-	int			 sockfd;
+	int			 			 sockfd;
 	int                      duplex = 0;
 	int                      i = 0;
 	int                      noPeak = 0;/*noPeak == 0: regular peak-bw calculation done*/
@@ -1202,7 +1289,6 @@ int main(int argc, char *argv[])
 	  if (user_param.servername) {
 	    rem_dest[i] = pp_client_exch_dest(sockfd, &my_dest[i], &user_param);
 	  } else {
-		printf("**0DEBUG\n");
 	    rem_dest[i] = pp_server_exch_dest(sockfd, &my_dest[i], &user_param);
 	  }
 	  if (!rem_dest[i])
@@ -1228,7 +1314,6 @@ int main(int argc, char *argv[])
 	  if (user_param.servername) {
 	    rem_dest[i] = pp_client_exch_dest(sockfd, &my_dest[i], &user_param);
 	  } else {
-		printf("**1DEBUG\n");
 	    rem_dest[i] = pp_server_exch_dest(sockfd, &my_dest[i], &user_param);
 	  }  
 	}
@@ -1237,8 +1322,9 @@ int main(int argc, char *argv[])
 	printf(" #bytes #iterations    BW peak[MB/sec]    BW average[MB/sec]  \n");
 	/* For half duplex tests, server just waits for client to exit */
 	/* the 0th place is arbitrary to signal finish ... */
-	if (!user_param.servername && !duplex) {
-		printf("**2DEBUG\n");
+	printf("Optype: %d\n", Optype);
+	if (Optype != 2 && !user_param.servername && !duplex) {
+		//printf("**DEDE1\n");
 		rem_dest[0] = pp_server_exch_dest(sockfd, &my_dest[0],  &user_param);
 		if (write(sockfd, "done", sizeof "done") != sizeof "done"){
 			perror("server write");
@@ -1246,8 +1332,10 @@ int main(int argc, char *argv[])
 			return 1;
 		}
 		close(sockfd);
+		//printf("**DEDE2\n");
 		return 0;
 	}
+	
 
 	tposted = malloc(user_param.iters * user_param.numofqps * sizeof *tposted);
 
@@ -1273,13 +1361,15 @@ int main(int argc, char *argv[])
 	} else {
 		if(run_iter(ctx, &user_param, rem_dest, size))
 			return 18;
+		//print_report(user_param.iters, size, duplex, tposted, tcompleted, &user_param, noPeak, no_cpu_freq_fail, output_filename, START_cycle);
+	}
+	if (user_param.servername) {
 		print_report(user_param.iters, size, duplex, tposted, tcompleted, &user_param, noPeak, no_cpu_freq_fail, output_filename, START_cycle);
 	}
 	/* the 0th place is arbitrary to signal finish ... */
 	if (user_param.servername) {
 		rem_dest[0] = pp_client_exch_dest(sockfd, &my_dest[0], &user_param);
 	} else {
-		printf("**3DEBUG\n");
 		rem_dest[0] = pp_server_exch_dest(sockfd, &my_dest[0], &user_param);
 	}
 
