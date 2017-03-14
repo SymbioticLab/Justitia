@@ -71,6 +71,7 @@ struct user_parameters {
 	int all; /* run all msg size */
 	long iters;
 	int tx_depth;
+	int use_event;
     int numofqps;
     int maxpostsofqpiniteration;
     int inline_size;
@@ -89,6 +90,7 @@ cycles_t	*tcompleted;
 int 		Optype;
 struct pingpong_context {
 	struct ibv_context *context;
+	struct ibv_comp_channel *channel;
 	struct ibv_pd      *pd;
 	struct ibv_mr      *mr;
 	struct ibv_cq      *cq;
@@ -186,7 +188,7 @@ struct pingpong_dest * pp_client_exch_dest(int sockfd,
 		fprintf(stderr, "Couldn't send local address\n");
 		goto out;
 	}
-	printf("sizeof(msg) = %ld\n", sizeof msg);
+	//printf("sizeof(msg) = %ld\n", sizeof msg);
 
 	if (read(sockfd, msg, sizeof msg) != sizeof msg) {
 		perror("client read");
@@ -320,7 +322,7 @@ static struct pingpong_dest *pp_server_exch_dest(int connfd, const struct pingpo
 	int n;
 
 	n = read(connfd, msg, sizeof msg);
-	printf("n = %ld, sizeof(msg) = %ld\n", n, sizeof msg);
+	//printf("n = %ld, sizeof(msg) = %ld\n", n, sizeof msg);
 	if (n != sizeof msg) {
 		perror("server read");
 		fprintf(stderr, "%d/%d: Couldn't read remote address\n", n, (int) sizeof msg);
@@ -458,7 +460,15 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev,
 			user_parm->mtu = 2048;
 		}
 	}
-
+	if (user_parm->use_event) {
+		ctx->channel = ibv_create_comp_channel(ctx->context);
+		if (!ctx->channel) {
+			fprintf(stderr, "Couldn't create completion channel\n");
+			return NULL;
+		}
+	} else {
+		ctx->channel = NULL;   
+	}
 	ctx->pd = ibv_alloc_pd(ctx->context);
 	if (!ctx->pd) {
 		fprintf(stderr, "Couldn't allocate PD\n");
@@ -475,7 +485,7 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev,
 		return NULL;
 	}
 
-	ctx->cq = ibv_create_cq(ctx->context, tx_depth * user_parm->numofqps , NULL, NULL, 0);
+	ctx->cq = ibv_create_cq(ctx->context, tx_depth * user_parm->numofqps , NULL, ctx->channel, 0);
 	if (!ctx->cq) {
 		fprintf(stderr, "Couldn't create CQ\n");
 		return NULL;
@@ -689,7 +699,7 @@ static void print_report(long iters, long size, int duplex,
 			 cycles_t *tposted, cycles_t *tcompleted, struct user_parameters *user_param,
 			 int noPeak, int no_cpu_freq_fail, const char *filename, cycles_t START_cycle)
 {
-	printf("From print_report: iters = %d\n", iters);
+	//printf("From print_report: iters = %d\n", iters);
 	double cycles_to_units;
 	unsigned long tsize;	/* Transferred size, in megabytes */
 	long i, j;
@@ -739,13 +749,14 @@ static void print_report(long iters, long size, int duplex,
 int run_iter(struct pingpong_context *ctx, struct user_parameters *user_param,
 	     struct pingpong_dest **rem_dest, int size)
 {
-	printf("BOTH entered?\n");
+	//printf("BOTH entered?\n");
     struct ibv_qp           *qp;
     long                      totscnt, totccnt ;
     int                      index ,warmindex;
     int                      inline_size;
     struct ibv_send_wr *bad_wr;
     struct ibv_wc wc;
+    int ne;
     ctx->list.addr = (uintptr_t) ctx->buf;
 	ctx->list.length = size;
 	ctx->list.lkey = ctx->mr->lkey;
@@ -754,6 +765,7 @@ int run_iter(struct pingpong_context *ctx, struct user_parameters *user_param,
 	ctx->wr.sg_list    = &ctx->list;
 	ctx->wr.num_sge    = 1;
 	if (Optype == 0) {
+		printf("PICK WRITE\n");
 	  ctx->wr.opcode     = IBV_WR_RDMA_WRITE;
 	} else if (Optype == 1) {
 		printf("PICK READ\n");
@@ -762,6 +774,7 @@ int run_iter(struct pingpong_context *ctx, struct user_parameters *user_param,
 	  printf("PICK WRITE IMM");
 	  ctx->wr.opcode     = IBV_WR_RDMA_WRITE_WITH_IMM;
 	} else {
+		printf("PICK WRITE\n");
 	  ctx->wr.opcode     = IBV_WR_RDMA_WRITE;
 	}
     inline_size        = user_param->inline_size;
@@ -888,6 +901,22 @@ int run_iter(struct pingpong_context *ctx, struct user_parameters *user_param,
 					rcnt);
 				return 15;
 			}
+			if (user_param->use_event) {
+				struct ibv_cq *ev_cq;
+				void          *ev_ctx;
+				if (ibv_get_cq_event(ctx->channel, &ev_cq, &ev_ctx)) {
+					fprintf(stderr, "Failed to get cq_event\n");
+					return 1;
+				}                
+				if (ev_cq != ctx->cq) {
+					fprintf(stderr, "CQ event for unknown CQ %p\n", ev_cq);
+					return 1;
+				}
+				if (ibv_req_notify_cq(ctx->cq, 0)) {
+					fprintf(stderr, "Couldn't request CQ notification\n");
+					return 1;
+				}
+			}
 			do {
 				ne = ibv_poll_cq(ctx->cq, 1, &wc);
 				if (ne) {
@@ -928,14 +957,30 @@ int run_iter(struct pingpong_context *ctx, struct user_parameters *user_param,
 	            fprintf(stderr, "Couldn't post send: qp index = %d qp scnt=%d total scnt %d\n",
 	                    index,ctx->scnt[index],totscnt);
 	            return 1;
-		    }     
+		    } 
 		    ctx->scnt[index]= ctx->scnt[index]+1;
 		    ++totscnt;
 		    //printf("<1>totscnt: %d, totccnt: %d\n", totscnt, totccnt);
 		  }
 		  //printf("CNT: %d\n", CNT);
 		  // finished posting now polling
-	      int ne;
+	      //int ne;
+	      if (user_param->use_event) {
+				struct ibv_cq *ev_cq;
+				void          *ev_ctx;
+				if (ibv_get_cq_event(ctx->channel, &ev_cq, &ev_ctx)) {
+					fprintf(stderr, "Failed to get cq_event\n");
+					return 1;
+				}                
+				if (ev_cq != ctx->cq) {
+					fprintf(stderr, "CQ event for unknown CQ %p\n", ev_cq);
+					return 1;
+				}
+				if (ibv_req_notify_cq(ctx->cq, 0)) {
+					fprintf(stderr, "Couldn't request CQ notification\n");
+					return 1;
+				}
+			}
 	      do {
 	        ne = ibv_poll_cq(ctx->cq, 1, &wc);
 	      } while (ne == 0);
@@ -995,6 +1040,7 @@ int main(int argc, char *argv[])
 	user_param.iters = 5000;
 	user_param.tx_depth = 100;
 	user_param.servername = NULL;
+	user_param.use_event = 0;
 	user_param.numofqps = 1;
 	user_param.maxpostsofqpiniteration = 100;
 	user_param.inline_size = MAX_INLINE;
@@ -1022,6 +1068,7 @@ int main(int argc, char *argv[])
 			{ .name = "all",            .has_arg = 0, .val = 'a' },
 			{ .name = "bidirectional",  .has_arg = 0, .val = 'b' },
 			{ .name = "version",        .has_arg = 0, .val = 'V' },
+			{ .name = "events",         .has_arg = 0, .val = 'e' },
 			{ .name = "noPeak",         .has_arg = 0, .val = 'N' },
 			{ .name = "CPU-freq",       .has_arg = 0, .val = 'F' },
 			{ .name = "output", 		.has_arg = 1, .val = 'o' },
@@ -1029,7 +1076,7 @@ int main(int argc, char *argv[])
 			{ 0 }
 		};
 
-		c = getopt_long(argc, argv, "p:d:i:m:q:g:c:s:n:t:I:u:S:x:baVNFo:O:", long_options, NULL);
+		c = getopt_long(argc, argv, "p:ed:i:m:q:g:c:s:n:t:I:u:S:x:baVNFo:O:", long_options, NULL);
 		if (c == -1)
 			break;
 
@@ -1040,6 +1087,10 @@ int main(int argc, char *argv[])
 				usage(argv[0]);
 				return 1;
 			}
+			break;
+
+		case 'e':
+			++user_param.use_event;
 			break;
 
 		case 'd':
@@ -1147,7 +1198,7 @@ int main(int argc, char *argv[])
 			return 1;
 		}
 	}
-	
+
 	noPeak = 1;  // always turn off find peak
 
 	if (optind == argc - 1)
@@ -1251,6 +1302,14 @@ int main(int argc, char *argv[])
 	  if (sockfd < 0)
 	    return 1;
 	}
+	// actually need to call notify cq once at first to specify the type, otherwise later get_notify call will be blocked 4ever	
+	if (user_param.use_event) {
+		printf("Test with events.\n");
+		if (ibv_req_notify_cq(ctx->cq, 0)) {
+			fprintf(stderr, "Couldn't request CQ notification\n");
+			return 1;
+		} 
+	}
 	
 	my_dest = malloc(user_param.numofqps * sizeof *my_dest);
     if (!my_dest) {
@@ -1330,6 +1389,7 @@ int main(int argc, char *argv[])
 	/* For half duplex tests, server just waits for client to exit */
 	/* the 0th place is arbitrary to signal finish ... */
 	printf("Optype: %d\n", Optype);
+	printf("Event: %d\n", user_param.use_event);
 	if (Optype != 2 && !user_param.servername && !duplex) {
 		//printf("**DEDE1\n");
 		rem_dest[0] = pp_server_exch_dest(sockfd, &my_dest[0],  &user_param);
