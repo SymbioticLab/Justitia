@@ -673,7 +673,7 @@ static void usage(const char *argv0)
 	printf("\n");
 	printf("Options:\n");
 	printf("  -o  --output 				output file dir for latency logging (used for sender)\n");
-	printf("  -O  --Optype=<int>		RDMA OP Type(W:0, R:1, WIMM:2) Default=WRITE\n");
+	printf("  -O  --Optype=<int>		RDMA OP Type(W:0, R:1, WIMM:2, SEND:3) Default=WRITE\n");
 	printf("  -p, --port=<port>         listen on/connect to port <port> (default 18515)\n");
 	printf("  -d, --ib-dev=<dev>        use IB device <dev> (default first device found)\n");
 	printf("  -i, --ib-port=<port>      use port <port> of IB device (default 1)\n");
@@ -773,15 +773,18 @@ int run_iter(struct pingpong_context *ctx, struct user_parameters *user_param,
 	} else if (Optype == 2) {
 	  printf("PICK WRITE IMM");
 	  ctx->wr.opcode     = IBV_WR_RDMA_WRITE_WITH_IMM;
+	} else if (Optype == 3) {
+	  printf("PICK_SEND\n");
+	  ctx->wr.opcode     = IBV_WR_SEND;
 	} else {
-		printf("PICK WRITE\n");
+	  printf("PICK WRITE\n");
 	  ctx->wr.opcode     = IBV_WR_RDMA_WRITE;
 	}
     inline_size        = user_param->inline_size;
 	if (size > inline_size) {/* complaince to perf_main */
 		ctx->wr.send_flags = IBV_SEND_SIGNALED;
 	} else {
-		if (Optype == 0) {
+		if (Optype == 0 || Optype == 3) {
 		  ctx->wr.send_flags = IBV_SEND_SIGNALED | IBV_SEND_INLINE;
 		} else if (Optype == 1 || Optype == 2) {
 	 	  ctx->wr.send_flags = IBV_SEND_SIGNALED;
@@ -1390,8 +1393,8 @@ int main(int argc, char *argv[])
 	/* the 0th place is arbitrary to signal finish ... */
 	printf("Optype: %d\n", Optype);
 	printf("Event: %d\n", user_param.use_event);
-	if (Optype != 2 && !user_param.servername && !duplex) {
-		//printf("**DEDE1\n");
+	if ((Optype == 0 || Optype == 1) && !user_param.servername && !duplex) {
+		printf("**DEDE1\n");
 		rem_dest[0] = pp_server_exch_dest(sockfd, &my_dest[0],  &user_param);
 		if (write(sockfd, "done", sizeof "done") != sizeof "done"){
 			perror("server write");
@@ -1399,7 +1402,7 @@ int main(int argc, char *argv[])
 			return 1;
 		}
 		close(sockfd);
-		//printf("**DEDE2\n");
+		printf("**DEDE2\n");
 		return 0;
 	}
 	
