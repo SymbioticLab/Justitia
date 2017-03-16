@@ -435,13 +435,13 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev,
 	memset(ctx->scnt, 0, user_parm->numofqps * sizeof (int));
 	memset(ctx->ccnt, 0, user_parm->numofqps * sizeof (int));
 	
-	ctx->buf = memalign(page_size, size * user_parm->numofqps  );
+	ctx->buf = memalign(page_size, size * 2 * user_parm->numofqps  );
 	if (!ctx->buf) {
 		fprintf(stderr, "Couldn't allocate work buf.\n");
 		return NULL;
 	}
 
-	memset(ctx->buf, 0, size * user_parm->numofqps);
+	memset(ctx->buf, 0, size * 2 * user_parm->numofqps);
 
 	ctx->context = ibv_open_device(ib_dev);
 	if (!ctx->context) {
@@ -478,7 +478,7 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev,
 	/* We dont really want IBV_ACCESS_LOCAL_WRITE, but IB spec says:
 	 * The Consumer is not allowed to assign Remote Write or Remote Atomic to
 	 * a Memory Region that has not been assigned Local Write. */
-	ctx->mr = ibv_reg_mr(ctx->pd, ctx->buf, size * user_parm->numofqps,
+	ctx->mr = ibv_reg_mr(ctx->pd, ctx->buf, size * 2 * user_parm->numofqps,
 			     IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_READ);
 	if (!ctx->mr) {
 		fprintf(stderr, "Couldn't allocate MR\n");

@@ -423,19 +423,19 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev,
 	ctx->rx_depth = rx_depth + tx_depth;
 	/* in case of UD need space for the GRH */
 	if (user_parm->connection_type==UD) {
-		ctx->buf = memalign(page_size, ( size + 40 ));
+		ctx->buf = memalign(page_size, ( size + 40 ) * 2);
 		if (!ctx->buf) {
 			fprintf(stderr, "Couldn't allocate work buf.\n");
 			return NULL;
 		}
-		memset(ctx->buf, 0, ( size + 40 ));
+		memset(ctx->buf, 0, ( size + 40 ) * 2);
 	} else {
-		ctx->buf = memalign(page_size, size);
+		ctx->buf = memalign(page_size, size * 2);
 		if (!ctx->buf) {
 			fprintf(stderr, "Couldn't allocate work buf.\n");
 			return NULL;
 		}
-		memset(ctx->buf, 0, size);
+		memset(ctx->buf, 0, size * 2);
 	}
 
 
@@ -474,14 +474,14 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev,
 	 * The Consumer is not allowed to assign Remote Write or Remote Atomic to
 	 * a Memory Region that has not been assigned Local Write. */
 	if (user_parm->connection_type==UD) {
-		ctx->mr = ibv_reg_mr(ctx->pd, ctx->buf, (size + 40 ),
+		ctx->mr = ibv_reg_mr(ctx->pd, ctx->buf, (size + 40 ) * 2,
 				     IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_LOCAL_WRITE);
 		if (!ctx->mr) {
 			fprintf(stderr, "Couldn't allocate MR\n");
 			return NULL;
 		}
 	} else {
-		ctx->mr = ibv_reg_mr(ctx->pd, ctx->buf, size,
+		ctx->mr = ibv_reg_mr(ctx->pd, ctx->buf, size * 2,
 				     IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_LOCAL_WRITE);
 		if (!ctx->mr) {
 			fprintf(stderr, "Couldn't allocate MR\n");
