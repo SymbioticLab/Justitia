@@ -48,9 +48,13 @@ int main(int argc, const char * argv[]) {
     cout << "median latency: " << median_lat << endl;
     cout << "total sample points: " << latency.size() << endl;
     // find 99th percentile
-    int n99 = latency.size() * 0.9999 - 1;
+    unsigned int n99 = latency.size() * 0.99 - 1;
     cout << "99th index: " << n99 << endl;
-    int p99 = latency[n99];
+    unsigned int p99 = latency[n99];
     cout << "99th percentile latency: " << p99 << endl;
+    unsigned int n9999 = latency.size() * 0.9999 - 1;
+    cout << "9999th index: " << n9999 << endl;
+    unsigned int p9999 = latency[n9999];
+    cout << "99.99th percentile latency: " << p9999 << endl;
     return 0;
 }

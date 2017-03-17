@@ -60,7 +60,7 @@
 #define PINGPONG_RDMA_WRID	3
 #define VERSION 2.0
 #define ALL 1
-#define MAX_INLINE 1200
+#define MAX_INLINE 400 
 #define RC 0
 #define UC 1
 
