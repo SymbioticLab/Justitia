@@ -786,6 +786,7 @@ int run_iter(struct pingpong_context *ctx, struct user_parameters *user_param,
 	} else {
 		if (Optype == 0 || Optype == 3) {
 		  ctx->wr.send_flags = IBV_SEND_SIGNALED | IBV_SEND_INLINE;
+		  //ctx->wr.send_flags = IBV_SEND_SIGNALED;
 		} else if (Optype == 1 || Optype == 2) {
 	 	  ctx->wr.send_flags = IBV_SEND_SIGNALED;
 		} else {
