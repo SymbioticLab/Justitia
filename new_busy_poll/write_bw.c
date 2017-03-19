@@ -945,27 +945,34 @@ int run_iter(struct pingpong_context *ctx, struct user_parameters *user_param,
 			return 12;
 		}
 	} else { // client
+		int index = 0;
+	        ctx->wr.wr.rdma.remote_addr = rem_dest[index]->vaddr;
+	        ctx->wr.wr.rdma.rkey = rem_dest[index]->rkey;
+	        qp = ctx->qp[index];
+	        ctx->wr.wr_id      = index ;
 
 		while (totccnt < (user_param->iters * user_param->numofqps)) {
 
 		//while (totscnt < (user_param->iters * user_param->numofqps)  || totccnt < (user_param->iters * user_param->numofqps) ) {
 		  //int CNT = 0;
 		  // main loop to run over all the qps and post each time n messages
-		  for (index =0 ; index < user_param->numofqps ; index++) {
+		  //for (index =0 ; index < user_param->numofqps ; index++) {
+		/*
 	        ctx->wr.wr.rdma.remote_addr = rem_dest[index]->vaddr;
 	        ctx->wr.wr.rdma.rkey = rem_dest[index]->rkey;
 	        qp = ctx->qp[index];
 	        ctx->wr.wr_id      = index ;
+		*/
 		    tposted[totscnt] = get_cycles();
 		    if (ibv_post_send(qp, &ctx->wr, &bad_wr)) {
 	            fprintf(stderr, "Couldn't post send: qp index = %d qp scnt=%d total scnt %d\n",
 	                    index,ctx->scnt[index],totscnt);
 	            return 1;
 		    } 
-		    ctx->scnt[index]= ctx->scnt[index]+1;
+		    //ctx->scnt[index]= ctx->scnt[index]+1;
 		    ++totscnt;
 		    //printf("<1>totscnt: %d, totccnt: %d\n", totscnt, totccnt);
-		  }
+		  //}
 		  //printf("CNT: %d\n", CNT);
 		  // finished posting now polling
 	      //int ne;
