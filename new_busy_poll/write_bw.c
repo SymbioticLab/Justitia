@@ -60,7 +60,7 @@
 #define PINGPONG_RDMA_WRID	3
 #define VERSION 2.0
 #define ALL 1
-#define MAX_INLINE 400 
+#define MAX_INLINE 928 
 #define RC 0
 #define UC 1
 
@@ -1010,7 +1010,7 @@ int run_iter(struct pingpong_context *ctx, struct user_parameters *user_param,
 	        return 1;
 	      }
 	      //here the id is the index to the qp num
-	      ctx->ccnt[(int)wc.wr_id] = ctx->ccnt[(int)wc.wr_id]+1;
+	      //ctx->ccnt[(int)wc.wr_id] = ctx->ccnt[(int)wc.wr_id]+1;
 	      totccnt += 1;
 		  //printf("<2>totscnt: %d, totccnt: %d\n", totscnt, totccnt);
 		}
