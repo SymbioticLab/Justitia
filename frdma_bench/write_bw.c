@@ -702,10 +702,10 @@ static void print_report(long iters, long size, int duplex,
 	//printf("From print_report: iters = %d\n", iters);
 	double cycles_to_units;
 	unsigned long tsize;	/* Transferred size, in megabytes */
-	long i, j;
+	long i;
 	int opt_posted = 0, opt_completed = 0;
 	cycles_t opt_delta;
-	cycles_t t;
+	//cycles_t t;
 
 
 	opt_delta = tcompleted[opt_posted] - tposted[opt_completed];
@@ -742,7 +742,7 @@ static void print_report(long iters, long size, int duplex,
 	for (i = 0; i < iters * user_param->numofqps; ++i) {
 		curr_time_us = (double)(tcompleted[i] - START_cycle) / cpu_mhz;
 		lat_us = (double)(tcompleted[i] - tposted[i]) / cpu_mhz;
-		fprintf(f, "%d\t\t%.2f\t\t%.2f\n", i + 1, curr_time_us, lat_us);
+		fprintf(f, "%ld\t\t%.2f\t\t%.2f\n", i + 1, curr_time_us, lat_us);
 	}
 	fclose(f);
 }
@@ -752,7 +752,7 @@ int run_iter(struct pingpong_context *ctx, struct user_parameters *user_param,
 	//printf("BOTH entered?\n");
     struct ibv_qp           *qp;
     long                      totscnt, totccnt ;
-    int                      index ,warmindex;
+    int                      index;//warmindex;
     int                      inline_size;
     struct ibv_send_wr *bad_wr;
     struct ibv_wc wc;
@@ -1402,7 +1402,6 @@ int main(int argc, char *argv[])
 	printf("Optype: %d\n", Optype);
 	printf("Event: %d\n", user_param.use_event);
 	if ((Optype == 0 || Optype == 1) && !user_param.servername && !duplex) {
-		printf("**DEDE1\n");
 		rem_dest[0] = pp_server_exch_dest(sockfd, &my_dest[0],  &user_param);
 		if (write(sockfd, "done", sizeof "done") != sizeof "done"){
 			perror("server write");
@@ -1410,7 +1409,6 @@ int main(int argc, char *argv[])
 			return 1;
 		}
 		close(sockfd);
-		printf("**DEDE2\n");
 		return 0;
 	}
 	
