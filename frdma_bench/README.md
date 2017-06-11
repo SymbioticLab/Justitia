@@ -45,5 +45,7 @@ After the output is dumped, look into out_WRITE_1G_vs_WRITE_1M_A.txt and out_WRI
 
 For example, in out_WRITE_1G_vs_WRITE_1M_A.txt, I find it finished sending all data at 283344584 micro seconds. Then I go to out_WRITE_1G_vs_WRITE_1M_B.txt, search for the nearest timestamp and get 283344457, and figure out that the corresponding task # is 727326 (out of 1000000). 
 Since the amount of the data transfer is large, the time difference in register the memory region for RDMA won't matter. To calculate bandwidth (in unit of Gbps(Gigabit per second))for each flow:
-Flow A: 1e12 / 1e9 * 8  / (283344584 / 1e6) = 28.234 Gbps.
-Flow B: 1e12 / 1e9 * (727326 / 1000000) * 8 / ( 283344457 / 1e6) = 20.535 Gbps.
+```
+Flow A: 1e12 / 1e9 * 8  / (283344584 / 1e6) = 28.234 Gbps
+Flow B: 1e12 / 1e9 * (727326 / 1000000) * 8 / ( 283344457 / 1e6) = 20.535 Gbps
+```
