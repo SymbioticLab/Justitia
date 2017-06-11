@@ -25,17 +25,23 @@ Now let's move onto how to run experiments.
 For example, to compare 2 elephant flows with both using event-triggered polling:
 
 On the receiver node:
+```bash
 ./write_bw -F -e -s 1000000000 -n 1000 -O 0
 ./write_bw -F -e -s 1000000 -n 1000000 -O 0 -p 8888
+```
 On the sender node:
+```bash
 ./write_bw [IP of receiver] -F -s 1000000000 -n 1000 -e -O 0 -o out_WRITE_1G_vs_WRITE_1M_A.txt > result_WRITE_1G_vs_WRITE_1M_A.txt
 ./write_bw [IP of receiver] -F -s 1000000 -n 1000000 -e -O 0 -p 8888 -o out_WRITE_1G_vs_WRITE_1M_B.txt > result_WRITE_1G_vs_WRITE_1M_B.txt
+```
 
 Since we are running two RDMA instances at the same time, we need a way to synchronize them. There are multiple ways to do it. I use "at" command with scripts. 
 For the receiver, once you type in the command, it will always wait for the sender(client). So start the server ahead of time, and then use "at" on the client side to run the prepared command inside a script at a specified future time.
+```bash
 sudo apt-get install at;
 at XX:XX -f run1.sh
 at XX:XX -f run2.sh
+```
 XX:XX is the time you want the script to run. Always use "date" to pick a time, since the time in the machine is not always the time shown on your local clock
 Note when using "at", you have to dump useful output to a file otherwise you won't see anything, which we've already done in the -o flag.
 
