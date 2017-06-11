@@ -1,14 +1,10 @@
 About the benchmark
----
+-----------
+
 This benchmark is modified from the Mellanox pertest. The major change is in the way the sender posts work requests -- by default the next work request is posted only after the work completion of the previous work request is polled from the completion queue. CPU cycles since the program started is dumped after each work request is posted and completed, and computed after the data transfer ends, along with the difference of the two for latency logging. The way the RDMA connection is built between the client and the server is left unchanged.
 
 Running the benchmark
----
-
-In this benchmark, we compare the nodes share the same link, and we make them perform RDMA operation at the same time. Thus we need 2 nodes on cloud lab. First I would create another instance of the same binary. Do the same thing for both nodes.
-# git clone ...
-cd rdma_fairness/new_busy_poll; make
-cd ~; cp -r rdma_fairness/ rdma_fairness_inst2
+-----------
 
 Here is a short list of the command line arguments that are most important. You'll find most of them similar to the original perftest if you are familiar with the tool. All 4 RDMA operations are combined into one model. 
 
@@ -35,7 +31,7 @@ On the sender node:
 ./write_bw [IP of receiver] -F -s 1000000 -n 1000000 -e -O 0 -p 8888 -o out_WRITE_1G_vs_WRITE_1M_B.txt > result_WRITE_1G_vs_WRITE_1M_B.txt
 ```
 
-Since we are running two RDMA instances at the same time, we need a way to synchronize them. There are multiple ways to do it. I use "at" command with scripts. 
+Since we need to start two RDMA instances at the same time, we need a way to synchronize them. There are multiple ways to do it. I use "at" command with scripts. 
 For the receiver, once you type in the command, it will always wait for the sender(client). So start the server ahead of time, and then use "at" on the client side to run the prepared command inside a script at a specified future time.
 ```bash
 sudo apt-get install at;
