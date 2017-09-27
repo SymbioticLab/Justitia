@@ -70,6 +70,7 @@ struct user_parameters {
 	int mtu;
 	int all; /* run all msg size */
 	long iters;
+	int wr_num;
 	int tx_depth;
 	int use_event;
     int numofqps;
@@ -497,7 +498,13 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev,
 		memset(&initattr, 0, sizeof(struct ibv_qp_init_attr));
 		initattr.send_cq = ctx->cq;
 		initattr.recv_cq = ctx->cq;
-		initattr.cap.max_send_wr  = tx_depth;
+		//initattr.cap.max_send_wr  = tx_depth;
+		//// Note the tx_depth later
+		if (user_parm->wr_num > 1) {
+			initattr.cap.max_send_wr  = user_parm->wr_num;
+		} else {
+			initattr.cap.max_send_wr  = tx_depth;
+		}
 		/* Work around:  driver doesnt support
 		 * recv_wr = 0 */
 		initattr.cap.max_recv_wr  = 1;
@@ -685,6 +692,7 @@ static void usage(const char *argv0)
 	printf("  -a, --all                 Run sizes from 2 till 2^23\n");
 	printf("  -t, --tx-depth=<dep>      size of tx queue (default 100)\n");
 	printf("  -n, --iters=<iters>       number of exchanges (at least 2, default 5000)\n");
+	printf("  -w, --wr-num=<wr_num>     number of work requests in the linked list (at least 1, default 1)\n");
 	printf("  -I, --inline_size=<size>  max size of message to be sent in inline mode (default 400)\n");
 	printf("  -u, --qp-timeout=<timeout> QP timeout, timeout value is 4 usec * 2 ^(timeout), default 14\n");
 	printf("  -S, --sl=<sl>             SL (default 0)\n");
@@ -758,7 +766,12 @@ int run_iter(struct pingpong_context *ctx, struct user_parameters *user_param,
     struct ibv_wc wc;
     int ne;
     ctx->list.addr = (uintptr_t) ctx->buf;
-	ctx->list.length = size;
+	//ctx->list.length = size;
+	if (user_param->wr_num > 1) {
+		ctx->list.length = size / user_param->wr_num;
+	} else {
+		ctx->list.length = size;
+	}
 	ctx->list.lkey = ctx->mr->lkey;
 	
 	
@@ -945,11 +958,80 @@ int run_iter(struct pingpong_context *ctx, struct user_parameters *user_param,
 			return 12;
 		}
 	} else { // client
-		int index = 0;
-	        ctx->wr.wr.rdma.remote_addr = rem_dest[index]->vaddr;
-	        ctx->wr.wr.rdma.rkey = rem_dest[index]->rkey;
-	        qp = ctx->qp[index];
-	        ctx->wr.wr_id      = index ;
+        ctx->wr.wr.rdma.remote_addr = rem_dest[index]->vaddr;
+        ctx->wr.wr.rdma.rkey = rem_dest[index]->rkey;
+        qp = ctx->qp[index];
+        ctx->wr.wr_id      = index ;
+
+        struct ibv_send_wr *wr_head = NULL;
+		struct ibv_send_wr *current_wr = NULL, *new_wr = NULL;
+       	// if the user specifies wr_num 
+       	int NUM_WR = user_param->wr_num;
+		if (NUM_WR > 1) {
+			int i = 0;
+			int num_unsignaled = NUM_WR - 1;
+			//printf("num_unsignaled: %d\n", num_unsignaled);
+			for (i = 0; i < num_unsignaled; i++) {
+				new_wr = (struct ibv_send_wr *)malloc(sizeof(struct ibv_send_wr));
+		        memset(new_wr, 0, sizeof(struct ibv_send_wr));
+		        
+		        new_wr->wr_id = index;
+		        new_wr->opcode = ctx->wr.opcode;
+		    	new_wr->sg_list = &ctx->list;
+		    	//printf("list.length = %d\n", ctx->list.length);
+		        new_wr->num_sge = 1;
+		        new_wr->send_flags = 0; //covered by memset though
+		        //new_wr->wr.rdma.remote_addr = (uintptr_t)(conn->peer_mr.addr + RDMA_BUFFER_SIZE/NUM_WR * i);
+		        //new_wr->wr.rdma.rkey = conn->peer_mr.rkey;
+		        new_wr->wr.rdma.remote_addr = rem_dest[index]->vaddr;
+		        new_wr->wr.rdma.rkey = rem_dest[index]->rkey;
+		        //sge.addr = (uintptr_t)(conn->rdma_local_region + RDMA_BUFFER_SIZE/NUM_WR * i);
+		        //sge.length = RDMA_BUFFER_SIZE/NUM_WR;
+		        //sge.lkey = conn->rdma_local_mr->lkey;
+		        
+				//printf("0x%" PRIXPTR "\n", sge.addr);
+		        
+		        if (wr_head == NULL) {
+		          wr_head = new_wr;
+		          current_wr = wr_head;
+		        }
+		        else {
+		          current_wr->next = new_wr;
+		          current_wr = current_wr->next;
+		        }
+
+			}	
+
+			// Last one with flag SIGNALED
+		    new_wr = (struct ibv_send_wr *)malloc(sizeof(struct ibv_send_wr));
+		    memset(new_wr, 0, sizeof(struct ibv_send_wr));
+		    
+		    new_wr->wr_id = index;
+		    new_wr->opcode = ctx->wr.opcode;
+		    new_wr->sg_list = &ctx->list;
+		    new_wr->num_sge = 1;
+		    new_wr->send_flags = IBV_SEND_SIGNALED;
+		    //new_wr->wr.rdma.remote_addr = (uintptr_t)(conn->peer_mr.addr + RDMA_BUFFER_SIZE/NUM_WR * i);
+		    //new_wr->wr.rdma.rkey = conn->peer_mr.rkey;
+	        new_wr->wr.rdma.remote_addr = rem_dest[index]->vaddr;
+	        new_wr->wr.rdma.rkey = rem_dest[index]->rkey;
+		    
+		    //sge.addr = (uintptr_t)(conn->rdma_local_region + RDMA_BUFFER_SIZE/NUM_WR * i);
+		    //sge.length = RDMA_BUFFER_SIZE/NUM_WR;
+		    //sge.lkey = conn->rdma_local_mr->lkey;
+		    
+		//    printf("0x%" PRIXPTR "\n", sge.addr);
+		    
+		    if (i == 0) {
+		      wr_head = new_wr;
+		    }
+		    else {
+		      current_wr->next = new_wr;
+		      current_wr = current_wr->next;
+		      current_wr->next = NULL;
+		    }
+
+		}
 
 		while (totccnt < (user_param->iters * user_param->numofqps)) {
 
@@ -964,11 +1046,20 @@ int run_iter(struct pingpong_context *ctx, struct user_parameters *user_param,
 	        ctx->wr.wr_id      = index ;
 		*/
 		    tposted[totscnt] = get_cycles();
-		    if (ibv_post_send(qp, &ctx->wr, &bad_wr)) {
-	            fprintf(stderr, "Couldn't post send: qp index = %d qp scnt=%d total scnt %d\n",
-	                    index,ctx->scnt[index],totscnt);
-	            return 1;
-		    } 
+		    // Adding wr_num check for a linked list of work requests
+		    if (user_param->wr_num == 1) {
+			    if (ibv_post_send(qp, &ctx->wr, &bad_wr)) {
+		            fprintf(stderr, "Couldn't post send: qp index = %d qp scnt=%d total scnt %d\n",
+		                    index,ctx->scnt[index],totscnt);
+		            return 1;
+			    } 
+		    } else {
+			    if (ibv_post_send(qp, wr_head, &bad_wr)) {
+		            fprintf(stderr, "Couldn't post send: qp index = %d qp scnt=%d total scnt %d\n",
+		                    index,ctx->scnt[index],totscnt);
+		            return 1;
+			    } 
+		    }
 		    //ctx->scnt[index]= ctx->scnt[index]+1;
 		    ++totscnt;
 		    //printf("<1>totscnt: %d, totccnt: %d\n", totscnt, totccnt);
@@ -1049,6 +1140,7 @@ int main(int argc, char *argv[])
 	memset(&user_param, 0, sizeof(struct user_parameters));
 	user_param.mtu = 0;
 	user_param.iters = 5000;
+	user_param.wr_num = 1;
 	user_param.tx_depth = 100;
 	user_param.servername = NULL;
 	user_param.use_event = 0;
@@ -1071,6 +1163,7 @@ int main(int argc, char *argv[])
 			{ .name = "connection",     .has_arg = 1, .val = 'c' },
 			{ .name = "size",           .has_arg = 1, .val = 's' },
 			{ .name = "iters",          .has_arg = 1, .val = 'n' },
+			{ .name = "wr-num",         .has_arg = 1, .val = 'w' },
 			{ .name = "tx-depth",       .has_arg = 1, .val = 't' },
 			{ .name = "inline_size",    .has_arg = 1, .val = 'I' },
 			{ .name = "qp-timeout",     .has_arg = 1, .val = 'u' },
@@ -1087,7 +1180,7 @@ int main(int argc, char *argv[])
 			{ 0 }
 		};
 
-		c = getopt_long(argc, argv, "p:ed:i:m:q:g:c:s:n:t:I:u:S:x:baVNFo:O:", long_options, NULL);
+		c = getopt_long(argc, argv, "p:ed:i:m:q:g:c:s:n:w:t:I:u:S:x:baVNFo:O:", long_options, NULL);
 		if (c == -1)
 			break;
 
@@ -1167,6 +1260,15 @@ int main(int argc, char *argv[])
 
 			break;
 
+		case 'w':
+			user_param.wr_num = strtol(optarg, NULL, 0);
+			if (user_param.wr_num < 1) {
+				usage(argv[0]);
+				return 1;
+			}
+
+			break;
+
 		case 'b':
 			duplex = 1;
 			break;
@@ -1211,6 +1313,10 @@ int main(int argc, char *argv[])
 	}
 
 	noPeak = 1;  // always turn off find peak
+
+	if (size < 1000000 && user_param.wr_num > 1) {
+		printf("Message size needs to be at least 1,000,000 Byte to split into a link list of work requests.\n");
+	}
 
 	if (optind == argc - 1)
 		user_param.servername = strdupa(argv[optind]);
