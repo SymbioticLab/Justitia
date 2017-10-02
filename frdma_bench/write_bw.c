@@ -1319,6 +1319,7 @@ int main(int argc, char *argv[])
 
 	if (size < 1000000 && user_param.wr_num > 1) {
 		printf("Message size needs to be at least 1,000,000 Byte to split into a link list of work requests.\n");
+		return 1;
 	}
 
 	if (optind == argc - 1)
