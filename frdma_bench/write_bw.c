@@ -60,7 +60,7 @@
 #define PINGPONG_RDMA_WRID	3
 #define VERSION 2.0
 #define ALL 1
-#define MAX_INLINE 928 
+#define MAX_INLINE 400
 #define RC 0
 #define UC 1
 
@@ -503,7 +503,8 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev,
 		if (user_parm->wr_num > 1) {
 			initattr.cap.max_send_wr  = user_parm->wr_num;
 		} else {
-			initattr.cap.max_send_wr  = tx_depth;
+			//initattr.cap.max_send_wr  = tx_depth;
+			initattr.cap.max_send_wr  = 10*tx_depth;
 		}
 		/* Work around:  driver doesnt support
 		 * recv_wr = 0 */
@@ -1051,6 +1052,7 @@ int run_iter(struct pingpong_context *ctx, struct user_parameters *user_param,
 			    if (ibv_post_send(qp, &ctx->wr, &bad_wr)) {
 		            fprintf(stderr, "Couldn't post send: qp index = %d qp scnt=%d total scnt %d\n",
 		                    index,ctx->scnt[index],totscnt);
+					perror("ibv_post_send error: ");
 		            return 1;
 			    } 
 		    } else {
@@ -1096,6 +1098,7 @@ int run_iter(struct pingpong_context *ctx, struct user_parameters *user_param,
 		        user_param->servername ? "client" : "server");
 	        fprintf(stderr, "Failed status %d: wr_id %d\n",
 		        wc.status, (int) wc.wr_id);
+			printf("error wc status: %s\n", ibv_wc_status_str(wc.status));
 	        fprintf(stderr, "qp index %d ,qp scnt=%d, qp ccnt=%d total scnt %d total ccnt %d\n",
 		        (int)wc.wr_id, ctx->scnt[(int)wc.wr_id], ctx->ccnt[(int)wc.wr_id], totscnt, totccnt);
 	        return 1;
