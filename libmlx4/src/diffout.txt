@@ -1,0 +1,53 @@
+1062a1063,1065
+> 	printf("sq.max_gs: %d; qp->sq.max_post: %d", qp->sq.max_gs, qp->sq.max_post);
+> 
+> 		
+1075c1078
+< 		//int is_split = 0;
+---
+> 		int is_split = 0;
+1081a1085,1094
+> 
+> 		unsigned cur = wq->head - wq->tail;
+> 		//printf("wq_overflow:\n");
+> 		//printf("wq->head: %u; wq->tail: %u", wq->head, wq->tail);
+> 		//printf("cur = %u\n", cur);
+> 		if (likely(cur + nreq + 1 < wq->max_post)) {
+> 			//split
+> 		}
+> 
+> 			
+1085c1098
+< 			//is_split = 1;
+---
+> 			is_split = 1;
+1110,1112d1122
+< 			//// increment nreq
+< 			++nreq;
+< 			////
+1166c1176
+< 			if (current_length > SPLIT_CHUNK_SIZE) {
+---
+> 			if (is_split && current_length > SPLIT_CHUNK_SIZE) {
+1176c1186
+< 			} else {
+---
+> 			} else {	//// not splitting due to max_send_wr or there is no more chunk to send
+1179,1180d1188
+< 
+< 			
+1183d1190
+< 
+1185c1192,1195
+< 			
+---
+> 			////
+> 
+> 			//// increment nreq
+> 			++nreq;
+1189c1199
+< 		if (orig_raddr != 0) {
+---
+> 		if (is_split) {
+1769d1778
+< 
