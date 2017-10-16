@@ -578,6 +578,9 @@ struct ibv_mr *mlx4_reg_mr(struct ibv_pd *pd, void *addr,
 	in.pd = pd;
 	in.addr = addr;
 	in.length = length;
+	////
+	//in.length = length + sizeof(struct two_sided_header);
+	////
 	in.exp_access = access;
 	in.comp_mask = 0;
 

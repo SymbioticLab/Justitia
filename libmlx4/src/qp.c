@@ -84,6 +84,9 @@ static const uint32_t mlx4_ib_opcode[] = {
 	[IBV_WR_SEND_WITH_IMM]		= MLX4_OPCODE_SEND_IMM,
 	[IBV_WR_RDMA_WRITE]		= MLX4_OPCODE_RDMA_WRITE,
 	[IBV_WR_RDMA_WRITE_WITH_IMM]	= MLX4_OPCODE_RDMA_WRITE_IMM,
+	////
+	//[IBV_WR_RDMA_WRITE_WITH_IMM]	= 0x1f,
+	////
 	[IBV_WR_RDMA_READ]		= MLX4_OPCODE_RDMA_READ,
 	[IBV_WR_ATOMIC_CMP_AND_SWP]	= MLX4_OPCODE_ATOMIC_CS,
 	[IBV_WR_ATOMIC_FETCH_AND_ADD]	= MLX4_OPCODE_ATOMIC_FA,
@@ -626,6 +629,9 @@ static void set_ctrl_seg(struct mlx4_wqe_ctrl_seg *ctrl, struct ibv_send_wr *wr,
 	 */
 	wmb();
 	ctrl->owner_opcode = htonl(wr_op) | owner_bit;
+	//printf("ctrl->owner_opcode: %u\n", ctrl->owner_opcode);
+	//printf("ntohl(ctrl->owner_opcode): %u\n", ntohl(ctrl->owner_opcode));
+	//printf("wr_op: %u\n", wr_op);
 }
 
 static inline int set_data_inl_seg(struct mlx4_qp *qp, int num_sge, struct ibv_sge *sg_list,
@@ -1050,6 +1056,16 @@ void mlx4_update_post_send_one(struct mlx4_qp *qp)
 	}
 }
 
+//// ceil helper
+int ceil_helper(float num_chunks) {
+    int inum_chunks = (int)num_chunks;
+    if (num_chunks == (float)inum_chunks) {
+        return inum_chunks;
+    }
+    return inum_chunks + 1;
+}
+////
+
 int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 		     struct ibv_send_wr **bad_wr)
 {
@@ -1061,6 +1077,7 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 	int ret = 0;
 	int size = 0;
 	//printf("sq.max_gs: %d; qp->sq.max_post: %d\n", qp->sq.max_gs, qp->sq.max_post);
+	
 
 	mlx4_lock(&qp->sq.lock);
 
@@ -1074,33 +1091,56 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 		////
 		int is_completed = 0;	
 		int need_reset = 0;		//// as long as it is once split, this is set to 1.
-		int is_split = 0;
+		//int is_split = 0;
+		int num_chunks_to_send = 1;
 		int current_length = 0;
 		uint64_t orig_raddr = 0;
 		uint64_t orig_sge_addr = 0;
 		uint32_t orig_sge_length = 0;
 		int orig_send_flags = 0;
 		unsigned cur_sq_size;
-
+		//struct two_sided_header header;
+		//struct header_buffer header_buf;
 
 		cur_sq_size = (&qp->sq)->head - (&qp->sq)->tail;
-		//printf("wq->head: %u; wq->tail: %u", wq->head, wq->tail);
 		//printf("cur_sq_size = %u\n", cur_sq_size);
-		if (likely(cur_sq_size + nreq + 1 < (&qp->sq)->max_post)) {
+		//printf("max_post = %u\n", (&qp->sq)->max_post);
+		if (likely(cur_sq_size + 1 < (&qp->sq)->max_post)) {
+		//if (likely(cur_sq_size + nreq + 1 < (&qp->sq)->max_post)) {
 			//printf("DDBUG: cur=%d\n");
 			if (wr->sg_list->length > SPLIT_CHUNK_SIZE) {
 				//// if there is a need to split
 				//printf("[[[NEED TO SPLIT]]]\n");
-				is_split = 1;
+				//is_split = 1;
 				need_reset = 1;
+
 				current_length = wr->sg_list->length;
 				orig_raddr = wr->wr.rdma.remote_addr;
 				orig_sge_addr = wr->sg_list->addr;
 				orig_sge_length = wr->sg_list->length;
 				orig_send_flags = wr->send_flags;
+
+				num_chunks_to_send = ceil_helper((float)orig_sge_length / (float)SPLIT_CHUNK_SIZE);
+				if (num_chunks_to_send > (&qp->sq)->max_post - cur_sq_size) {
+					num_chunks_to_send = (&qp->sq)->max_post - cur_sq_size;
+				}
+				printf("num_chunks_to_send: %d\n", num_chunks_to_send);
+
 				wr->sg_list->length = SPLIT_CHUNK_SIZE;
 				wr->send_flags = wr->send_flags & (~(IBV_SEND_SIGNALED));
 				//printf("IBV_SEND_SIGNALED: %d\n", IBV_SEND_SIGNALED);
+
+				/*
+				if (wr->opcode == IBV_WR_RDMA_WRITE_WITH_IMM || 
+					wr->opcode == IBV_WR_SEND ||
+					wr->opcode == IBV_WR_SEND_WITH_IMM) {
+					printf("Handling two-sided operation spliting\n");
+					memcpy(&header_buf, wr->sg_list->addr + SPLIT_CHUNK_SIZE, sizeof(two_sided_header));
+					two_sided_header.num_chunks_to_send = num_chunks_to_send;
+					memcpy(wr->sg_list->addr + SPLIT_CHUNK_SIZE, &two_sided_header, sizeof(two_sided_header));
+				}
+				*/
+
 			}
 
 		}
@@ -1108,6 +1148,7 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 		////
 		while (is_completed == 0) {
 			////
+			//printf("num_chunks_to_send: %d\n", num_chunks_to_send);
 			//printf("message_size = %d\n", wr->sg_list->length);
 			//printf("current_length = %d\n", current_length);
 			//printf("raddr:%" PRIu64 "\n", wr->wr.rdma.remote_addr);
@@ -1138,6 +1179,7 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 			}
 
 			if (unlikely(wr->opcode >= sizeof(mlx4_ib_opcode) / sizeof(mlx4_ib_opcode[0]))) {
+				printf("DEBUG POST SEND: opcode error \n");
 				ret = EINVAL;
 				errno = ret;
 				*bad_wr = wr;
@@ -1173,8 +1215,25 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 
 			//// increment nreq
 			++nreq;
-			////
+			//// cleaner logic
+			--num_chunks_to_send;
+			current_length -= SPLIT_CHUNK_SIZE;
+			if (num_chunks_to_send == 0) {
+				is_completed = 1;
+			} else if (num_chunks_to_send == 1) {
+				wr->wr.rdma.remote_addr += SPLIT_CHUNK_SIZE;
+				wr->sg_list->addr += SPLIT_CHUNK_SIZE;
+				wr->sg_list->length = current_length;
+				if ((orig_send_flags & IBV_SEND_SIGNALED) != 0) {	//// if original request is SIGNALED, set this flag for the last chunk
+					wr->send_flags = wr->send_flags | IBV_SEND_SIGNALED;
+				}
+			} else {
+				wr->wr.rdma.remote_addr += SPLIT_CHUNK_SIZE;
+				wr->sg_list->addr += SPLIT_CHUNK_SIZE;
+			}
+
 			//// update message length and raddr
+			/*
 			if (is_split && current_length > SPLIT_CHUNK_SIZE) {
 				current_length -= SPLIT_CHUNK_SIZE;
 				if (likely(cur_sq_size + nreq + 1 < (&qp->sq)->max_post)) {
@@ -1187,7 +1246,7 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 						}
 					}
 				} else {	//// if about to reach max_send_wr
-					printf("DDDEBUG: stop spliting due to insufficient sq empty slots.\n");
+					//printf("DDDEBUG: stop spliting due to insufficient sq empty slots.\n");
 					wr->sg_list->length = current_length;
 					if ((orig_send_flags & IBV_SEND_SIGNALED) != 0) {
 						wr->send_flags = wr->send_flags | IBV_SEND_SIGNALED;
@@ -1197,6 +1256,8 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 			} else {	//// not splitting due to max_send_wr or orig message < 1MB, or there is no more splitting chunk to send
 				is_completed = 1;
 			}
+			*/
+
 			//if (is_split && nreq > 0) {
 			//	mlx4_unlock(&qp->sq.lock2);
 			//}
@@ -1574,6 +1635,7 @@ out:
 int mlx4_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr,
 		   struct ibv_recv_wr **bad_wr)
 {
+	printf("DEBUG ENTER MLX4_POST_RECV\n");
 	struct mlx4_qp *qp = to_mqp(ibqp);
 	struct mlx4_wqe_data_seg *scat;
 	int ret = 0;
@@ -1605,13 +1667,19 @@ int mlx4_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr,
 
 		for (i = 0; i < wr->num_sge; ++i)
 			__set_data_seg(scat + i, wr->sg_list + i);
+		printf("DEBUG: POST_RECV: (ntohl)mlx4_wqe_data_seg[0].byte_count: %u\n", ntohl(scat[0].byte_count));
+		printf("DEBUG: POST_RECV: (ntohl)mlx4_wqe_data_seg[0].addr: %lu\n", ntohll(scat[0].byte_count));
+		printf("DEBUG: POST_RECV: wr->sg_list[0].length: %" PRIu32 "\n", wr->sg_list[0].length);
+		
 
 		if (likely(i < qp->rq.max_gs)) {
 			scat[i].byte_count = 0;
 			scat[i].lkey       = htonl(MLX4_INVALID_LKEY);
 			scat[i].addr       = 0;
 		}
+		//printf("DEBUG RECV: qp->max_inlr_sg: %d\n", qp->max_inlr_sg);
 		if (qp->max_inlr_sg) {
+			//printf("DEBUG RECV: indeed enter here\n");
 			rbuffs = qp->inlr_buff.buff[ind].sg_list;
 			qp->inlr_buff.buff[ind].list_len = wr->num_sge;
 			for (i = 0; i < wr->num_sge; ++i) {
@@ -1641,6 +1709,7 @@ out:
 
 	mlx4_unlock(&qp->rq.lock);
 
+	printf("DEBUG LEAVING MLX4_POST_RECV\n");
 	return ret;
 }
 

@@ -255,6 +255,16 @@ enum mlx4_res_domain_bf_type {
 
 };
 
+////
+struct two_sided_header {
+	uint32_t num_chunks_to_send;
+};
+
+struct header_buffer {
+	char data[sizeof(struct two_sided_header)];
+};
+////
+
 struct mlx4_xsrq_table {
 	struct {
 		struct mlx4_srq **table;
@@ -304,6 +314,11 @@ enum {
 	MLX4_OPCODE_RDMA_WRITE_IMM	= 0x09,
 	MLX4_OPCODE_SEND		= 0x0a,
 	MLX4_OPCODE_SEND_IMM		= 0x0b,
+	////
+	//MLX4_OPCODE_RDMA_WRITE_IMM_SPLIT = 0x0c,
+	//MLX4_OPCODE_SEND_SPLIT 		= 0x0d,
+	//MLX4_OPCODE_SEND_IMM_SPLIT  = 0x0e,
+	////
 	MLX4_OPCODE_LSO			= 0x0e,
 	MLX4_OPCODE_RDMA_READ		= 0x10,
 	MLX4_OPCODE_ATOMIC_CS		= 0x11,
@@ -325,6 +340,9 @@ enum {
 	MLX4_RECV_OPCODE_SEND		= 0x01,
 	MLX4_RECV_OPCODE_SEND_IMM	= 0x02,
 	MLX4_RECV_OPCODE_SEND_INVAL	= 0x03,
+	////
+	//MLX4_RECV_OPCODE_RDMA_WRITE_IMM_SPLIT	= 0x04,
+	////
 
 	MLX4_CQE_OPCODE_ERROR		= 0x1e,
 	MLX4_CQE_OPCODE_RESIZE		= 0x16,
@@ -508,11 +526,16 @@ struct mlx4_srq {
 	uint8_t				ext_srq;
 	struct ibv_srq_legacy *ibv_srq_legacy;
 };
+/*
+struct mlx4_wrid {
+	uint64_t		*wrid;
+	int				is_split;
+}
+*/
 
 struct mlx4_wq {
 	uint64_t		       *wrid;
 	struct mlx4_lock		lock;
-	struct mlx4_lock		lock2;
 	int				wqe_cnt;
 	int				max_post;
 	char				*buf;

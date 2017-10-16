@@ -228,6 +228,7 @@ static int mlx4_poll_one(struct mlx4_cq *cq,
 			 struct ibv_exp_wc *wc,
 			 uint32_t wc_size, int is_exp)
 {
+	//printf("DEBUG POLL_CQ: enter\n");
 	struct mlx4_wq *wq;
 	struct mlx4_cqe *cqe;
 	struct mlx4_srq *srq;
@@ -255,6 +256,7 @@ static int mlx4_poll_one(struct mlx4_cq *cq,
 
 	++cq->cons_index;
 
+	//printf("DEBUG POLL_CQ: ckpt1\n");
 	VALGRIND_MAKE_MEM_DEFINED(cqe, sizeof *cqe);
 
 	/*
@@ -263,12 +265,17 @@ static int mlx4_poll_one(struct mlx4_cq *cq,
 	 */
 	rmb();
 
+	//printf("DEBUG POLL_CQ: ckpt2\n");
 	qpn = ntohl(cqe->vlan_my_qpn) & MLX4_CQE_QPN_MASK;
 	wc->qp_num = qpn;
 
 	is_send  = cqe->owner_sr_opcode & MLX4_CQE_IS_SEND_MASK;
 
 	/* include checksum as work around for calc opcode */
+	//// Temporarily remove error checking for custmo opcode
+	//is_error = 0;
+	//printf("DEBUG POLL_CQ: setting is_error\n");
+	////
 	is_error = (cqe->owner_sr_opcode & MLX4_CQE_OPCODE_MASK) ==
 		MLX4_CQE_OPCODE_ERROR && (cqe->checksum & 0xff);
 
@@ -319,6 +326,7 @@ static int mlx4_poll_one(struct mlx4_cq *cq,
 		wq = &(*cur_qp)->rq;
 		wqe_index = wq->tail & (wq->wqe_cnt - 1);
 		wc->wr_id = wq->wrid[wqe_index];
+		//printf("DEBUG: CQ: enter here, wqe_index: %d; wc->wr_id: %lu\n", wqe_index, wc->wr_id);
 		++wq->tail;
 	}
 
@@ -347,10 +355,18 @@ static int mlx4_poll_one(struct mlx4_cq *cq,
 	}
 
 	if (is_send) {
+		//printf("DEBUG POLL CQ: entering is_send logic if check\n");
+		//printf("DEBUG POLL CQ: , and cqe->owner_sr_opcode = %u\n", cqe->owner_sr_opcode);
+		//printf("DEBUG POLL CQ: , and cqe->owner_sr_opcode & make = %u\n", cqe->owner_sr_opcode & MLX4_CQE_OPCODE_MASK);
 		switch (cqe->owner_sr_opcode & MLX4_CQE_OPCODE_MASK) {
 		case MLX4_OPCODE_CALC_RDMA_WRITE_IMM:
 		case MLX4_OPCODE_RDMA_WRITE_IMM:
 			wc_flags |= IBV_WC_WITH_IMM;
+		////
+		//case MLX4_OPCODE_RDMA_WRITE_IMM_SPLIT:
+		//	wc_flags |= IBV_WC_WITH_IMM;
+		//	printf("DEBUG POLL CQ: setting wc_flags here (SPLIT)\n");
+		////
 		case MLX4_OPCODE_RDMA_WRITE:
 			wc->exp_opcode    = IBV_EXP_WC_RDMA_WRITE;
 			break;
@@ -388,13 +404,16 @@ static int mlx4_poll_one(struct mlx4_cq *cq,
 			break;
 		default:
 			/* assume it's a send completion */
+			//printf("DEBUG POLL CQ: default, setting SEND\n");
 			wc->exp_opcode    = IBV_EXP_WC_SEND;
 			break;
 		}
 	} else {
 		wc->byte_len = ntohl(cqe->byte_cnt);
+		//printf("DEBUG: POLL CQ: wc->byte_len: %u\n", wc->byte_len);
 		if ((*cur_qp) && (*cur_qp)->max_inlr_sg &&
 		    (cqe->owner_sr_opcode & MLX4_CQE_INL_SCATTER_MASK)) {
+			//printf("DEBUG: POLL CQ: inline?\n");
 			rbuffs = (*cur_qp)->inlr_buff.buff[wqe_index].sg_list;
 			list_len = (*cur_qp)->inlr_buff.buff[wqe_index].list_len;
 			sbuff = mlx4_get_recv_wqe((*cur_qp), wqe_index);
@@ -412,11 +431,15 @@ static int mlx4_poll_one(struct mlx4_cq *cq,
 			}
 		}
 
+		//printf("DEBUG POLL CQ: cqe->owner_sr_opcode & mask = %u\n", cqe->owner_sr_opcode & MLX4_CQE_OPCODE_MASK);
+		//printf("DEBUG POLL CQ: cqe->owner_sr_opcode = %u\n", cqe->owner_sr_opcode);
 		switch (cqe->owner_sr_opcode & MLX4_CQE_OPCODE_MASK) {
 		case MLX4_RECV_OPCODE_RDMA_WRITE_IMM:
+			//printf("DEBUG POLL CQ: (WIMM)IBV_WC_WITH_IMM set to wc_flags\n");
 			wc->exp_opcode   = IBV_EXP_WC_RECV_RDMA_WITH_IMM;
 			wc_flags = IBV_WC_WITH_IMM;
 			wc->imm_data = cqe->immed_rss_invalid;
+			//printf("DEBUG POLL CQ: ntohl(cqe->immed_rss_invalid): %d\n", ntohl(cqe->immed_rss_invalid));
 			break;
 		case MLX4_RECV_OPCODE_SEND_INVAL:
 			((struct ibv_wc *)wc)->opcode   = IBV_WC_RECV;
@@ -426,12 +449,21 @@ static int mlx4_poll_one(struct mlx4_cq *cq,
 		case MLX4_RECV_OPCODE_SEND:
 			wc->exp_opcode   = IBV_EXP_WC_RECV;
 			wc_flags = 0;
+			////
+			//printf("DEBUG POLL CQ: ntohl(cqe->immed_rss_invalid): %d\n", ntohl(cqe->immed_rss_invalid));
+			////
 			break;
 		case MLX4_RECV_OPCODE_SEND_IMM:
+			//printf("DEBUG POLL CQ: (SIMM)IBV_WC_WITH_IMM set to wc_flags\n");
 			wc->exp_opcode   = IBV_EXP_WC_RECV;
 			wc_flags = IBV_WC_WITH_IMM;
 			wc->imm_data = cqe->immed_rss_invalid;
 			break;
+		////
+		//case MLX4_RECV_OPCODE_RDMA_WRITE_IMM_SPLIT:
+		//	printf("DETECT SPLIT\n");
+		//	break;
+		////
 		}
 
 		if (!timestamp_en) {

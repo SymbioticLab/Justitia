@@ -434,8 +434,6 @@ struct ibv_qp *mlx4_exp_create_qp(struct ibv_context *context,
 
 	if (mlx4_lock_init(&qp->sq.lock, thread_safe, mlx4_get_locktype()))
 		goto err_free;
-	if (mlx4_lock_init(&qp->sq.lock2, thread_safe, mlx4_get_locktype()))
-		goto err_free;
 	if (mlx4_lock_init(&qp->rq.lock, thread_safe, mlx4_get_locktype()))
 		goto sq_lock_destroy;
 
