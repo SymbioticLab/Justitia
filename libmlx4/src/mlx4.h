@@ -49,6 +49,13 @@
 #define MLX4_MMAP_GET_CONTIGUOUS_PAGES_CMD 2
 #define MLX4_IB_MMAP_GET_HW_CLOCK 3
 
+////
+#include <inttypes.h>
+#define SPLIT_CHUNK_SIZE	1000000
+//TODO: later change cq size to 1
+#define CUSTOM_CQ_SIZE	5
+////
+
 /* Use EXP mmap commands until it is pushed to upstream */
 #define MLX4_IB_EXP_MMAP_EXT_UAR_PAGE 0xFE
 #define MLX4_IB_EXP_MMAP_EXT_BLUE_FLAME_PAGE 0xFF
@@ -181,6 +188,18 @@ static inline uint32_t mlx4_transpose(uint32_t val, uint32_t from, uint32_t to)
 	return MLX4_TRANSPOSE(val, from, to);
 }
 
+//// enums for two-sided splitting
+enum FC_message_type {
+	ACK,
+	INFO	// inform num_chunks_split
+};
+
+enum split_ack {
+	ACK_OK,
+	ACK_ERR
+};
+////
+
 enum {
 	MLX4_MAX_FAMILY_VER = 0
 };
@@ -255,14 +274,17 @@ enum mlx4_res_domain_bf_type {
 
 };
 
-////
-struct two_sided_header {
-	uint32_t num_chunks_to_send;
+//// Flow Control message for two-sided RDMA message splitting
+struct Split_FC_message {
+	enum FC_message_type type;
+	uint32_t num_split_chunks;
+	//TODO: add lkey for SEND message
 };
 
-struct header_buffer {
-	char data[sizeof(struct two_sided_header)];
-};
+//struct two_sided_header {
+//	uint32_t num_split_chunks;
+//};
+
 ////
 
 struct mlx4_xsrq_table {
@@ -478,6 +500,10 @@ struct mlx4_buf {
 struct mlx4_pd {
 	struct ibv_pd			ibv_pd;
 	uint32_t			pdn;
+	////
+	//struct ibv_context 	*context;
+	// No need to add this context, ibv_pd already has it
+	////
 };
 
 enum mlx4_cq_model_flags {
@@ -508,6 +534,12 @@ struct mlx4_cq {
 	int				creation_flags;
 	struct mlx4_qp			*last_qp;
 	uint32_t			model_flags; /* use mlx4_cq_model_flags */
+	//// TODO: clean up later
+	int num_chunks_to_recv;
+	struct mlx4_cqe *current_cqe;
+	uint32_t current_qpn;
+	//struct ibv_comp_channel *split_comp_channel;
+	////
 };
 
 struct mlx4_srq {
@@ -625,6 +657,14 @@ struct mlx4_qp {
 	int32_t				transposed_rx_csum_flags;
 	struct mlx4_inlr_buff		inlr_buff;
 	uint8_t				qp_cap_cache;
+	////
+	struct ibv_qp 		*split_qp;
+	struct ibv_cq		*split_cq;
+	struct ibv_comp_channel *split_comp_channel;
+	uint32_t			split_dest_qpn;
+	struct Split_FC_message split_fc_msg;
+	struct ibv_mr		*split_fc_mr;
+	////
 };
 
 struct mlx4_av {
@@ -812,8 +852,8 @@ int mlx4_post_srq_recv(struct ibv_srq *ibsrq,
 		       struct ibv_recv_wr **bad_wr);
 
 struct ibv_qp *mlx4_create_qp(struct ibv_pd *pd, struct ibv_qp_init_attr *attr);
-struct ibv_qp *mlx4_create_qp_ex(struct ibv_context *context,
-				 struct ibv_qp_init_attr_ex *attr);
+struct ibv_qp *__mlx4_create_qp(struct ibv_pd *pd, struct ibv_qp_init_attr *attr);
+struct ibv_qp *mlx4_create_qp_ex(struct ibv_context *context, struct ibv_qp_init_attr_ex *attr);
 int mlx4_modify_cq(struct ibv_cq *cq, struct ibv_exp_cq_attr *attr, int attr_mask);
 int mlx4_post_task(struct ibv_context *context,
 			struct ibv_exp_task *task_list,
@@ -830,8 +870,12 @@ int mlx4_destroy_qp(struct ibv_qp *qp);
 void *mlx4_get_recv_wqe(struct mlx4_qp *qp, int n);
 void mlx4_init_qp_indices(struct mlx4_qp *qp);
 void mlx4_qp_init_sq_ownership(struct mlx4_qp *qp);
+int __mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
+		   struct ibv_send_wr **bad_wr) __MLX4_ALGN_FUNC__;
 int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 		   struct ibv_send_wr **bad_wr) __MLX4_ALGN_FUNC__;
+int __mlx4_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr,
+		   struct ibv_recv_wr **bad_wr) __MLX4_ALGN_FUNC__;
 int mlx4_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr,
 		   struct ibv_recv_wr **bad_wr) __MLX4_ALGN_FUNC__;
 void mlx4_calc_sq_wqe_size(struct ibv_qp_cap *cap, enum ibv_qp_type type,

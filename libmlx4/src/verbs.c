@@ -185,6 +185,10 @@ struct ibv_pd *mlx4_alloc_pd(struct ibv_context *context)
 
 	pd->pdn = resp.pdn;
 
+	//// store ibv_context pointer to later create custom cq into 
+	//pd->context = context;
+	// Actually no need, ibv_pd already contains ibv_context
+	////
 	return &pd->ibv_pd;
 }
 
@@ -356,6 +360,7 @@ struct ibv_mr *mlx4_reg_shared_mr(struct ibv_exp_reg_shared_mr_in *in)
 		/* retrying for 1 second before reporting an error */
 		while (fd < 0 && counter > 0) {
 			usleep(100000);
+			printf("DDDDDD RETRIED\n");
 			counter--;
 			fd = open(shared_mr_file_name, flags);
 		}
@@ -578,9 +583,6 @@ struct ibv_mr *mlx4_reg_mr(struct ibv_pd *pd, void *addr,
 	in.pd = pd;
 	in.addr = addr;
 	in.length = length;
-	////
-	//in.length = length + sizeof(struct two_sided_header);
-	////
 	in.exp_access = access;
 	in.comp_mask = 0;
 
@@ -785,7 +787,17 @@ static struct ibv_cq *create_cq(struct ibv_context *context,
 	}
 
 	cq->pattern = MLX4_CQ_PATTERN;
-
+	////TODO: look into this later
+	//cq->num_chunks_to_recv = 0;
+	//cq->current_cqe = NULL;
+	//cq->current_qpn = 0;
+	//// store channel pointer
+	/*
+	if (channel != NULL) {
+		cq->comp_channel = channel;
+	}	
+	*/
+	////
 	return &cq->ibv_cq;
 
 err_db:
@@ -1057,7 +1069,9 @@ struct ibv_qp *mlx4_create_qp_ex(struct ibv_context *context,
 	return mlx4_exp_create_qp(context, (struct ibv_exp_qp_init_attr *)attr);
 }
 
-struct ibv_qp *mlx4_create_qp(struct ibv_pd *pd, struct ibv_qp_init_attr *attr)
+//// original mlx4_create_qp is here, with additional input parameter 'split_cq'
+//struct ibv_qp *__mlx4_create_qp(struct ibv_pd *pd, struct ibv_qp_init_attr *attr)
+struct ibv_qp *__mlx4_create_qp(struct ibv_pd *pd, struct ibv_qp_init_attr *attr)
 {
 	struct ibv_exp_qp_init_attr attr_exp;
 	struct ibv_qp *qp;
@@ -1076,6 +1090,55 @@ struct ibv_qp *mlx4_create_qp(struct ibv_pd *pd, struct ibv_qp_init_attr *attr)
 	if (qp)
 		memcpy(attr, &attr_exp, init_attr_base_size);
 	return qp;
+}
+////
+
+struct ibv_qp *mlx4_create_qp(struct ibv_pd *pd, struct ibv_qp_init_attr *attr)
+{
+	//// create custom cq used for two-sided rdma message splitting
+	// assume user created send_cq
+	//printf("DEBUG mlx4_create_qp: creating split_cq\n");
+	//struct mlx4_cq *send_cq = to_mcq(attr->send_cq);
+	////struct ibv_comp_channel *channel = send_cq->comp_channel;
+	////struct ibv_cq *split_cq = create_cq(pd->context, 1, channel, 0, NULL);
+	struct ibv_comp_channel *channel = ibv_create_comp_channel(pd->context);
+	struct ibv_cq *split_cq = create_cq(pd->context, 1, channel, 0, NULL);
+	//// arm split_cq for completion events
+	mlx4_arm_cq(split_cq, 0);
+
+	/// create a custom qp for our own use 
+	struct ibv_qp_init_attr split_init_attr;
+	memset(&split_init_attr, 0, sizeof(struct ibv_qp_init_attr));
+	split_init_attr.send_cq = split_cq;
+	split_init_attr.recv_cq = split_cq;
+	split_init_attr.cap.max_send_wr  = 1000;
+	split_init_attr.cap.max_recv_wr  = 1000;
+	split_init_attr.cap.max_send_sge = 10;
+	split_init_attr.cap.max_recv_sge = 10;
+	split_init_attr.cap.max_inline_data = 100;	// probably not going to use inline there
+	split_init_attr.qp_type = IBV_QPT_RC;
+
+	struct ibv_qp 		*qp;
+	struct ibv_qp 		*split_qp;
+	split_qp = __mlx4_create_qp(pd, &split_init_attr);
+	//printf("DEBUG mlx4_create_qp: split_qp->qpn = %06x\n", split_qp->qp_num);
+	//// Now create the user's qp
+	qp = __mlx4_create_qp(pd, attr);
+	//printf("DEBUG mlx4_create_qp: orig_qp->qpn = %06x\n", qp->qp_num);
+	//// store split_qp & split_cq inside the user's qp
+	if (qp) {
+		struct mlx4_qp *mqp = to_mqp(qp);
+		mqp->split_qp = split_qp;
+		mqp->split_cq = split_cq;
+		mqp->split_comp_channel = channel;
+		//// register mr for two-sided splitting header message
+		//// TODO: remember to free later in mlx4_destroy_qp
+		mqp->split_fc_mr = mlx4_reg_mr(pd, &mqp->split_fc_msg, sizeof(struct Split_FC_message), IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE);
+
+	}
+	////
+	return qp;
+
 }
 
 struct ibv_qp *mlx4_open_qp(struct ibv_context *context, struct ibv_qp_open_attr *attr)
@@ -1122,29 +1185,79 @@ int mlx4_query_qp(struct ibv_qp *ibqp, struct ibv_qp_attr *attr,
 	return 0;
 }
 
+//// Modify to change the qp state of the custom qp
 int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 		    int attr_mask)
 {
 	struct ibv_modify_qp cmd;
 	int ret;
+	//// do the same state transition for custom qp. <simple implementation>
+	struct mlx4_qp *mqp = to_mqp(qp);
+	////
 
 	if (attr_mask & IBV_QP_PORT) {
+		////printf("DEBUG MLX4_MODIFY_QP: actually enter here\n");
 		ret = update_port_data(qp, attr->port_num);
 		if (ret)
 			return ret;
+		//// do same for custom_qp
+		update_port_data(mqp->split_qp, attr->port_num);
+		////
 	}
 
 	if (qp->state == IBV_QPS_RESET &&
 	    attr_mask & IBV_QP_STATE   &&
 	    attr->qp_state == IBV_QPS_INIT) {
+		////printf("DEBUG MLX4_MODIFY_QP: indeed enter here\n");
 		mlx4_qp_init_sq_ownership(to_mqp(qp));
+		//printf("DEBUG mlx4_modify_qp: qp->sq.wqe_cnt = %d\n", to_mqp(qp)->sq.wqe_cnt);
+		//// do same for custom_qp
+		mlx4_qp_init_sq_ownership(to_mqp(mqp->split_qp));
+		//printf("DEBUG mlx4_modify_qp: split_qp->sq.wqe_cnt = %d\n", to_mqp(mqp->split_qp)->sq.wqe_cnt);
+		////
 	}
 
 	ret = ibv_cmd_modify_qp(qp, attr, attr_mask, &cmd, sizeof cmd);
+	//// do the same for custom_qp
+	////TODO: change the dest_qpn hack later for more general use
+	//// Note after the first modify_qp call, qp state will move from INIT to RTR.
+	//// Essentially we are looking at the INIT -> RTR transition when hacking dest_qp_num
+	if (qp->state == IBV_QPS_RTR && attr->qp_state == IBV_QPS_RTR) {
+		attr->dest_qp_num -= 1;
+		//printf("DEBUG MODIFY QP: now attr->dest_qp_num is %06x\n", attr->dest_qp_num);
+		//// pre-post a RR for later use
+		//printf("DEBUG MODIFY QP: post a RR to split_qp\n");
+		struct ibv_sge sge;
+		struct ibv_recv_wr wr;
+		struct ibv_recv_wr *bad_wr;
+		memset(&sge, 0, sizeof(sge));
+		sge.addr = (uintptr_t)&mqp->split_fc_msg;
+		sge.length = sizeof(struct Split_FC_message);
+		sge.lkey = mqp->split_fc_mr->lkey;
+		//printf("DDDDD0: sge.addr = %" PRIu64 "\n", sge.addr);
+		//printf("DDDDD0: sge.length = %d \n", sge.length);
+		//printf("DDDDD0: sge.lkey = %" PRIu32 "\n", sge.lkey);
+
+		memset(&wr, 0, sizeof(wr));
+		wr.wr_id = 0;
+		wr.next = NULL;
+		wr.sg_list = &sge;
+		wr.num_sge = 1;
+
+		__mlx4_post_recv(mqp->split_qp, &wr, &bad_wr);
+		
+	}
+	ibv_cmd_modify_qp(mqp->split_qp, attr, attr_mask, &cmd, sizeof cmd);
+	//int ret2 = ibv_cmd_modify_qp(mqp->split_qp, attr, attr_mask, &cmd, sizeof cmd);
+	attr->dest_qp_num += 1;
+
+	//printf("DDDDDEBUG: ret2: %d; attr->sq_psn: %06x\n", ret2, attr->sq_psn);
+	////
 
 	if (!ret		       &&
 	    (attr_mask & IBV_QP_STATE) &&
 	    attr->qp_state == IBV_QPS_RESET) {
+		////printf("DEBUG MLX4_MODIFY_QP: also enter here\n");
 		if (qp->recv_cq)
 			mlx4_cq_clean(to_mcq(qp->recv_cq), qp->qp_num,
 				      qp->srq ? to_msrq(qp->srq) : NULL);
@@ -1154,6 +1267,19 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 		mlx4_init_qp_indices(to_mqp(qp));
 		if (to_mqp(qp)->rq.wqe_cnt)
 			*to_mqp(qp)->db = 0;
+
+		//// do same for custom_qp
+		qp = mqp->split_qp;
+		if (qp->recv_cq)
+			mlx4_cq_clean(to_mcq(qp->recv_cq), qp->qp_num,
+				      qp->srq ? to_msrq(qp->srq) : NULL);
+		if (qp->send_cq && qp->send_cq != qp->recv_cq)
+			mlx4_cq_clean(to_mcq(qp->send_cq), qp->qp_num, NULL);
+
+		mlx4_init_qp_indices(to_mqp(qp));
+		if (to_mqp(qp)->rq.wqe_cnt)
+			*to_mqp(qp)->db = 0;
+		////
 	}
 
 	return ret;

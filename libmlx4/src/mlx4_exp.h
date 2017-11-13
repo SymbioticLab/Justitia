@@ -54,8 +54,8 @@ struct mlx4_exp_create_cq {
 /*
  * Experimental functions
  */
-struct ibv_qp *mlx4_exp_create_qp(struct ibv_context *context,
-				  struct ibv_exp_qp_init_attr *attr);
+struct ibv_qp *mlx4_exp_create_qp(struct ibv_context *context, struct ibv_exp_qp_init_attr *attr);
+				  //struct ibv_exp_qp_init_attr *attr, struct ibv_qp *split_qp, struct ibv_cq *split_cq);
 int mlx4_exp_query_device(struct ibv_context *context,
 			  struct ibv_exp_device_attr *attr);
 int mlx4_exp_query_port(struct ibv_context *context, uint8_t port_num,

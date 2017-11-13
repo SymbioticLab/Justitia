@@ -55,6 +55,10 @@
 # endif
 #endif
 
+////
+//int GLOBAL_CNT = 0;
+////
+
 #ifdef MLX4_WQE_FORMAT
 	#define SET_BYTE_COUNT(byte_count) (htonl(byte_count) | owner_bit)
 	#define WQE_CTRL_OWN	(1 << 30)
@@ -74,10 +78,6 @@ enum {
 #define MLX4_IB_OPCODE_GET_OP(opcode)       ((opcode) & 0x0000FFFF)
 #define MLX4_IB_OPCODE_GET_ATTR(opcode)     ((opcode) & 0xFF000000)
 
-////
-#include <inttypes.h>
-#define SPLIT_CHUNK_SIZE	1000000
-////
 
 static const uint32_t mlx4_ib_opcode[] = {
 	[IBV_WR_SEND]			= MLX4_OPCODE_SEND,
@@ -446,6 +446,10 @@ static inline void set_ptr_data(struct mlx4_wqe_data_seg *dseg,
 	dseg->lkey       = htonl(sg->lkey);
 	dseg->addr       = htonll(sg->addr);
 
+	////
+	//printf("DEBUG set_ptr_data: sg->length:%" PRIu32 "\n", sg->length);
+	//printf("DEBUG set_ptr_data: sg->addr:%" PRIu64 "\n", sg->addr);
+	////
 	/*
 	 * Need a barrier here before writing the byte_count field to
 	 * make sure that all the data is visible before the
@@ -617,6 +621,7 @@ static void set_ctrl_seg(struct mlx4_wqe_ctrl_seg *ctrl, struct ibv_send_wr *wr,
 			 struct mlx4_qp *qp, uint32_t imm, uint32_t srcrb_flags,
 			 unsigned int owner_bit, int size, uint32_t wr_op)
 {
+	//printf("DEBUG set ctrl seg: imm: %d\n", ntohl(imm));
 	ctrl->srcrb_flags = srcrb_flags;
 	ctrl->imm = imm;
 	ctrl->fence_size = (wr->send_flags & IBV_SEND_FENCE ?
@@ -783,6 +788,9 @@ static inline void set_data_non_inl_seg(struct mlx4_qp *qp, int num_sge, struct 
 	} else {
 		struct mlx4_wqe_data_seg *seg = wqe;
 		int i;
+		////
+		//printf("DEBUG set_data_non_inl_sge: enter num_sge != 1\n");
+		////
 
 		for (i = num_sge - 1; i >= 0 ; --i)
 			set_ptr_data(seg + i, sg_list + i, owner_bit);
@@ -1066,6 +1074,96 @@ int ceil_helper(float num_chunks) {
 }
 ////
 
+//// original mlx4_post_send without lock
+int __mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
+		     struct ibv_send_wr **bad_wr)
+{
+	//printf("DEBUG __mlx4_post_send: enter\n");
+	//printf("DEBUG __mlx4_post_send: raddr:%" PRIu64 "\n", wr->wr.rdma.remote_addr);
+	//printf("DEBUG __mlx4_post_send: sg_addr:%" PRIu64 "\n", wr->sg_list->addr);
+	struct mlx4_qp *qp = to_mqp(ibqp);
+	void *uninitialized_var(ctrl);
+	unsigned int ind;
+	int nreq;
+	int inl = 0;
+	int ret = 0;
+	int size = 0;
+
+	////mlx4_lock(&qp->sq.lock);
+
+	/* XXX check that state is OK to post send */
+
+	ind = qp->sq.head;
+
+	for (nreq = 0; wr; ++nreq, wr = wr->next) {
+		/* to be considered whether can throw first check, create_qp_exp with post_send */
+		if (!(qp->create_flags & IBV_EXP_QP_CREATE_IGNORE_SQ_OVERFLOW))
+			if (unlikely(wq_overflow(&qp->sq, nreq, qp))) {
+				ret = ENOMEM;
+				errno = ret;
+				*bad_wr = wr;
+				goto out;
+			}
+
+		if (unlikely(wr->num_sge > qp->sq.max_gs)) {
+			ret = ENOMEM;
+			errno = ret;
+			*bad_wr = wr;
+			goto out;
+		}
+
+		if (unlikely(wr->opcode >= sizeof(mlx4_ib_opcode) / sizeof(mlx4_ib_opcode[0]))) {
+			ret = EINVAL;
+			errno = ret;
+			*bad_wr = wr;
+			goto out;
+		}
+
+		ctrl = get_send_wqe(qp, ind & (qp->sq.wqe_cnt - 1));
+		qp->sq.wrid[ind & (qp->sq.wqe_cnt - 1)] = wr->wr_id;
+
+		ret = qp->post_send_one(wr, qp, ctrl, &size, &inl, ind);
+		if (unlikely(ret)) {
+			inl = 0;
+			errno = ret;
+			*bad_wr = wr;
+			goto out;
+		}
+		/*
+		 * We can improve latency by not stamping the last
+		 * send queue WQE until after ringing the doorbell, so
+		 * only stamp here if there are still more WQEs to post.
+		 */
+		if (likely(wr->next))
+#ifndef MLX4_WQE_FORMAT
+			stamp_send_wqe(qp, (ind + qp->sq_spare_wqes) &
+				       (qp->sq.wqe_cnt - 1));
+#else
+			/* Make sure all owners bits are set to HW ownership */
+			set_owner_wqe(qp, ind, size,
+				      ((ind & qp->sq.wqe_cnt) ? htonl(WQE_CTRL_OWN) : 0));
+#endif
+
+		++ind;
+	}
+
+out:
+	ring_db(qp, ctrl, nreq, size, inl);
+
+	if (likely(nreq))
+#ifndef MLX4_WQE_FORMAT
+		stamp_send_wqe(qp, (ind + qp->sq_spare_wqes - 1) &
+			       (qp->sq.wqe_cnt - 1));
+#else
+		set_owner_wqe(qp, ind - 1, size,
+			      ((ind - 1) & qp->sq.wqe_cnt ? htonl(WQE_CTRL_OWN) : 0));
+#endif
+	////mlx4_unlock(&qp->sq.lock);
+
+	return ret;
+}
+////
+
 int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 		     struct ibv_send_wr **bad_wr)
 {
@@ -1076,7 +1174,23 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 	int inl = 0;
 	int ret = 0;
 	int size = 0;
+	////
 	//printf("sq.max_gs: %d; qp->sq.max_post: %d\n", qp->sq.max_gs, qp->sq.max_post);
+	/*
+	struct ibv_qp_attr attr0;
+	struct ibv_qp_init_attr init_attr0;
+	if (ibv_query_qp(ibqp, &attr0, IBV_QP_STATE, &init_attr0)) {
+		fprintf(stderr, "Failed to query QP state\n");
+		return -1;
+	}
+	printf("DEBUG POST SEND INITIAL CHECK: lid: %04x\n", attr0.ah_attr.dlid);
+	printf("DEBUG POST SEND INITIAL CHECK: qpn:%#06x\n", ibqp->qp_num);
+	printf("DEBUG POST SEND INITIAL CHECK: psn: %#06x\n", attr0.sq_psn);
+	printf("DEBUG POST SEND INITIAL CHECK: port: %d\n", attr0.port_num);
+	printf("DEBUG POST SEND INITIAL CHECK: dest_qp_num: %#06x\n", attr0.dest_qp_num);
+	printf("DEBUG POST SEND INITIAL CHECK: wr rkey: %#08x\n", wr->wr.rdma.rkey);
+	*/
+	////
 	
 
 	mlx4_lock(&qp->sq.lock);
@@ -1093,12 +1207,15 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 		int need_reset = 0;		//// as long as it is once split, this is set to 1.
 		//int is_split = 0;
 		int num_chunks_to_send = 1;
+		int orig_num_chunks_to_send = 1;
 		int current_length = 0;
 		uint64_t orig_raddr = 0;
 		uint64_t orig_sge_addr = 0;
 		uint32_t orig_sge_length = 0;
 		int orig_send_flags = 0;
 		unsigned cur_sq_size;
+		//struct ibv_sge two_sided_sg_list[2];
+		//struct ibv_sge *orig_sg_list = NULL;
 		//struct two_sided_header header;
 		//struct header_buffer header_buf;
 
@@ -1107,10 +1224,10 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 		//printf("max_post = %u\n", (&qp->sq)->max_post);
 		if (likely(cur_sq_size + 1 < (&qp->sq)->max_post)) {
 		//if (likely(cur_sq_size + nreq + 1 < (&qp->sq)->max_post)) {
-			//printf("DDBUG: cur=%d\n");
+			
 			if (wr->sg_list->length > SPLIT_CHUNK_SIZE) {
 				//// if there is a need to split
-				//printf("[[[NEED TO SPLIT]]]\n");
+				//printf("[[[NEED TO SPLIT]]] [%d]\n", ++GLOBAL_CNT);
 				//is_split = 1;
 				need_reset = 1;
 
@@ -1121,31 +1238,318 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 				orig_send_flags = wr->send_flags;
 
 				num_chunks_to_send = ceil_helper((float)orig_sge_length / (float)SPLIT_CHUNK_SIZE);
+				//printf("(0) num_chunks_to_send: %d\n", num_chunks_to_send);
 				if (num_chunks_to_send > (&qp->sq)->max_post - cur_sq_size) {
 					num_chunks_to_send = (&qp->sq)->max_post - cur_sq_size;
 				}
-				printf("num_chunks_to_send: %d\n", num_chunks_to_send);
+				orig_num_chunks_to_send = num_chunks_to_send;
+				//printf("(1) num_chunks_to_send: %d\n", num_chunks_to_send);
 
 				wr->sg_list->length = SPLIT_CHUNK_SIZE;
-				wr->send_flags = wr->send_flags & (~(IBV_SEND_SIGNALED));
-				//printf("IBV_SEND_SIGNALED: %d\n", IBV_SEND_SIGNALED);
+				//orig_sg_list = wr->sg_list;
 
-				/*
+				// For two-sided ops, the first one still need to be what it is originally,
+				// because the user will poll the first one at the end
+				//wr->send_flags = wr->send_flags & (~(IBV_SEND_SIGNALED));
+				//printf("IBV_SEND_SIGNALED: %d\n", IBV_SEND_SIGNALED);
+				
 				if (wr->opcode == IBV_WR_RDMA_WRITE_WITH_IMM || 
 					wr->opcode == IBV_WR_SEND ||
-					wr->opcode == IBV_WR_SEND_WITH_IMM) {
+					wr->opcode == IBV_WR_SEND_WITH_IMM) {	//// two-sided op
+
+					//printf("[[[Splitting two-sided op]]]\n");
+					//printf("ORIG QP local QPN: %#06x\n", ibqp->qp_num);
+					//printf("SPLIT QP local QPN: %#06x\n", qp->split_qp->qp_num);
+					//// qpn hack:
+					//qp->split_qp->qp_num = ibqp->qp_num;
+					//printf("SPLIT QP local QPN: %#06x\n", qp->split_qp->qp_num);
+
+					////
+
+					wr->sg_list->length++;
+					
+					// Two-sided spliting
+					// <1> if message to send > CHUNK_SIZE, send first chunk with extra dummy byte using user's qp
+					//printf("SENDER <1> if message to send > CHUNK_SIZE, send first chunk with extra dummy byte using user's qp\n");
+					ret = __mlx4_post_send(ibqp, wr, bad_wr);
+					if (ret != 0) {
+						errno = ret;
+						goto out;
+					}
+					wr->sg_list->length--;
+
+					// <2> post a SR to split_qp to send num_chunks_to_send to the receiver and poll its wc
+					// will first implement WRITE_IMM
+					//printf("SENDER <2> post a SR to split_qp to send num_chunks_to_send to the receiver and poll its wc\n");
+
+					//// temp for debugging:
+					//num_chunks_to_send = 1;
+					////
+
+					qp->split_fc_msg.type = INFO;
+					qp->split_fc_msg.num_split_chunks = num_chunks_to_send;
+					//printf("DEBUG POST SEND: qp->split_fc_msg.num_split_chunks: %d\n", qp->split_fc_msg.num_split_chunks);
+					num_chunks_to_send--;
+
+					struct ibv_sge ssge;
+					struct ibv_send_wr swr;
+					struct ibv_send_wr *bad_swr;
+					 
+					memset(&ssge, 0, sizeof(ssge));
+					ssge.addr	  = (uintptr_t)&qp->split_fc_msg;
+					ssge.length = sizeof(struct Split_FC_message);
+					ssge.lkey	  = qp->split_fc_mr->lkey;
+					 
+					memset(&swr, 0, sizeof(swr));
+					swr.wr_id      = 0;
+					swr.sg_list    = &ssge;
+					swr.num_sge    = 1;
+					swr.opcode     = IBV_WR_SEND;
+					////swr.send_flags = 0;		// UNSIGNALED
+					swr.send_flags = IBV_SEND_SIGNALED;		// has to be SIGNALED to avoid ENOMEM
+
+					int ret2;
+					ret2 = __mlx4_post_send(qp->split_qp, &swr, &bad_swr);
+					if (ret2 != 0) {
+						errno = ret2;
+						printf("DEBUG POST SEND: REALLY BAD!!, errno = %d\n", errno);
+					}
+
+					int ne = 0;
+					struct ibv_wc wc;
+					do {
+						ne = mlx4_poll_ibv_cq(qp->split_cq, 1, &wc);
+					} while (ne == 0);
+
+					// <3> poll from split_cq for receiver's ACK
+					// TODO: do event-triggered later
+					//printf("SENDER <3> poll from split_cq for receiver's ACK\n");
+					do {
+						ne = mlx4_poll_ibv_cq(qp->split_cq, 1, &wc);
+					} while (ne == 0);
+					// check if the message is ACK: (for debug)
+					//if (qp->split_fc_msg.type == ACK) {
+					//	printf("INDEED received ACK from receiver.\n");
+					//}
+
+					// <4> send using split_qp with the rest of the original message chunks
+					// TODO: this is for WRITE_IMM. Add part for SEND later
+					//printf("SENDER <4> send using split_qp with the rest of the original message chunks\n");
+					// starting from the 2nd chunk, all set to unsignaled
+					// ^^^ Actually in this case every chunk needs to be SIGNALED
+					////wr->send_flags = wr->send_flags & (~(IBV_SEND_SIGNALED));
+					wr->send_flags = wr->send_flags | IBV_SEND_SIGNALED;
+
+					while (num_chunks_to_send > 0) {
+						current_length -= SPLIT_CHUNK_SIZE;
+						wr->wr.rdma.remote_addr += SPLIT_CHUNK_SIZE;
+						wr->sg_list->addr += SPLIT_CHUNK_SIZE;
+						
+						//printf("DEBUG POST SEND: posting rest SRs to split_qp. num_chunks_to_send = %d\n", num_chunks_to_send);
+						//printf("raddr:%" PRIu64 "\n", wr->wr.rdma.remote_addr);
+						//printf("sg_addr:%" PRIu64 "\n", wr->sg_list->addr);
+						//printf("rkey:%" PRIu32 "\n", wr->wr.rdma.rkey);
+						if (num_chunks_to_send == 1) {
+							wr->sg_list->length = current_length;
+							// the last one has to be SIGNALED to synchronize. Otherwise we'll go to the next iteration directly.
+							//wr->send_flags = IBV_SEND_SIGNALED;  ->> as previously set
+						} 
+
+						//__mlx4_post_send(qp->split_qp, wr, bad_wr);
+						ret = __mlx4_post_send(qp->split_qp, wr, bad_wr);
+						if (ret != 0) {
+							errno = ret;
+							printf("DEBUG POST SEND REALLY BAD!!, errno = %d\n", errno);
+							goto out;
+						}
+
+						num_chunks_to_send--;
+
+					}
+					
+					// <5> poll from the split_cq for all chunks to ensure the completion message has done transfering.
+					//printf("SENDER <5> poll from the split_cq for all chunks to ensure the completion message has done transfering.\n");
+					ne = 0;
+					do {
+						//ne += mlx4_poll_ibv_cq(qp->split_cq, 1, &wc);
+						ne += mlx4_poll_ibv_cq(qp->split_cq, orig_num_chunks_to_send - 1, &wc);
+					} while (ne < orig_num_chunks_to_send - 1);
+					//printf("ne = %d, message transfer completed\n", ne);
+					
+					// <6> post another RR to split_qp for future splitting
+					//printf("SENDER <6> post another RR to split_qp for future splitting\n");
+					
+					struct ibv_sge rsge;
+					struct ibv_recv_wr rwr;
+					struct ibv_recv_wr *bad_rwr;
+					memset(&rsge, 0, sizeof(rsge));
+					rsge.addr = (uintptr_t)&qp->split_fc_msg;
+					rsge.length = sizeof(struct Split_FC_message);
+					rsge.lkey = qp->split_fc_mr->lkey;
+					//printf("DDDDD: rsge.addr = %" PRIu64 "\n", rsge.addr);
+					//printf("DDDDD: rsge.length = %d \n", rsge.length);
+					//printf("DDDDD: rsge.lkey = %" PRIu32 "\n", rsge.lkey);
+
+					memset(&rwr, 0, sizeof(rwr));
+					rwr.wr_id = 0;
+					rwr.next = NULL;
+					rwr.sg_list = &rsge;
+					rwr.num_sge = 1;
+
+					ret2 = __mlx4_post_recv(qp->split_qp, &rwr, &bad_rwr);
+					if (ret2 != 0) {
+						errno = ret2;
+						printf("REALLY BAD!!, errno = %d\n", errno);
+					}
+					
+
+
+								
+
+					//wr->num_sge = 2;
+					//two_sided_sg_list[0].addr = wr->sg_list->addr;
+					//two_sided_sg_list[0].length = SPLIT_CHUNK_SIZE;
+					//two_sided_sg_list[0].lkey = wr->sg_list->lkey;
+					//two_sided_sg_list[1].addr = (uintptr_t) &qp->header_buf;
+					//two_sided_sg_list[1].length = sizeof(struct two_sided_header);
+					//two_sided_sg_list[1].lkey = qp->header_mr->lkey;
+					
+					//wr->sg_list = two_sided_sg_list;
+
+					//// temp for debugging:
+					//wr->sg_list = orig_sg_list;
+					//num_chunks_to_send = 1;
+					////
+					/*	
+					while (num_chunks_to_send != 0) {
+						//printf("DEBUG POST_SEND: using split_qp to send chunk\n");
+						
+						//// test qp state
+						
+						struct ibv_qp_attr attr;
+						struct ibv_qp_init_attr init_attr;
+						if (ibv_query_qp(qp->split_qp, &attr, IBV_QP_STATE, &init_attr)) {
+							fprintf(stderr, "Failed to query QP state\n");
+							return -1;
+						}
+						if (attr.qp_state == IBV_QPS_RTS) {
+							printf("DEBUG POST SEND: INDEED RTS state\n");
+						}
+
+						struct ibv_qp_attr attr2;
+						struct ibv_qp_init_attr init_attr2;
+						if (ibv_query_qp(ibqp, &attr2, IBV_QP_STATE, &init_attr2)) {
+							fprintf(stderr, "Failed to query QP state\n");
+							return -1;
+						}
+						if (attr.sq_psn != attr2.sq_psn) {
+							printf("DEBUG POST SEND: sq_psn not equal!\n");
+							printf("split_qp sq_psn:%" PRIu32 "\n", attr.sq_psn);
+							printf("orig qp sq_psn:%" PRIu32 "\n", attr2.sq_psn);
+						}
+						printf("DEBUG POST SEND: psn: %#06x\n", attr.sq_psn);
+						if (attr.port_num != attr2.port_num) {
+							printf("DEBUG POST SEND: port_num not equal!\n");
+						}
+						if (attr.dest_qp_num != attr2.dest_qp_num) {
+							printf("DEBUG POST SEND: dest_qp_num not equal!\n");
+						}
+						printf("DEBUG POST SEND: dest_qp_num: %#06x\n", attr.dest_qp_num);
+
+						printf("wr rkey: %#08x\n", wr->wr.rdma.rkey);
+						
+						////
+
+						//// send using custom qp
+						ret = mlx4_post_send(qp->split_qp, wr, bad_wr);
+						if (ret != 0) {
+							errno = ret;
+							goto out;
+						}
+
+						--num_chunks_to_send;
+						if (num_chunks_to_send == orig_num_chunks_to_send - 1) {
+							wr->sg_list = orig_sg_list;
+							wr->num_sge = 1;
+						}
+						current_length -= SPLIT_CHUNK_SIZE;
+						wr->wr.rdma.remote_addr += SPLIT_CHUNK_SIZE;
+						wr->sg_list->addr += SPLIT_CHUNK_SIZE;
+
+						if (num_chunks_to_send == 1) {
+							wr->sg_list->length = current_length;
+							if ((orig_send_flags & IBV_SEND_SIGNALED) != 0) {	//// if original request is SIGNALED, set this flag for the last chunk
+								wr->send_flags = wr->send_flags | IBV_SEND_SIGNALED;
+							}
+						}
+
+						//printf("DEBUG POST_SEND: num_chunks_to_send: %d\n", num_chunks_to_send);
+					}
+					*/
+
+					//// Restore original qp before return
+					wr->wr.rdma.remote_addr = orig_raddr;
+					wr->sg_list->addr = orig_sge_addr;
+					wr->sg_list->length = orig_sge_length;
+					wr->send_flags = orig_send_flags;
+					mlx4_unlock(&qp->sq.lock);
+					return 0;
+
+				}
+				
+			}
+		////
+
+			/*
+			if (wr->opcode == IBV_WR_RDMA_WRITE_WITH_IMM || 
+				wr->opcode == IBV_WR_SEND ||
+				wr->opcode == IBV_WR_SEND_WITH_IMM) {	//// two-sided op
+
+				qp->header
+
+				
+				//// only need to split if msg length > SPLIT_CHUNK_SIZE + header size
+				if (wr->sg_list->length >= SPLIT_CHUNK_SIZE + sizeof(struct two_sided_header)) {
 					printf("Handling two-sided operation spliting\n");
 					memcpy(&header_buf, wr->sg_list->addr + SPLIT_CHUNK_SIZE, sizeof(two_sided_header));
 					two_sided_header.num_chunks_to_send = num_chunks_to_send;
 					memcpy(wr->sg_list->addr + SPLIT_CHUNK_SIZE, &two_sided_header, sizeof(two_sided_header));
-				}
-				*/
+					wr->sg_list->length += sizeof(two_sided_header);
+				} 
+				
 
+
+			} else {	//// one-sided op
+				if (wr->sg_list->length > SPLIT_CHUNK_SIZE) {
+					//// if there is a need to split
+					printf("[[[NEED TO SPLIT]]]\n");
+					//is_split = 1;
+					need_reset = 1;
+
+					current_length = wr->sg_list->length;
+					orig_raddr = wr->wr.rdma.remote_addr;
+					orig_sge_addr = wr->sg_list->addr;
+					orig_sge_length = wr->sg_list->length;
+					orig_send_flags = wr->send_flags;
+
+					num_chunks_to_send = ceil_helper((float)orig_sge_length / (float)SPLIT_CHUNK_SIZE);
+					if (num_chunks_to_send > (&qp->sq)->max_post - cur_sq_size) {
+						num_chunks_to_send = (&qp->sq)->max_post - cur_sq_size;
+					}
+					//orig_num_chunks_to_send = num_chunks_to_send;
+					printf("num_chunks_to_send: %d\n", num_chunks_to_send);
+
+					wr->sg_list->length = SPLIT_CHUNK_SIZE;
+					wr->send_flags = wr->send_flags & (~(IBV_SEND_SIGNALED));
+					//printf("IBV_SEND_SIGNALED: %d\n", IBV_SEND_SIGNALED);
+				}
 			}
+			*/
 
 		}
 
 		////
+
 		while (is_completed == 0) {
 			////
 			//printf("num_chunks_to_send: %d\n", num_chunks_to_send);
@@ -1179,7 +1583,7 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 			}
 
 			if (unlikely(wr->opcode >= sizeof(mlx4_ib_opcode) / sizeof(mlx4_ib_opcode[0]))) {
-				printf("DEBUG POST SEND: opcode error \n");
+				//printf("DEBUG POST SEND: opcode error \n");
 				ret = EINVAL;
 				errno = ret;
 				*bad_wr = wr;
@@ -1220,20 +1624,35 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 			current_length -= SPLIT_CHUNK_SIZE;
 			if (num_chunks_to_send == 0) {
 				is_completed = 1;
-			} else if (num_chunks_to_send == 1) {
-				wr->wr.rdma.remote_addr += SPLIT_CHUNK_SIZE;
-				wr->sg_list->addr += SPLIT_CHUNK_SIZE;
-				wr->sg_list->length = current_length;
-				if ((orig_send_flags & IBV_SEND_SIGNALED) != 0) {	//// if original request is SIGNALED, set this flag for the last chunk
-					wr->send_flags = wr->send_flags | IBV_SEND_SIGNALED;
-				}
 			} else {
+				/*
+				if (wr->opcode == IBV_WR_RDMA_WRITE_WITH_IMM || 
+					wr->opcode == IBV_WR_SEND ||
+					wr->opcode == IBV_WR_SEND_WITH_IMM) {
+						
+					if (num_chunks_to_send == orig_num_chunks_to_send - 1) {
+						wr->sg_list = orig_sg_list;
+						wr->num_sge = 1;
+					}
+					//if (num_chunks_to_send == orig_num_chunks_to_send - 1) {
+					//	memcpy(wr->sg_list->addr + SPLIT_CHUNK_SIZE, &header_buf, sizeof(two_sided_header));
+					//}
+				}
+				*/
+
 				wr->wr.rdma.remote_addr += SPLIT_CHUNK_SIZE;
 				wr->sg_list->addr += SPLIT_CHUNK_SIZE;
+
+				if (num_chunks_to_send == 1) {
+					wr->sg_list->length = current_length;
+					if ((orig_send_flags & IBV_SEND_SIGNALED) != 0) {	//// if original request is SIGNALED, set this flag for the last chunk
+						wr->send_flags = wr->send_flags | IBV_SEND_SIGNALED;
+					}
+				}
 			}
 
-			//// update message length and raddr
 			/*
+			//// update message length and raddr
 			if (is_split && current_length > SPLIT_CHUNK_SIZE) {
 				current_length -= SPLIT_CHUNK_SIZE;
 				if (likely(cur_sq_size + nreq + 1 < (&qp->sq)->max_post)) {
@@ -1631,11 +2050,40 @@ out:
 }
 
 
-
-int mlx4_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr,
+//// original mlx4_post_recv. 
+int __mlx4_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr,
 		   struct ibv_recv_wr **bad_wr)
 {
-	printf("DEBUG ENTER MLX4_POST_RECV\n");
+	//printf("DEBUG ENTER __MLX4_POST_RECV: wr->num_sge: %d\n", wr->num_sge);
+	//// test qp state
+
+	/*
+	struct ibv_qp_attr attr;
+	struct ibv_qp_init_attr init_attr;
+	if (ibv_query_qp(ibqp, &attr, IBV_QP_STATE, &init_attr)) {
+		fprintf(stderr, "Failed to query QP state\n");
+		return -1;
+	}
+	if (attr.qp_state == IBV_QPS_RTS) {
+		printf("DEBUG POST RECV: INDEED RTS state\n");
+	} else if (attr.qp_state == IBV_QPS_RTR) {
+		printf("DEBUG POST RECV: RTR state\n");
+	} else if (attr.qp_state == IBV_QPS_RESET) {
+		printf("DEBUG POST RECV: RESET state\n");
+	} else if (attr.qp_state == IBV_QPS_INIT) {
+		printf("DEBUG POST RECV: INIT state\n");
+	} else if (attr.qp_state == IBV_QPS_ERR) {
+		printf("DEBUG POST RECV: ERR state\n");
+	} else {
+		printf("DEBUG POST RECV: some other states\n");
+	}
+	printf("DEBUG POST RECV: psn: %#06x\n", attr.sq_psn);
+	printf("DEBUG POST RECV: dest_qp_num: %#06x\n", attr.dest_qp_num);
+	printf("DEBUG POST RECV: own_current_qp_num: %#06x\n", ibqp->qp_num);
+	//printf("DEBUG POST RECV: own_split_qp_num: %#06x\n", to_mqp(ibqp)->split_qp->qp_num);
+	*/
+	////
+
 	struct mlx4_qp *qp = to_mqp(ibqp);
 	struct mlx4_wqe_data_seg *scat;
 	int ret = 0;
@@ -1667,9 +2115,12 @@ int mlx4_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr,
 
 		for (i = 0; i < wr->num_sge; ++i)
 			__set_data_seg(scat + i, wr->sg_list + i);
-		printf("DEBUG: POST_RECV: (ntohl)mlx4_wqe_data_seg[0].byte_count: %u\n", ntohl(scat[0].byte_count));
-		printf("DEBUG: POST_RECV: (ntohl)mlx4_wqe_data_seg[0].addr: %lu\n", ntohll(scat[0].byte_count));
-		printf("DEBUG: POST_RECV: wr->sg_list[0].length: %" PRIu32 "\n", wr->sg_list[0].length);
+		//printf("DEBUG: POST_RECV: (ntohl)mlx4_wqe_data_seg[0].byte_count: %u\n", ntohl(scat[0].byte_count));
+		//printf("DEBUG: POST_RECV: (ntohl)mlx4_wqe_data_seg[0].addr: %lu\n", ntohll(scat[0].addr));
+		//printf("DEBUG: POST_RECV: (ntohl)mlx4_wqe_data_seg[0].lkey: %u\n", ntohl(scat[0].lkey));
+		//printf("DEBUG: POST_RECV: wr->sg_list[0].length: %" PRIu32 "\n", wr->sg_list[0].length);
+		//printf("DEBUG: POST_RECV: wr->sg_list[0].addr: %" PRIu64 "\n", wr->sg_list[0].addr);
+		//printf("DEBUG: POST_RECV: wr->sg_list[0].lkey: %" PRIu32 "\n", wr->sg_list[0].lkey);
 		
 
 		if (likely(i < qp->rq.max_gs)) {
@@ -1708,10 +2159,23 @@ out:
 	}
 
 	mlx4_unlock(&qp->rq.lock);
-
-	printf("DEBUG LEAVING MLX4_POST_RECV\n");
+	
+	//printf("DEBUG LEAVING __MLX4_POST_RECV\n");
 	return ret;
 }
+
+//// post recv testing:  see if we have to use split_qp on receiver side to post a rr
+//// if size > split_size, also post rr using split_qp
+int mlx4_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr,
+		   struct ibv_recv_wr **bad_wr)
+{
+	int ret = 0;
+	ret = __mlx4_post_recv(ibqp, wr, bad_wr);
+	////struct mlx4_qp *qp = to_mqp(ibqp);
+	////ret = __mlx4_post_recv(qp->split_qp, wr, bad_wr);	
+	return ret;
+}
+////
 
 int num_inline_segs(int data, enum ibv_qp_type type)
 {

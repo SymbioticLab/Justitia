@@ -309,9 +309,15 @@ static void update_qp_bf_data(struct mlx4_res_domain *res_domain,
 	qp->bf_buf_size = to_mctx(context)->bfs.buf_size;
 }
 
-struct ibv_qp *mlx4_exp_create_qp(struct ibv_context *context,
-				  struct ibv_exp_qp_init_attr *attr)
+//struct ibv_qp *mlx4_exp_create_qp(struct ibv_context *context,
+//				  struct ibv_exp_qp_init_attr *attr)
+//// modified create_qp for custom qp used in splitting two-sided RDMA verbs
+//// split_qp == NULL -> creating split_qp, else creating normal ones
+struct ibv_qp *mlx4_exp_create_qp(struct ibv_context *context, struct ibv_exp_qp_init_attr *attr)
+				  //struct ibv_exp_qp_init_attr *attr, struct ibv_qp *split_qp, struct ibv_cq *split_cq)
 {
+	//printf("DEBUG mlx4_exp_create_qp: Indeed enter here.\n");
+
 	struct mlx4_qp		 *qp;
 	int			  ret;
 	union {
@@ -358,6 +364,7 @@ struct ibv_qp *mlx4_exp_create_qp(struct ibv_context *context,
 	qp = calloc(1, sizeof(*qp));
 	if (!qp)
 		return NULL;
+
 
 	qp->qp_cap_cache = 0;
 	if (attr->comp_mask >= IBV_EXP_QP_INIT_ATTR_CREATE_FLAGS)
@@ -488,6 +495,7 @@ struct ibv_qp *mlx4_exp_create_qp(struct ibv_context *context,
 
 	if (qp->sq.wqe_cnt || qp->rq.wqe_cnt) {
 		ret = mlx4_store_qp(to_mctx(context), qp->verbs_qp.qp.qp_num, qp);
+		//printf("DEBUG mlx4_exp_create_qp: ret of mlx4_store_qp() = %d\n", ret);
 		if (ret)
 			goto err_destroy;
 	}

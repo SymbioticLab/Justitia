@@ -46,6 +46,9 @@
 
 #include "mlx4.h"
 #include "doorbell.h"
+////
+#include "wqe.h"
+////
 
 int mlx4_stall_num_loop = 300;
 
@@ -56,7 +59,10 @@ enum {
 enum {
 	CQ_OK					=  0,
 	CQ_EMPTY				= -1,
-	CQ_POLL_ERR				= -2
+	CQ_POLL_ERR				= -2,
+	////
+	CQ_SPLIT				= 1
+	////
 };
 
 #define MLX4_CQ_DB_REQ_NOT_SOL			(1 << 24)
@@ -219,16 +225,17 @@ static void mlx4_handle_error_cqe(struct mlx4_err_cqe *cqe, struct ibv_wc *wc)
 		wc->status = IBV_WC_GENERAL_ERR;
 		break;
 	}
+	printf("FIND cqe syndrome: cqe->syndrome = %d\n", cqe->syndrome);
+	printf("FIND ERROR STATUS: wc->status = %d\n", wc->status);
 
 	wc->vendor_err = cqe->vendor_err;
 }
 
-static int mlx4_poll_one(struct mlx4_cq *cq,
+static int __mlx4_poll_one(struct mlx4_cq *cq,
 			 struct mlx4_qp **cur_qp,
 			 struct ibv_exp_wc *wc,
 			 uint32_t wc_size, int is_exp)
 {
-	//printf("DEBUG POLL_CQ: enter\n");
 	struct mlx4_wq *wq;
 	struct mlx4_cqe *cqe;
 	struct mlx4_srq *srq;
@@ -256,7 +263,6 @@ static int mlx4_poll_one(struct mlx4_cq *cq,
 
 	++cq->cons_index;
 
-	//printf("DEBUG POLL_CQ: ckpt1\n");
 	VALGRIND_MAKE_MEM_DEFINED(cqe, sizeof *cqe);
 
 	/*
@@ -265,19 +271,17 @@ static int mlx4_poll_one(struct mlx4_cq *cq,
 	 */
 	rmb();
 
-	//printf("DEBUG POLL_CQ: ckpt2\n");
 	qpn = ntohl(cqe->vlan_my_qpn) & MLX4_CQE_QPN_MASK;
 	wc->qp_num = qpn;
 
 	is_send  = cqe->owner_sr_opcode & MLX4_CQE_IS_SEND_MASK;
 
 	/* include checksum as work around for calc opcode */
-	//// Temporarily remove error checking for custmo opcode
-	//is_error = 0;
-	//printf("DEBUG POLL_CQ: setting is_error\n");
-	////
 	is_error = (cqe->owner_sr_opcode & MLX4_CQE_OPCODE_MASK) ==
 		MLX4_CQE_OPCODE_ERROR && (cqe->checksum & 0xff);
+	////
+	//printf("222 is_error = %d; cqe->owner_sr_opcode = %d\n", is_error, cqe->owner_sr_opcode);
+	////
 
 	if ((qpn & MLX4_XRC_QPN_BIT) && !is_send) {
 		/*
@@ -326,11 +330,339 @@ static int mlx4_poll_one(struct mlx4_cq *cq,
 		wq = &(*cur_qp)->rq;
 		wqe_index = wq->tail & (wq->wqe_cnt - 1);
 		wc->wr_id = wq->wrid[wqe_index];
-		//printf("DEBUG: CQ: enter here, wqe_index: %d; wc->wr_id: %lu\n", wqe_index, wc->wr_id);
 		++wq->tail;
 	}
 
 	if (unlikely(is_error)) {
+		//printf("IS ERROR2222??????????????\n");
+		mlx4_handle_error_cqe((struct mlx4_err_cqe *)cqe,
+				      (struct ibv_wc *)wc);
+		return CQ_OK;
+	}
+
+	wc->status = IBV_WC_SUCCESS;
+
+	if (timestamp_en && offsetof(struct ibv_exp_wc, timestamp) < wc_size)  {
+		/* currently, only CQ_CREATE_WITH_TIMESTAMPING_RAW is
+		 * supported. CQ_CREATE_WITH_TIMESTAMPING_SYS isn't
+		 * supported */
+		if (cq->creation_flags &
+		    IBV_EXP_CQ_TIMESTAMP_TO_SYS_TIME)
+			wc->timestamp = 0;
+		else {
+			wc->timestamp =
+				(uint64_t)(ntohl(cqe->timestamp_16_47) +
+					   !cqe->timestamp_0_15) << 16
+				| (uint64_t)ntohs(cqe->timestamp_0_15);
+			exp_wc_flags |= IBV_EXP_WC_WITH_TIMESTAMP;
+		}
+	}
+
+	if (is_send) {
+		switch (cqe->owner_sr_opcode & MLX4_CQE_OPCODE_MASK) {
+		case MLX4_OPCODE_CALC_RDMA_WRITE_IMM:
+		case MLX4_OPCODE_RDMA_WRITE_IMM:
+			wc_flags |= IBV_WC_WITH_IMM;
+		case MLX4_OPCODE_RDMA_WRITE:
+			wc->exp_opcode    = IBV_EXP_WC_RDMA_WRITE;
+			break;
+		case MLX4_OPCODE_SEND_IMM:
+			wc_flags |= IBV_WC_WITH_IMM;
+		case MLX4_OPCODE_SEND:
+			wc->exp_opcode    = IBV_EXP_WC_SEND;
+			break;
+		case MLX4_OPCODE_RDMA_READ:
+			wc->exp_opcode    = IBV_EXP_WC_RDMA_READ;
+			wc->byte_len  = ntohl(cqe->byte_cnt);
+			break;
+		case MLX4_OPCODE_ATOMIC_CS:
+			wc->exp_opcode    = IBV_EXP_WC_COMP_SWAP;
+			wc->byte_len  = 8;
+			break;
+		case MLX4_OPCODE_ATOMIC_FA:
+			wc->exp_opcode    = IBV_EXP_WC_FETCH_ADD;
+			wc->byte_len  = 8;
+			break;
+		case MLX4_OPCODE_ATOMIC_MASK_CS:
+			wc->exp_opcode    = IBV_EXP_WC_MASKED_COMP_SWAP;
+			break;
+		case MLX4_OPCODE_ATOMIC_MASK_FA:
+			wc->exp_opcode    = IBV_EXP_WC_MASKED_FETCH_ADD;
+			break;
+		case MLX4_OPCODE_LOCAL_INVAL:
+			((struct ibv_wc *)wc)->opcode    = IBV_WC_LOCAL_INV;
+			break;
+		case MLX4_OPCODE_BIND_MW:
+			wc->exp_opcode    = IBV_EXP_WC_BIND_MW;
+			break;
+		case MLX4_OPCODE_SEND_INVAL:
+			((struct ibv_wc *)wc)->opcode    = IBV_WC_SEND;
+			break;
+		default:
+			/* assume it's a send completion */
+			wc->exp_opcode    = IBV_EXP_WC_SEND;
+			break;
+		}
+	} else {
+		wc->byte_len = ntohl(cqe->byte_cnt);
+		if ((*cur_qp) && (*cur_qp)->max_inlr_sg &&
+		    (cqe->owner_sr_opcode & MLX4_CQE_INL_SCATTER_MASK)) {
+			rbuffs = (*cur_qp)->inlr_buff.buff[wqe_index].sg_list;
+			list_len = (*cur_qp)->inlr_buff.buff[wqe_index].list_len;
+			sbuff = mlx4_get_recv_wqe((*cur_qp), wqe_index);
+			left = wc->byte_len;
+			for (i = 0; (i < list_len) && left; i++) {
+				size = min(rbuffs->rlen, left);
+				memcpy(rbuffs->rbuff, sbuff, size);
+				left -= size;
+				rbuffs++;
+				sbuff += size;
+			}
+			if (left) {
+				wc->status = IBV_WC_LOC_LEN_ERR;
+				return CQ_OK;
+			}
+		}
+
+		switch (cqe->owner_sr_opcode & MLX4_CQE_OPCODE_MASK) {
+		case MLX4_RECV_OPCODE_RDMA_WRITE_IMM:
+			wc->exp_opcode   = IBV_EXP_WC_RECV_RDMA_WITH_IMM;
+			wc_flags = IBV_WC_WITH_IMM;
+			wc->imm_data = cqe->immed_rss_invalid;
+			break;
+		case MLX4_RECV_OPCODE_SEND_INVAL:
+			((struct ibv_wc *)wc)->opcode   = IBV_WC_RECV;
+			((struct ibv_wc *)wc)->wc_flags |= IBV_WC_WITH_INV;
+			wc->imm_data = ntohl(cqe->immed_rss_invalid);
+			break;
+		case MLX4_RECV_OPCODE_SEND:
+			wc->exp_opcode   = IBV_EXP_WC_RECV;
+			wc_flags = 0;
+			break;
+		case MLX4_RECV_OPCODE_SEND_IMM:
+			wc->exp_opcode   = IBV_EXP_WC_RECV;
+			wc_flags = IBV_WC_WITH_IMM;
+			wc->imm_data = cqe->immed_rss_invalid;
+			break;
+		}
+
+		if (!timestamp_en) {
+			exp_wc_flags |= IBV_EXP_WC_WITH_SLID;
+			wc->slid = ntohs(cqe->rlid);
+		}
+		g_mlpath_rqpn	   = ntohl(cqe->g_mlpath_rqpn);
+		wc->src_qp	   = g_mlpath_rqpn & 0xffffff;
+		wc->dlid_path_bits = (g_mlpath_rqpn >> 24) & 0x7f;
+		wc_flags	  |= g_mlpath_rqpn & 0x80000000 ? IBV_WC_GRH : 0;
+		wc->pkey_index     = ntohl(cqe->immed_rss_invalid) & 0x7f;
+		/* When working with xrc srqs, don't have qp to check link layer.
+		  * Using IB SL, should consider Roce. (TBD)
+		*/
+		/* sl is invalid when timestamp is used */
+		if (!timestamp_en) {
+			if ((*cur_qp) && (*cur_qp)->link_layer ==
+			    IBV_LINK_LAYER_ETHERNET)
+				wc->sl = ntohs(cqe->sl_vid) >> 13;
+			else
+				wc->sl = ntohs(cqe->sl_vid) >> 12;
+			exp_wc_flags |= IBV_EXP_WC_WITH_SL;
+		}
+		if (is_exp && *cur_qp) {
+			if ((*cur_qp)->qp_cap_cache & MLX4_RX_CSUM_MODE_IP_OK_IP_NON_TCP_UDP)
+			/* Only ConnectX-3 Pro reports checksum for now) */
+				exp_wc_flags |=
+				MLX4_TRANSPOSE(cqe->badfcs_enc,
+					MLX4_CQE_STATUS_L4_CSUM,
+					(uint64_t)IBV_EXP_WC_RX_TCP_UDP_CSUM_OK) |
+				mlx4_transpose_uint16_t(cqe->status,
+					htons(MLX4_CQE_STATUS_IPOK),
+					(uint64_t)IBV_EXP_WC_RX_IP_CSUM_OK) |
+				mlx4_transpose_uint16_t(cqe->status,
+					htons(MLX4_CQE_STATUS_IPV4),
+					(uint64_t)IBV_EXP_WC_RX_IPV4_PACKET) |
+				mlx4_transpose_uint16_t(cqe->status,
+					htons(MLX4_CQE_STATUS_IPV6),
+					(uint64_t)IBV_EXP_WC_RX_IPV6_PACKET);
+			if ((*cur_qp)->qp_cap_cache & MLX4_RX_VXLAN) {
+				exp_wc_flags |=
+				mlx4_transpose_uint32_t(cqe->vlan_my_qpn,
+				htonl(MLX4_CQE_L2_TUNNEL),
+				(uint64_t)IBV_EXP_WC_RX_TUNNEL_PACKET) |
+				mlx4_transpose_uint32_t(cqe->vlan_my_qpn,
+					htonl(MLX4_CQE_L2_TUNNEL_IPOK),
+					(uint64_t)IBV_EXP_WC_RX_OUTER_IP_CSUM_OK) |
+				mlx4_transpose_uint32_t(cqe->vlan_my_qpn,
+					htonl(MLX4_CQE_L2_TUNNEL_L4_CSUM),
+					(uint64_t)IBV_EXP_WC_RX_OUTER_TCP_UDP_CSUM_OK) |
+				mlx4_transpose_uint32_t(cqe->vlan_my_qpn,
+					htonl(MLX4_CQE_L2_TUNNEL_IPV4),
+					(uint64_t)IBV_EXP_WC_RX_OUTER_IPV4_PACKET);
+				exp_wc_flags |=
+				MLX4_TRANSPOSE(~exp_wc_flags,
+						IBV_EXP_WC_RX_OUTER_IPV4_PACKET,
+						IBV_EXP_WC_RX_OUTER_IPV6_PACKET);
+			}
+		}
+	}
+
+	if (is_exp)
+		wc->exp_wc_flags = exp_wc_flags | (uint64_t)wc_flags;
+
+	((struct ibv_wc *)wc)->wc_flags = wc_flags;
+
+	return CQ_OK;
+}
+
+
+static int mlx4_poll_one(struct mlx4_cq *cq,
+			 struct mlx4_qp **cur_qp,
+			 struct ibv_exp_wc *wc,
+			 uint32_t wc_size, int is_exp, struct mlx4_wqe_data_seg **scat)
+{
+	//printf("DEBUG mlx4_poll_one: enter\n");
+	////
+	int split_flag = 0;
+	////
+	struct mlx4_wq *wq;
+	struct mlx4_cqe *cqe;
+	struct mlx4_srq *srq;
+	uint32_t qpn;
+	uint32_t g_mlpath_rqpn;
+	uint16_t wqe_index;
+	int is_error;
+	int is_send;
+	int size;
+	int left;
+	int list_len;
+	int i;
+	struct mlx4_inlr_rbuff *rbuffs;
+	uint8_t *sbuff;
+	int timestamp_en = !!(cq->creation_flags &
+			      IBV_EXP_CQ_TIMESTAMP);
+	uint64_t exp_wc_flags = 0;
+	uint64_t wc_flags = 0;
+	cqe = next_cqe_sw(cq);
+	////
+	/*
+	if (cq->num_chunks_to_recv == 0) {
+		free(cq->current_cqe);
+		cq->current_cqe = NULL;
+		cqe = next_cqe_sw(cq);
+	} else {
+		cqe = cq->current_cqe;
+	}
+	*/
+	////
+	//printf("DEBUG mlx4_poll_one: ckpt0\n");
+	if (!cqe)
+		return CQ_EMPTY;
+
+	//printf("DEBUG mlx4_poll_one: ckpt1\n");
+	if (cq->cqe_size == 64)
+		++cqe;
+
+	++cq->cons_index;
+
+	//printf("DEBUG POLL_CQ: ckpt1\n");
+	VALGRIND_MAKE_MEM_DEFINED(cqe, sizeof *cqe);
+
+	/*
+	 * Make sure we read CQ entry contents after we've checked the
+	 * ownership bit.
+	 */
+	rmb();
+
+	qpn = ntohl(cqe->vlan_my_qpn) & MLX4_CQE_QPN_MASK;
+	////
+	/*
+	if (cq->num_chunks_to_recv > 0) {
+		qpn = cq->current_qpn;
+	}
+	*/
+	////
+	wc->qp_num = qpn;
+
+	is_send  = cqe->owner_sr_opcode & MLX4_CQE_IS_SEND_MASK;
+	//printf("DEBUG mlx4_poll_one: ckpt2; qpn:%u; is_send:%d\n", qpn, is_send);
+
+	/* include checksum as work around for calc opcode */
+	//// Temporarily remove error checking for custmo opcode
+	//is_error = 0;
+	//printf("DEBUG POLL_CQ: setting is_error\n");
+	////
+	is_error = (cqe->owner_sr_opcode & MLX4_CQE_OPCODE_MASK) ==
+		MLX4_CQE_OPCODE_ERROR && (cqe->checksum & 0xff);
+
+	if ((qpn & MLX4_XRC_QPN_BIT) && !is_send) {
+		/*
+		 * We do not have to take the XSRQ table lock here,
+		 * because CQs will be locked while SRQs are removed
+		 * from the table.
+		 */
+		//printf("Really?\n");
+		*cur_qp = NULL;
+		srq = mlx4_find_xsrq(&to_mctx(cq->ibv_cq.context)->xsrq_table,
+				     ntohl(cqe->g_mlpath_rqpn) & MLX4_CQE_QPN_MASK);
+		if (!srq)
+			return CQ_POLL_ERR;
+	} else {
+		if (unlikely(!*cur_qp || (qpn != (*cur_qp)->verbs_qp.qp.qp_num))) {
+			/*
+			 * We do not have to take the QP table lock here,
+			 * because CQs will be locked while QPs are removed
+			 * from the table.
+			 */
+			*cur_qp = mlx4_find_qp(to_mctx(cq->ibv_cq.context), qpn);
+			if (unlikely(!*cur_qp)) {
+				//printf("why here?\n");
+				return CQ_POLL_ERR;
+			}
+		}
+		if (is_exp) {
+			wc->qp = &((*cur_qp)->verbs_qp.qp);
+			exp_wc_flags |= IBV_EXP_WC_QP;
+		}
+		srq = ((*cur_qp)->verbs_qp.qp.srq) ? to_msrq((*cur_qp)->verbs_qp.qp.srq) : NULL;
+	}
+
+	//printf("DEBUG mlx4_poll_one: ckpt3; is error=%d\n", is_error);
+	//printf("DEBUG mlx4_poll_one: ckpt3; cqe->owner_sr_opcode = %#08x\n", cqe->owner_sr_opcode);
+	if (is_send) {
+		wq = &(*cur_qp)->sq;
+		wqe_index = ntohs(cqe->wqe_index);
+		wq->tail += (uint16_t) (wqe_index - (uint16_t) wq->tail);
+		wc->wr_id = wq->wrid[wq->tail & (wq->wqe_cnt - 1)];
+		++wq->tail;
+	} else if (srq) {
+		wqe_index = htons(cqe->wqe_index);
+		wc->wr_id = srq->wrid[wqe_index];
+		mlx4_free_srq_wqe(srq, wqe_index);
+		if (is_exp) {
+			wc->srq = &(srq->verbs_srq.srq);
+			exp_wc_flags |= IBV_EXP_WC_SRQ;
+		}
+	} else {
+		wq = &(*cur_qp)->rq;
+		wqe_index = wq->tail & (wq->wqe_cnt - 1);
+		////TODO
+		/*
+		if (cq->num_chunks_to_recv == 0) {
+			wqe_index = wq->tail & (wq->wqe_cnt - 1);
+		} else {
+			wqe_index = 0;
+		}
+		*/
+		////
+		wc->wr_id = wq->wrid[wqe_index];
+		++wq->tail;
+		//printf("DEBUG: CQ: enter here, wqe_index: %d; wc->wr_id: %lu\n", wqe_index, wc->wr_id);
+		////TODO
+		//++wq->tail;
+		////
+	}
+
+	if (unlikely(is_error)) {
+		//printf("IS ERROR??????????????\n");
 		mlx4_handle_error_cqe((struct mlx4_err_cqe *)cqe,
 				      (struct ibv_wc *)wc);
 		return CQ_OK;
@@ -410,7 +742,19 @@ static int mlx4_poll_one(struct mlx4_cq *cq,
 		}
 	} else {
 		wc->byte_len = ntohl(cqe->byte_cnt);
-		//printf("DEBUG: POLL CQ: wc->byte_len: %u\n", wc->byte_len);
+		//printf("DEBUG: mlx4_poll_one: wc->byte_len: %u\n", wc->byte_len);
+		////
+		if (wc->byte_len > SPLIT_CHUNK_SIZE) {
+			//printf("DEBUG: mlx4_poll_one: large message detected.\n");
+			// get receive request corresponding to this wc
+			if (scat != NULL) {
+				*scat = (struct mlx4_wqe_data_seg *)mlx4_get_recv_wqe(*cur_qp, wqe_index);
+				//printf("DEBUG: get RR: scat->addr: %" PRIu64 "\n", ntohll((*scat)->addr));
+				//printf("DEBUG: get RR: scat->lkey: %" PRIu32 "\n", ntohl((*scat)->lkey));
+			}
+			split_flag = 1;
+		}
+		////
 		if ((*cur_qp) && (*cur_qp)->max_inlr_sg &&
 		    (cqe->owner_sr_opcode & MLX4_CQE_INL_SCATTER_MASK)) {
 			//printf("DEBUG: POLL CQ: inline?\n");
@@ -436,6 +780,7 @@ static int mlx4_poll_one(struct mlx4_cq *cq,
 		switch (cqe->owner_sr_opcode & MLX4_CQE_OPCODE_MASK) {
 		case MLX4_RECV_OPCODE_RDMA_WRITE_IMM:
 			//printf("DEBUG POLL CQ: (WIMM)IBV_WC_WITH_IMM set to wc_flags\n");
+			//if (ntohl(cqe->byte_cnt) == SPLIT_CHUNK_SIZE + sizeof(struct two_sided_header)) {}	
 			wc->exp_opcode   = IBV_EXP_WC_RECV_RDMA_WITH_IMM;
 			wc_flags = IBV_WC_WITH_IMM;
 			wc->imm_data = cqe->immed_rss_invalid;
@@ -449,8 +794,53 @@ static int mlx4_poll_one(struct mlx4_cq *cq,
 		case MLX4_RECV_OPCODE_SEND:
 			wc->exp_opcode   = IBV_EXP_WC_RECV;
 			wc_flags = 0;
-			////
 			//printf("DEBUG POLL CQ: ntohl(cqe->immed_rss_invalid): %d\n", ntohl(cqe->immed_rss_invalid));
+			////
+			/*
+			printf("DEBUG POLL CQ: RECV SEND\n");
+			if (cqe == NULL) {
+				printf("DDDD cqe is NULL\n");
+			}
+			if (cq->num_chunks_to_recv == 0) {
+				if (wc->byte_len == SPLIT_CHUNK_SIZE + sizeof(struct two_sided_header)) {
+
+					//struct mlx4_wq *rq = &(*cur_qp)->rq;
+					//unsigned int ind = rq->head & (rq->wqe_cnt - 1);
+					//struct two_sided_header *recv_header;
+					//recv_header = (struct two_sided_header *)malloc(sizeof(struct two_sided_header));
+					//recv_header.num_split_chunks = 0;
+					//if (wq->buf + SPLIT_CHUNK_SIZE + 1 != NULL) { printf("DEBUG SEGFAULT is not NULL\n"); }
+					//printf("DEBUG: SEGFAULT: wr->buf: %" PRIu64 "\n", (uint64_t)wq->buf);
+					//int *num_split_chunks = (int *) wq->buf + SPLIT_CHUNK_SIZE;
+					struct mlx4_wqe_data_seg *scat = (struct mlx4_wqe_data_seg *)mlx4_get_recv_wqe(*cur_qp, wqe_index);
+					//struct mlx4_wqe_data_seg *scat = (struct mlx4_wqe_data_seg *) (rq->buf + (ind << rq->wqe_shift));
+					//char *ptr = (char *)(scat->addr + SPLIT_CHUNK_SIZE);
+					//int *num_split_chunks = (int *)ptr;
+					//int *num_split_chunks = (uintptr_t)(scat->addr + SPLIT_CHUNK_SIZE);
+					printf("DEBUG: SEGFAULT: scat->addr: %" PRIu64 "\n", ntohll(scat->addr));
+					printf("DEBUG: SEGFAULT: scat->addr+SPLIT_CHUNK_SIZE: %" PRIu64 "\n", ntohll(scat->addr) + SPLIT_CHUNK_SIZE);
+					int *num_split_chunks = (int *)(ntohll(scat->addr) + SPLIT_CHUNK_SIZE);
+					//uint64_t ptr = (uint64_t) (ntohll(scat->addr) + SPLIT_CHUNK_SIZE);
+					//memcpy(recv_header, ntohll(scat->addr) + SPLIT_CHUNK_SIZE, sizeof(struct two_sided_header));
+					//int *num_split_chunks = (int *) wq->buf + SPLIT_CHUNK_SIZE;
+					printf("DEBUG SEGFAULT: num_split_chunks:%d\n", *num_split_chunks);
+					//cq->num_chunks_to_recv = recv_header->num_split_chunks;
+					cq->num_chunks_to_recv = *num_split_chunks;
+					--cq->num_chunks_to_recv;
+					cq->current_cqe = (struct mlx4_cqe *)malloc(sizeof(struct mlx4_cqe));
+					memcpy(cq->current_cqe, cqe, sizeof(struct mlx4_cqe));
+					cq->current_qpn = qpn;
+					return CQ_EMPTY;
+				}
+			} else {
+				--cq->num_chunks_to_recv;
+				if (cq->num_chunks_to_recv > 0) {
+					return CQ_EMPTY;
+				}
+				printf("DDD RETURN OK\n");
+				return CQ_OK;
+			}
+			*/
 			////
 			break;
 		case MLX4_RECV_OPCODE_SEND_IMM:
@@ -529,7 +919,12 @@ static int mlx4_poll_one(struct mlx4_cq *cq,
 		wc->exp_wc_flags = exp_wc_flags | (uint64_t)wc_flags;
 
 	((struct ibv_wc *)wc)->wc_flags = wc_flags;
+	//printf("DEBUG POLL ONE: actually hit end\n");
 
+	if (split_flag) {
+		// generate a CQ_SPLIT return val	
+		return CQ_SPLIT;
+	}
 	return CQ_OK;
 }
 
@@ -558,7 +953,7 @@ static void mlx4_stall_poll_cq()
 		(void)get_cycles();
 }
 
-int mlx4_poll_cq(struct ibv_cq *ibcq, int ne, struct ibv_exp_wc *wc,
+int __mlx4_poll_cq(struct ibv_cq *ibcq, int ne, struct ibv_exp_wc *wc,
 		 uint32_t wc_size, int is_exp)
 {
 	struct mlx4_cq *cq = to_mcq(ibcq);
@@ -573,10 +968,14 @@ int mlx4_poll_cq(struct ibv_cq *ibcq, int ne, struct ibv_exp_wc *wc,
 	mlx4_lock(&cq->lock);
 	
 	for (npolled = 0; npolled < ne; ++npolled) {
-		err = mlx4_poll_one(cq, &qp, ((void *)wc) + npolled * wc_size,
+		err = __mlx4_poll_one(cq, &qp, ((void *)wc) + npolled * wc_size,
 				    wc_size, is_exp);
-		if (unlikely(err != CQ_OK))
+		if (unlikely(err != CQ_OK)) {
+			//if (err != -1) {
+			//	printf("SUSPICIOUS err = %d\n", err);
+			//}
 			break;
+		}
 	}
 
 	if (likely(npolled || err == CQ_POLL_ERR))
@@ -587,6 +986,198 @@ int mlx4_poll_cq(struct ibv_cq *ibcq, int ne, struct ibv_exp_wc *wc,
 	if (unlikely(cq->stall_enable && err == CQ_EMPTY))
 		cq->stall_next_poll = 1;
 	
+	return err == CQ_POLL_ERR ? err : npolled;
+}
+
+int mlx4_poll_cq(struct ibv_cq *ibcq, int ne, struct ibv_exp_wc *wc,
+		 uint32_t wc_size, int is_exp)
+{
+	struct mlx4_cq *cq = to_mcq(ibcq);
+	struct mlx4_qp *qp = NULL;
+	int npolled;
+	int err = CQ_OK;
+
+	if (unlikely(cq->stall_next_poll)) {
+		cq->stall_next_poll = 0;
+		mlx4_stall_poll_cq();
+	}
+	mlx4_lock(&cq->lock);
+	struct mlx4_wqe_data_seg *scat = NULL;
+	for (npolled = 0; npolled < ne; ++npolled) {
+		err = mlx4_poll_one(cq, &qp, ((void *)wc) + npolled * wc_size,
+				    wc_size, is_exp, &scat);
+		//if (unlikely(err != CQ_OK && err != CQ_SPLIT))
+		//if (err == CQ_SPLIT) {
+		//	printf("DEBUG mlx4_poll_cq: wc->qp_num: %#06x\n", wc->qp_num);
+		//}
+		if (unlikely(err != CQ_OK)) {
+			break;
+		}
+		//if (unlikely(err != CQ_OK))
+		//	break;
+	}
+	//printf("DEBUG mlx4_poll_cq: err:%d\n", err);
+	//printf("DEBUG mlx4_poll_cq: npolled:%d\n", npolled);
+
+	//if (scat != NULL) {printf("DDD SEG1: scat is not NULL.\n");}
+	if (likely(npolled || err == CQ_POLL_ERR || err == CQ_SPLIT))
+		mlx4_update_cons_index(cq);
+	
+	//if (scat != NULL) {printf("DDD SEG2: scat is not NULL.\n");}
+	if (err == CQ_SPLIT) {
+		// <1> poll from split_qp to get sender's INFO message
+		//printf("RECEIVER <1> poll from split_qp to get sender's INFO message\n");
+		//struct mlx4_cq *split_cq = to_mcq(qp->split_cq);
+		//struct mlx4_qp *split_qp = NULL;
+		struct ibv_cq *split_cq = qp->split_cq;
+		struct ibv_exp_wc split_wc;
+		//int split_err = 0;
+		int num_chunks_to_recv;
+		// TODO: modify to event_triggered polling later
+		int ne2;
+		do {
+			//split_err = mlx4_poll_one(split_cq, &split_qp, &split_wc, wc_size, is_exp, NULL);
+			ne2 = __mlx4_poll_cq(split_cq, 1, &split_wc, wc_size, is_exp);
+		} while (ne2 == 0);
+
+		// <2> cache num_chunks_split from the received message
+		//printf("RECEIVER <2> cache num_chunks_split from the received message\n");
+		//if (qp->split_fc_msg.type == INFO) {
+		//	printf("DEBUG: mlx4_poll_cq: EQUAL INFO\n");
+		//}
+		num_chunks_to_recv = qp->split_fc_msg.num_split_chunks - 1;
+		//printf("DEBUG: mlx4_poll_cq: split_FC_msg.num_split_chunks = %d\n", qp->split_fc_msg.num_split_chunks);
+
+		// <3> post corresponding number of RRs to split_qp
+		//printf("RECEIVER <3> post corresponding number of RRs to split_qp\n");
+		
+		struct ibv_sge rsge;
+		struct ibv_recv_wr rwr;
+		struct ibv_recv_wr *bad_rwr;
+
+		memset(&rsge, 0, sizeof(rsge));
+		rsge.addr = (uintptr_t)ntohll(scat->addr);
+		rsge.length = SPLIT_CHUNK_SIZE;
+		rsge.lkey = ntohl(scat->lkey); 
+		
+		//printf("DEBUG: print scat: rsge.addr: %" PRIu64 "\n", rsge.addr);
+		//printf("DEBUG: print scat: rsge.lkey: %" PRIu32 "\n", rsge.lkey);
+
+		memset(&rwr, 0, sizeof(rwr));
+		rwr.wr_id = 0;
+		rwr.next = NULL;
+		rwr.sg_list = &rsge;
+		rwr.num_sge = 1;
+
+		int i;
+		int ret;
+		//printf("DEBUG mlx4_poll_cq: num_chunks_to_recv = %d\n", num_chunks_to_recv);
+		for (i = 0; i < num_chunks_to_recv; i++) {
+			rsge.addr += SPLIT_CHUNK_SIZE;
+			//__mlx4_post_recv(qp->split_qp, &rwr, &bad_rwr);
+			ret = __mlx4_post_recv(qp->split_qp, &rwr, &bad_rwr);
+			if (ret != 0) {
+				errno = ret;
+				printf("__mlx4_post_recv REALLY BAD!!, errno = %d\n", errno);
+			}
+			
+		}
+
+		// <4> post another RR for future splitting
+		//printf("RECEIVER <4> post another RR for future splitting\n");
+		memset(&rsge, 0, sizeof(rsge));
+		rsge.addr = (uintptr_t)&qp->split_fc_msg;
+		rsge.length = sizeof(struct Split_FC_message);
+		rsge.lkey = qp->split_fc_mr->lkey;
+
+		memset(&rwr, 0, sizeof(rwr));
+		rwr.wr_id = 0;
+		rwr.next = NULL;
+		rwr.sg_list = &rsge;
+		rwr.num_sge = 1;
+
+		//__mlx4_post_recv(qp->split_qp, &rwr, &bad_rwr);
+		ret = __mlx4_post_recv(qp->split_qp, &rwr, &bad_rwr);
+		if (ret != 0) {
+			errno = ret;
+			printf("__mlx4_post_recv REALLY BAD!!, errno = %d\n", errno);
+		}
+		
+		// <5> send ACK back to sender using split_qp, and poll its wc
+		//printf("RECEIVER <5> send ACK back to sender using split_qp, and poll its wc\n");
+		//printf("DEBUG5: mlx4_poll_cq: split_FC_msg.num_split_chunks = %d\n", qp->split_fc_msg.num_split_chunks);
+		qp->split_fc_msg.type = ACK;
+		struct ibv_sge ssge;
+		struct ibv_send_wr swr;
+		struct ibv_send_wr *bad_swr;
+			
+		memset(&ssge, 0, sizeof(ssge));
+		ssge.addr	  = (uintptr_t)&qp->split_fc_msg;
+		ssge.length = sizeof(struct Split_FC_message);
+		ssge.lkey	  = qp->split_fc_mr->lkey;
+			
+		memset(&swr, 0, sizeof(swr));
+		swr.wr_id      = 0;
+		swr.sg_list    = &ssge;
+		swr.num_sge    = 1;
+		swr.opcode     = IBV_WR_SEND;
+		////swr.send_flags = 0;		// UNSIGNALED
+		swr.send_flags = IBV_SEND_SIGNALED;		// has to be SIGNALED to avoid ENOMEM
+
+		//__mlx4_post_send(qp->split_qp, &swr, &bad_swr);
+		ret = __mlx4_post_send(qp->split_qp, &swr, &bad_swr);
+		if (ret != 0) {
+			errno = ret;
+			printf("__mlx4_post_recv REALLY BAD!!, errno = %d\n", errno);
+		}
+
+		do {
+			ne2 = __mlx4_poll_cq(split_cq, 1, &split_wc, wc_size, is_exp);
+		} while (ne2 == 0);
+
+		// <6> poll from split_qp, and keep counting successful wc until all chunks are polled
+		// TODO: modify to event_triggered polling later
+		//printf("RECEIVER <6> poll from split_qp, and keep counting successful wc until all chunks are polled\n");
+		//int chunk_count = 0;
+
+		/*
+		while (chunk_count < num_chunks_to_recv) {
+			printf("DEBUG: mlx4_poll_cq: chunk_count = %d\n", chunk_count);
+			//err = mlx4_poll_one(split_cq, &split_qp, ((void *)&split_wc) + chunk_count * wc_size,
+			err = mlx4_poll_one(split_cq, &split_qp, ((void *)&split_wc),
+						wc_size, is_exp, NULL);
+			//if (unlikely(err != CQ_OK && err != CQ_SPLIT))
+			if (likely(err == CQ_OK)) {
+				++chunk_count;
+			} else {
+				//printf("DEBUG: mlx4_poll_cq: err = %d\n", err);
+			}
+		}	
+		*/
+		ne2 = 0;
+		do {
+			//ne2 += __mlx4_poll_cq(split_cq, 1, &split_wc, wc_size, is_exp);
+			ne2 += __mlx4_poll_cq(split_cq, num_chunks_to_recv, &split_wc, wc_size, is_exp);
+		} while (ne2 < num_chunks_to_recv);
+		//printf("PUPU1; ne2 = %d; num_chunks_to_recv = %d\n", ne2, num_chunks_to_recv);
+
+		// increment npolled;
+		++npolled;
+	}
+
+	mlx4_unlock(&cq->lock);
+	//printf("PUPU2\n");
+
+	if (unlikely(cq->stall_enable && err == CQ_EMPTY)) {
+		cq->stall_next_poll = 1;
+		//printf("CQ STALL?\n");
+
+	}
+	
+	//TODO: rewrite return
+	if (err == CQ_SPLIT) {
+		err = CQ_OK;
+	}
 	return err == CQ_POLL_ERR ? err : npolled;
 }
 
