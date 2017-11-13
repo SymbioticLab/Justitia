@@ -509,8 +509,8 @@ static struct pingpong_context *pp_init_ctx(struct ibv_device *ib_dev,
 		/* Work around:  driver doesnt support
 		 * recv_wr = 0 */
 		initattr.cap.max_recv_wr  = 1;
-		initattr.cap.max_send_sge = 1;
-		initattr.cap.max_recv_sge = 1;
+		initattr.cap.max_send_sge = 2;
+		initattr.cap.max_recv_sge = 2;
 		initattr.cap.max_inline_data = user_parm->inline_size;
 
 		if (user_parm->connection_type == 1) {
