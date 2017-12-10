@@ -1013,8 +1013,6 @@ int mlx4_poll_cq(struct ibv_cq *ibcq, int ne, struct ibv_exp_wc *wc,
 		if (unlikely(err != CQ_OK)) {
 			break;
 		}
-		//if (unlikely(err != CQ_OK))
-		//	break;
 	}
 	//printf("DEBUG mlx4_poll_cq: err:%d\n", err);
 	//printf("DEBUG mlx4_poll_cq: npolled:%d\n", npolled);
@@ -1082,6 +1080,7 @@ int mlx4_poll_cq(struct ibv_cq *ibcq, int ne, struct ibv_exp_wc *wc,
 			}
 			
 		}
+		//printf("Posted %d recv requests\n", num_chunks_to_recv);
 
 		// <4> post another RR for future splitting
 		//printf("RECEIVER <4> post another RR for future splitting\n");
@@ -1106,6 +1105,7 @@ int mlx4_poll_cq(struct ibv_cq *ibcq, int ne, struct ibv_exp_wc *wc,
 		// <5> send ACK back to sender using split_qp, and poll its wc
 		//printf("RECEIVER <5> send ACK back to sender using split_qp, and poll its wc\n");
 		//printf("DEBUG5: mlx4_poll_cq: split_FC_msg.num_split_chunks = %d\n", qp->split_fc_msg.num_split_chunks);
+		//sleep(1);
 		qp->split_fc_msg.type = ACK;
 		struct ibv_sge ssge;
 		struct ibv_send_wr swr;
@@ -1121,8 +1121,7 @@ int mlx4_poll_cq(struct ibv_cq *ibcq, int ne, struct ibv_exp_wc *wc,
 		swr.sg_list    = &ssge;
 		swr.num_sge    = 1;
 		swr.opcode     = IBV_WR_SEND;
-		////swr.send_flags = 0;		// UNSIGNALED
-		swr.send_flags = IBV_SEND_SIGNALED;		// has to be SIGNALED to avoid ENOMEM
+		swr.send_flags = IBV_SEND_SIGNALED;
 
 		//__mlx4_post_send(qp->split_qp, &swr, &bad_swr);
 		ret = __mlx4_post_send(qp->split_qp, &swr, &bad_swr);
@@ -1154,12 +1153,29 @@ int mlx4_poll_cq(struct ibv_cq *ibcq, int ne, struct ibv_exp_wc *wc,
 			}
 		}	
 		*/
+		////
+		/*
 		ne2 = 0;
 		do {
 			//ne2 += __mlx4_poll_cq(split_cq, 1, &split_wc, wc_size, is_exp);
 			ne2 += __mlx4_poll_cq(split_cq, num_chunks_to_recv, &split_wc, wc_size, is_exp);
 		} while (ne2 < num_chunks_to_recv);
-		//printf("PUPU1; ne2 = %d; num_chunks_to_recv = %d\n", ne2, num_chunks_to_recv);
+		printf("PUPU1; ne2 = %d; num_chunks_to_recv = %d\n", ne2, num_chunks_to_recv);
+		*/
+		////
+
+		////
+		int ret_ne = 0;
+		ne2 = 0;
+		while (ne2 < num_chunks_to_recv) {
+			do {
+				ret_ne = __mlx4_poll_cq(split_cq, 1, &split_wc, wc_size, is_exp);
+			} while (ret_ne == 0);
+			++ne2;	
+			//printf("ne2 = %d, byte_len: %d\n", ne2, split_wc.byte_len);
+		}
+		//printf("ne2 = %d, message transfer completed\n", ne2);
+		////
 
 		// increment npolled;
 		++npolled;

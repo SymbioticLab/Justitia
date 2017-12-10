@@ -605,6 +605,7 @@ static int mlx4_init_context(struct verbs_device *v_device,
 	context->max_qp_wr = dev_attrs.max_qp_wr;
 	context->max_sge = dev_attrs.max_sge;
 	context->max_cqe = dev_attrs.max_cqe;
+	//printf("~~~~DEVICE MAX CQE: %d\n", dev_attrs.max_cqe);
 	context->exp_device_cap_flags = dev_attrs.exp_device_cap_flags;
 	if (dev_attrs.comp_mask & IBV_EXP_DEVICE_ATTR_MAX_CTX_RES_DOMAIN)
 		context->max_ctx_res_domain = dev_attrs.max_ctx_res_domain;

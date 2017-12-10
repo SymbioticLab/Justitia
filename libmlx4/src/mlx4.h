@@ -51,8 +51,11 @@
 
 ////
 #include <inttypes.h>
-#define SPLIT_CHUNK_SIZE	1000000
-//TODO: later change cq size to 1
+#define SPLIT_CHUNK_SIZE	1000
+//#define SPLIT_CHUNK_SIZE	1000000
+#define SPLIT_MAX_SEND_WR 	5000
+#define SPLIT_MAX_RECV_WR 	5000
+#define SPLIT_MAX_CQE		10000
 #define CUSTOM_CQ_SIZE	5
 ////
 

@@ -1102,7 +1102,8 @@ struct ibv_qp *mlx4_create_qp(struct ibv_pd *pd, struct ibv_qp_init_attr *attr)
 	////struct ibv_comp_channel *channel = send_cq->comp_channel;
 	////struct ibv_cq *split_cq = create_cq(pd->context, 1, channel, 0, NULL);
 	struct ibv_comp_channel *channel = ibv_create_comp_channel(pd->context);
-	struct ibv_cq *split_cq = create_cq(pd->context, 1, channel, 0, NULL);
+	////struct ibv_cq *split_cq = create_cq(pd->context, 1, channel, 0, NULL);
+	struct ibv_cq *split_cq = mlx4_create_cq(pd->context, SPLIT_MAX_CQE, channel, 0);
 	//// arm split_cq for completion events
 	mlx4_arm_cq(split_cq, 0);
 
@@ -1111,10 +1112,10 @@ struct ibv_qp *mlx4_create_qp(struct ibv_pd *pd, struct ibv_qp_init_attr *attr)
 	memset(&split_init_attr, 0, sizeof(struct ibv_qp_init_attr));
 	split_init_attr.send_cq = split_cq;
 	split_init_attr.recv_cq = split_cq;
-	split_init_attr.cap.max_send_wr  = 1000;
-	split_init_attr.cap.max_recv_wr  = 1000;
-	split_init_attr.cap.max_send_sge = 10;
-	split_init_attr.cap.max_recv_sge = 10;
+	split_init_attr.cap.max_send_wr  = SPLIT_MAX_SEND_WR;
+	split_init_attr.cap.max_recv_wr  = SPLIT_MAX_RECV_WR;
+	split_init_attr.cap.max_send_sge = 1;
+	split_init_attr.cap.max_recv_sge = 1;
 	split_init_attr.cap.max_inline_data = 100;	// probably not going to use inline there
 	split_init_attr.qp_type = IBV_QPT_RC;
 

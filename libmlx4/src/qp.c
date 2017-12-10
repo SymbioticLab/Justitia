@@ -1207,7 +1207,7 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 		int need_reset = 0;		//// as long as it is once split, this is set to 1.
 		//int is_split = 0;
 		int num_chunks_to_send = 1;
-		int orig_num_chunks_to_send = 1;
+		//int orig_num_chunks_to_send = 1;
 		int current_length = 0;
 		uint64_t orig_raddr = 0;
 		uint64_t orig_sge_addr = 0;
@@ -1242,7 +1242,7 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 				if (num_chunks_to_send > (&qp->sq)->max_post - cur_sq_size) {
 					num_chunks_to_send = (&qp->sq)->max_post - cur_sq_size;
 				}
-				orig_num_chunks_to_send = num_chunks_to_send;
+				//orig_num_chunks_to_send = num_chunks_to_send;
 				//printf("(1) num_chunks_to_send: %d\n", num_chunks_to_send);
 
 				wr->sg_list->length = SPLIT_CHUNK_SIZE;
@@ -1305,8 +1305,7 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 					swr.sg_list    = &ssge;
 					swr.num_sge    = 1;
 					swr.opcode     = IBV_WR_SEND;
-					////swr.send_flags = 0;		// UNSIGNALED
-					swr.send_flags = IBV_SEND_SIGNALED;		// has to be SIGNALED to avoid ENOMEM
+					swr.send_flags = IBV_SEND_SIGNALED;
 
 					int ret2;
 					ret2 = __mlx4_post_send(qp->split_qp, &swr, &bad_swr);
@@ -1332,18 +1331,97 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 					//	printf("INDEED received ACK from receiver.\n");
 					//}
 
-					// <4> send using split_qp with the rest of the original message chunks
-					// TODO: this is for WRITE_IMM. Add part for SEND later
+					// <4> send using split_qp with the rest of the original message chunks using a linked list of WRs.
 					//printf("SENDER <4> send using split_qp with the rest of the original message chunks\n");
+					//printf("SENDER <4> send using split_qp with the rest of the original message chunks using a linked list of WRs\n");
+
+					//// Batch using a linked list of WRs
+					/* still some issue, fix later
+					struct ibv_send_wr *wr_head = NULL, *current_wr = NULL, *new_wr = NULL;
+					struct ibv_sge *sge;
+					//TODO: later deallocate the heap memory
+
+					int i;
+					int num_unsignaled = num_chunks_to_send - 1;
+					printf("num_unsignaled: %d\n", num_unsignaled);
+					for (i = 0; i < num_unsignaled; i++) {
+						new_wr = (struct ibv_send_wr *)malloc(sizeof(struct ibv_send_wr));
+						memset(new_wr, 0, sizeof(struct ibv_send_wr));
+						sge = (struct ibv_sge *)malloc(sizeof(struct ibv_sge));
+
+						new_wr->wr_id = i + 1;
+						new_wr->opcode = wr->opcode;
+						new_wr->sg_list = sge;
+						new_wr->num_sge = 1;
+						new_wr->send_flags = 0; //covered by memset though
+						new_wr->wr.rdma.remote_addr = wr->wr.rdma.remote_addr + SPLIT_CHUNK_SIZE * i;
+						new_wr->wr.rdma.rkey = wr->wr.rdma.rkey;
+
+						sge->length = SPLIT_CHUNK_SIZE;
+						sge->addr = wr->sg_list->addr + SPLIT_CHUNK_SIZE * i;
+						sge->lkey = wr->sg_list->lkey;
+						printf("sge->addr:%" PRIu64 "\n", sge->addr);
+
+						if (wr_head == NULL) {
+							wr_head = new_wr;
+							current_wr = wr_head;
+						} else {
+							current_wr->next = new_wr;
+							current_wr = current_wr->next;
+						}
+					}
+
+					// Last one with flag SIGNALED
+					current_length -= SPLIT_CHUNK_SIZE * num_unsignaled;
+					new_wr = (struct ibv_send_wr *)malloc(sizeof(struct ibv_send_wr));
+					memset(new_wr, 0, sizeof(struct ibv_send_wr));
+					sge = (struct ibv_sge *)malloc(sizeof(struct ibv_sge));
+
+					new_wr->wr_id = i + 1;
+					new_wr->opcode = wr->opcode;
+					new_wr->sg_list = sge;
+					new_wr->num_sge = 1;
+					new_wr->send_flags = IBV_SEND_SIGNALED;
+					new_wr->wr.rdma.remote_addr = wr->wr.rdma.remote_addr + SPLIT_CHUNK_SIZE * i;
+					new_wr->wr.rdma.rkey = wr->wr.rdma.rkey;
+
+					sge->length = current_length;
+					sge->addr = wr->sg_list->addr + SPLIT_CHUNK_SIZE * i;
+					sge->lkey = wr->sg_list->lkey;
+					printf("sge->addr:%" PRIu64 "\n", sge->addr);
+
+					if (i == 0) {
+						wr_head = new_wr;
+						printf("WARNING\n");
+					} else {
+						current_wr->next = new_wr;
+						current_wr = current_wr->next;
+						current_wr->next = NULL;
+					}
+
+					ret = __mlx4_post_send(qp->split_qp, wr_head, bad_wr);
+					if (ret != 0) {
+						errno = ret;
+						printf("DEBUG POST SEND REALLY BAD!!, errno = %d\n", errno);
+						goto out;
+					}
+					*/
+					//// End of using linked list
+
+
+					// Originally WRs were not sent in a linked list
 					// starting from the 2nd chunk, all set to unsignaled
 					// ^^^ Actually in this case every chunk needs to be SIGNALED
-					////wr->send_flags = wr->send_flags & (~(IBV_SEND_SIGNALED));
-					wr->send_flags = wr->send_flags | IBV_SEND_SIGNALED;
+					//wr->send_flags = wr->send_flags | IBV_SEND_SIGNALED;
+					// ^^^ Well, not necesarily...
+					wr->send_flags = wr->send_flags & (~(IBV_SEND_SIGNALED));
 
+					//int cnt = 0;
 					while (num_chunks_to_send > 0) {
 						current_length -= SPLIT_CHUNK_SIZE;
 						wr->wr.rdma.remote_addr += SPLIT_CHUNK_SIZE;
 						wr->sg_list->addr += SPLIT_CHUNK_SIZE;
+						//sleep(2);
 						
 						//printf("DEBUG POST SEND: posting rest SRs to split_qp. num_chunks_to_send = %d\n", num_chunks_to_send);
 						//printf("raddr:%" PRIu64 "\n", wr->wr.rdma.remote_addr);
@@ -1352,11 +1430,13 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 						if (num_chunks_to_send == 1) {
 							wr->sg_list->length = current_length;
 							// the last one has to be SIGNALED to synchronize. Otherwise we'll go to the next iteration directly.
-							//wr->send_flags = IBV_SEND_SIGNALED;  ->> as previously set
+							wr->send_flags = IBV_SEND_SIGNALED;
 						} 
 
 						//__mlx4_post_send(qp->split_qp, wr, bad_wr);
 						ret = __mlx4_post_send(qp->split_qp, wr, bad_wr);
+						//cnt++;
+						//printf("post_send [%d]\n", cnt);
 						if (ret != 0) {
 							errno = ret;
 							printf("DEBUG POST SEND REALLY BAD!!, errno = %d\n", errno);
@@ -1366,15 +1446,41 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 						num_chunks_to_send--;
 
 					}
-					
+
 					// <5> poll from the split_cq for all chunks to ensure the completion message has done transfering.
 					//printf("SENDER <5> poll from the split_cq for all chunks to ensure the completion message has done transfering.\n");
 					ne = 0;
+					//// All signalled
+					/*
+					//TODO: if necessary, study the performance difference of polling multiple WCs at a time.
+					// Drawbacks of this is that you need to provide a big array of wc structs to pass in.
+					printf("DEBUG POST_SEND: orig_num_chunks_to_send = %d\n", orig_num_chunks_to_send);	
 					do {
-						//ne += mlx4_poll_ibv_cq(qp->split_cq, 1, &wc);
-						ne += mlx4_poll_ibv_cq(qp->split_cq, orig_num_chunks_to_send - 1, &wc);
+						ne += mlx4_poll_ibv_cq(qp->split_cq, 1, &wc);
+						//ne += mlx4_poll_ibv_cq(qp->split_cq, orig_num_chunks_to_send - 1, &wc);
+						printf("ne = %d\n", ne);
 					} while (ne < orig_num_chunks_to_send - 1);
-					//printf("ne = %d, message transfer completed\n", ne);
+					printf("ne = %d, message transfer completed\n", ne);
+					*/
+					//// selective signalling to poll the wc of the last wr
+					do {
+						ne = mlx4_poll_ibv_cq(qp->split_cq, 1, &wc);
+						//printf("ne = %d\n", ne);
+					} while (ne == 0);
+					////
+
+					/*	
+					int ret_ne = 0;
+					while (ne < orig_num_chunks_to_send - 1) {
+						do {
+							ret_ne = mlx4_poll_ibv_cq(qp->split_cq, 1, &wc);	
+						} while (ret_ne == 0);
+						++ne;	
+					}
+					printf("ne = %d, message transfer completed\n", ne);
+					*/
+					
+					////
 					
 					// <6> post another RR to split_qp for future splitting
 					//printf("SENDER <6> post another RR to split_qp for future splitting\n");
