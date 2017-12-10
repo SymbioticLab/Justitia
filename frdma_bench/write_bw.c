@@ -913,6 +913,7 @@ int run_iter(struct pingpong_context *ctx, struct user_parameters *user_param,
 		struct ibv_recv_wr *bad_wr_recv;
 
 		while (rcnt < user_param->iters * user_param->numofqps) {
+			//printf("Iter\t[%d]\n", rcnt+1);
 			++rcnt;
 			if (ibv_post_recv(ctx->qp[0], &ctx->rwr, &bad_wr_recv)) {
 				fprintf(stderr, "Couldn't post recv: rcnt=%d\n",
@@ -951,6 +952,7 @@ int run_iter(struct pingpong_context *ctx, struct user_parameters *user_param,
 
 				}
 			} while (ne == 0 );	
+			//printf("Received[%d]\n", rcnt);
 		}
 		
 
@@ -1046,6 +1048,7 @@ int run_iter(struct pingpong_context *ctx, struct user_parameters *user_param,
 	        qp = ctx->qp[index];
 	        ctx->wr.wr_id      = index ;
 		*/
+			//printf("Iter [%d]\n", totccnt+1);
 		    tposted[totscnt] = get_cycles();
 		    // Adding wr_num check for a linked list of work requests
 		    if (user_param->wr_num == 1) {
@@ -1106,6 +1109,7 @@ int run_iter(struct pingpong_context *ctx, struct user_parameters *user_param,
 	      //here the id is the index to the qp num
 	      //ctx->ccnt[(int)wc.wr_id] = ctx->ccnt[(int)wc.wr_id]+1;
 	      totccnt += 1;
+		  //printf("Sent [%d]\n", totccnt);
 		  //printf("<2>totscnt: %d, totccnt: %d\n", totscnt, totccnt);
 		}
 
