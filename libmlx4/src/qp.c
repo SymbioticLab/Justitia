@@ -1176,20 +1176,26 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 	int size = 0;
 	////
 	//printf("sq.max_gs: %d; qp->sq.max_post: %d\n", qp->sq.max_gs, qp->sq.max_post);
-	/*
 	struct ibv_qp_attr attr0;
 	struct ibv_qp_init_attr init_attr0;
 	if (ibv_query_qp(ibqp, &attr0, IBV_QP_STATE, &init_attr0)) {
 		fprintf(stderr, "Failed to query QP state\n");
 		return -1;
 	}
-	printf("DEBUG POST SEND INITIAL CHECK: lid: %04x\n", attr0.ah_attr.dlid);
+	//printf("DEBUG POST SEND INITIAL CHECK: lid: %04x\n", attr0.ah_attr.dlid);
 	printf("DEBUG POST SEND INITIAL CHECK: qpn:%#06x\n", ibqp->qp_num);
-	printf("DEBUG POST SEND INITIAL CHECK: psn: %#06x\n", attr0.sq_psn);
-	printf("DEBUG POST SEND INITIAL CHECK: port: %d\n", attr0.port_num);
+	//printf("DEBUG POST SEND INITIAL CHECK: psn: %#06x\n", attr0.sq_psn);
+	//printf("DEBUG POST SEND INITIAL CHECK: port: %d\n", attr0.port_num);
 	printf("DEBUG POST SEND INITIAL CHECK: dest_qp_num: %#06x\n", attr0.dest_qp_num);
-	printf("DEBUG POST SEND INITIAL CHECK: wr rkey: %#08x\n", wr->wr.rdma.rkey);
-	*/
+	//printf("DEBUG POST SEND INITIAL CHECK: wr rkey: %#08x\n", wr->wr.rdma.rkey);
+	struct ibv_qp_attr attr1;
+	struct ibv_qp_init_attr init_attr1;
+	if (ibv_query_qp(qp->split_qp, &attr1, IBV_QP_STATE, &init_attr1)) {
+		fprintf(stderr, "Failed to query QP state\n");
+		return -1;
+	}
+	printf("DEBUG POST SEND INITIAL CHECK: SPLIT qpn:%#06x\n", qp->split_qp->qp_num);
+	printf("DEBUG POST SEND INITIAL CHECK: SPLIT dest_qp_num: %#06x\n", attr1.dest_qp_num);
 	////
 	
 
@@ -1258,8 +1264,8 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 					wr->opcode == IBV_WR_SEND_WITH_IMM) {	//// two-sided op
 
 					//printf("[[[Splitting two-sided op]]]\n");
-					//printf("ORIG QP local QPN: %#06x\n", ibqp->qp_num);
-					//printf("SPLIT QP local QPN: %#06x\n", qp->split_qp->qp_num);
+					printf("ORIG QP local QPN: %#06x\n", ibqp->qp_num);
+					printf("SPLIT QP local QPN: %#06x\n", qp->split_qp->qp_num);
 					//// qpn hack:
 					//qp->split_qp->qp_num = ibqp->qp_num;
 					//printf("SPLIT QP local QPN: %#06x\n", qp->split_qp->qp_num);
@@ -1270,7 +1276,7 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 					
 					// Two-sided spliting
 					// <1> if message to send > CHUNK_SIZE, send first chunk with extra dummy byte using user's qp
-					//printf("SENDER <1> if message to send > CHUNK_SIZE, send first chunk with extra dummy byte using user's qp\n");
+					printf("SENDER <1> if message to send > CHUNK_SIZE, send first chunk with extra dummy byte using user's qp\n");
 					ret = __mlx4_post_send(ibqp, wr, bad_wr);
 					if (ret != 0) {
 						errno = ret;
@@ -1280,7 +1286,7 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 
 					// <2> post a SR to split_qp to send num_chunks_to_send to the receiver and poll its wc
 					// will first implement WRITE_IMM
-					//printf("SENDER <2> post a SR to split_qp to send num_chunks_to_send to the receiver and poll its wc\n");
+					printf("SENDER <2> post a SR to split_qp to send num_chunks_to_send to the receiver and poll its wc\n");
 
 					//// temp for debugging:
 					//num_chunks_to_send = 1;
@@ -1288,7 +1294,7 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 
 					qp->split_fc_msg.type = INFO;
 					qp->split_fc_msg.num_split_chunks = num_chunks_to_send;
-					//printf("DEBUG POST SEND: qp->split_fc_msg.num_split_chunks: %d\n", qp->split_fc_msg.num_split_chunks);
+					printf("DEBUG POST SEND: qp->split_fc_msg.num_split_chunks: %d\n", qp->split_fc_msg.num_split_chunks);
 					num_chunks_to_send--;
 
 					struct ibv_sge ssge;
@@ -1322,17 +1328,17 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 
 					// <3> poll from split_cq for receiver's ACK
 					// TODO: do event-triggered later
-					//printf("SENDER <3> poll from split_cq for receiver's ACK\n");
+					printf("SENDER <3> poll from split_cq for receiver's ACK\n");
 					do {
 						ne = mlx4_poll_ibv_cq(qp->split_cq, 1, &wc);
 					} while (ne == 0);
 					// check if the message is ACK: (for debug)
-					//if (qp->split_fc_msg.type == ACK) {
-					//	printf("INDEED received ACK from receiver.\n");
-					//}
+					if (qp->split_fc_msg.type == ACK) {
+						printf("INDEED received ACK from receiver.\n");
+					}
 
 					// <4> send using split_qp with the rest of the original message chunks using a linked list of WRs.
-					//printf("SENDER <4> send using split_qp with the rest of the original message chunks\n");
+					printf("SENDER <4> send using split_qp with the rest of the original message chunks\n");
 					//printf("SENDER <4> send using split_qp with the rest of the original message chunks using a linked list of WRs\n");
 
 					//// Batch using a linked list of WRs
@@ -1448,7 +1454,7 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 					}
 
 					// <5> poll from the split_cq for all chunks to ensure the completion message has done transfering.
-					//printf("SENDER <5> poll from the split_cq for all chunks to ensure the completion message has done transfering.\n");
+					printf("SENDER <5> poll from the split_cq for all chunks to ensure the completion message has done transfering.\n");
 					ne = 0;
 					//// All signalled
 					/*
@@ -1483,7 +1489,7 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 					////
 					
 					// <6> post another RR to split_qp for future splitting
-					//printf("SENDER <6> post another RR to split_qp for future splitting\n");
+					printf("SENDER <6> post another RR to split_qp for future splitting\n");
 					
 					struct ibv_sge rsge;
 					struct ibv_recv_wr rwr;

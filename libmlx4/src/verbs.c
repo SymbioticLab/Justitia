@@ -1122,10 +1122,10 @@ struct ibv_qp *mlx4_create_qp(struct ibv_pd *pd, struct ibv_qp_init_attr *attr)
 	struct ibv_qp 		*qp;
 	struct ibv_qp 		*split_qp;
 	split_qp = __mlx4_create_qp(pd, &split_init_attr);
-	//printf("DEBUG mlx4_create_qp: split_qp->qpn = %06x\n", split_qp->qp_num);
+	printf("DEBUG mlx4_create_qp: split_qp->qpn = %06x\n", split_qp->qp_num);
 	//// Now create the user's qp
 	qp = __mlx4_create_qp(pd, attr);
-	//printf("DEBUG mlx4_create_qp: orig_qp->qpn = %06x\n", qp->qp_num);
+	printf("DEBUG mlx4_create_qp: orig_qp->qpn = %06x\n", qp->qp_num);
 	//// store split_qp & split_cq inside the user's qp
 	if (qp) {
 		struct mlx4_qp *mqp = to_mqp(qp);
@@ -1134,7 +1134,7 @@ struct ibv_qp *mlx4_create_qp(struct ibv_pd *pd, struct ibv_qp_init_attr *attr)
 		mqp->split_comp_channel = channel;
 		//// register mr for two-sided splitting header message
 		//// TODO: remember to free later in mlx4_destroy_qp
-		mqp->split_fc_mr = mlx4_reg_mr(pd, &mqp->split_fc_msg, sizeof(struct Split_FC_message), IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE);
+		mqp->split_fc_mr = mlx4_reg_mr(pd, &mqp->split_fc_msg, sizeof(struct Split_FC_message), IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_WRITE);
 
 	}
 	////
@@ -1186,6 +1186,44 @@ int mlx4_query_qp(struct ibv_qp *ibqp, struct ibv_qp_attr *attr,
 	return 0;
 }
 
+//// Original mlx4_modify_qp
+int __mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
+		    int attr_mask)
+{
+	struct ibv_modify_qp cmd;
+	int ret;
+
+	if (attr_mask & IBV_QP_PORT) {
+		ret = update_port_data(qp, attr->port_num);
+		if (ret)
+			return ret;
+	}
+
+	if (qp->state == IBV_QPS_RESET &&
+	    attr_mask & IBV_QP_STATE   &&
+	    attr->qp_state == IBV_QPS_INIT) {
+		mlx4_qp_init_sq_ownership(to_mqp(qp));
+	}
+
+	ret = ibv_cmd_modify_qp(qp, attr, attr_mask, &cmd, sizeof cmd);
+
+	if (!ret		       &&
+	    (attr_mask & IBV_QP_STATE) &&
+	    attr->qp_state == IBV_QPS_RESET) {
+		if (qp->recv_cq)
+			mlx4_cq_clean(to_mcq(qp->recv_cq), qp->qp_num,
+				      qp->srq ? to_msrq(qp->srq) : NULL);
+		if (qp->send_cq && qp->send_cq != qp->recv_cq)
+			mlx4_cq_clean(to_mcq(qp->send_cq), qp->qp_num, NULL);
+
+		mlx4_init_qp_indices(to_mqp(qp));
+		if (to_mqp(qp)->rq.wqe_cnt)
+			*to_mqp(qp)->db = 0;
+	}
+
+	return ret;
+}
+
 //// Modify to change the qp state of the custom qp
 int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 		    int attr_mask)
@@ -1222,9 +1260,27 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 	//// do the same for custom_qp
 	////TODO: change the dest_qpn hack later for more general use
 	//// Note after the first modify_qp call, qp state will move from INIT to RTR.
-	//// Essentially we are looking at the INIT -> RTR transition when hacking dest_qp_num
-	if (qp->state == IBV_QPS_RTR && attr->qp_state == IBV_QPS_RTR) {
-		attr->dest_qp_num -= 1;
+	//// Essentially we are looking at the user QP's INIT -> RTR transition when hacking dest_qp_num
+	//// Fow now, we also directly modify split qp to RTS instead of wait users modify their qp to RTS
+	//// because some users might never do so.
+
+
+	//if (qp->state == IBV_QPS_RTR && attr->qp_state == IBV_QPS_RTR) {
+	if (qp->state == IBV_QPS_INIT) {
+		if (__mlx4_modify_qp(mqp->split_qp, attr, attr_mask)) {
+			fprintf(stderr, "Failed to modify SPLIT QP to INIT State\n");
+			goto err;
+		}
+		printf("<<<<MODIFY SPLIT QP to INIT>>>>\n");
+	} else if (qp->state == IBV_QPS_RTR && mqp->split_qp->state == IBV_QPS_INIT) {
+		////attr->dest_qp_num -= SPLIT_QP_NUM_DIFF;
+		//attr->dest_qp_num -= 1;	// for old benchmark
+		//attr->dest_qp_num -= 2; // for new benchmark
+		struct ibv_qp_attr split_attr;
+		memcpy(&split_attr, attr, sizeof(struct ibv_qp_attr));
+		int split_mask = attr_mask;
+		split_attr.dest_qp_num -= SPLIT_QP_NUM_DIFF;
+		split_attr.rq_psn = 10083;
 		//printf("DEBUG MODIFY QP: now attr->dest_qp_num is %06x\n", attr->dest_qp_num);
 		//// pre-post a RR for later use
 		//printf("DEBUG MODIFY QP: post a RR to split_qp\n");
@@ -1245,15 +1301,79 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 		wr.sg_list = &sge;
 		wr.num_sge = 1;
 
-		__mlx4_post_recv(mqp->split_qp, &wr, &bad_wr);
-		
-	}
-	ibv_cmd_modify_qp(mqp->split_qp, attr, attr_mask, &cmd, sizeof cmd);
-	//int ret2 = ibv_cmd_modify_qp(mqp->split_qp, attr, attr_mask, &cmd, sizeof cmd);
-	attr->dest_qp_num += 1;
+		if (__mlx4_post_recv(mqp->split_qp, &wr, &bad_wr)) {
+			fprintf(stderr, "Failed to post the initial RR to split qp.\n");
+			goto err;
+		}
 
-	//printf("DDDDDEBUG: ret2: %d; attr->sq_psn: %06x\n", ret2, attr->sq_psn);
-	////
+		if (__mlx4_modify_qp(mqp->split_qp, &split_attr, split_mask)) {
+			fprintf(stderr, "Failed to modify SPLIT QP to RTR State\n");
+			goto err;
+		}
+		printf("<<<<MODIFY SPLIT QP to RTR>>>>\n");
+		// Modify split qp to RTS
+		split_attr.qp_state	    = IBV_QPS_RTS;
+		split_attr.sq_psn	    = 10083;
+		split_attr.timeout	    = 14;
+		split_attr.retry_cnt	= 7;
+		split_attr.rnr_retry	= 7;
+		split_attr.max_rd_atomic  = 1;
+		int rts_mask = 	IBV_QP_STATE              |
+						IBV_QP_TIMEOUT            |
+						IBV_QP_RETRY_CNT          |
+						IBV_QP_RNR_RETRY          |
+						IBV_QP_SQ_PSN             |
+						IBV_QP_MAX_QP_RD_ATOMIC;
+
+		if (__mlx4_modify_qp(mqp->split_qp, &split_attr, rts_mask)) {
+			fprintf(stderr, "Failed to modify SPLIT QP to RTS State\n");
+			goto err;
+		}
+		printf("<<<<MODIFY SPLIT QP to RTS>>>>\n");
+	}
+	/*
+	else if (qp->state == IBV_QPS_RTS) {
+		struct ibv_qp_attr split_attr;
+		memcpy(&split_attr, attr, sizeof(struct ibv_qp_attr));
+
+		split_attr.dest_qp_num -= SPLIT_QP_NUM_DIFF;
+		split_attr.qp_state	    = IBV_QPS_RTS;
+		//split_attr.sq_psn	    = lrand48() & 0xffffff;
+		//split_attr.sq_psn	    = 4410;
+		split_attr.timeout	    = 14;
+		split_attr.retry_cnt	= 7;
+		split_attr.rnr_retry	= 7;
+		split_attr.max_rd_atomic  = 1;
+		
+		int rts_mask = 	IBV_QP_STATE              |
+						IBV_QP_TIMEOUT            |
+						IBV_QP_RETRY_CNT          |
+						IBV_QP_RNR_RETRY          |
+						IBV_QP_SQ_PSN             |
+						IBV_QP_MAX_QP_RD_ATOMIC;
+
+		if (rts_mask != attr_mask) {
+			printf("PUPU1\n");
+		}
+		if (split_attr.timeout != attr->timeout) {
+			printf("PUPU2\n");
+		}
+		if (split_attr.qp_state != attr->qp_state) {
+			printf("PUPU3\n");
+		}
+		if (split_attr.qp_state != attr->qp_state) {
+			printf("PUPU3\n");
+		}
+		
+
+		if (__mlx4_modify_qp(mqp->split_qp, &split_attr, rts_mask)) {
+		//if (__mlx4_modify_qp(mqp->split_qp, &split_attr, attr_mask)) {
+			fprintf(stderr, "Failed to modify SPLIT QP to RTS State\n");
+			goto err;
+		}
+		printf("<<<<MODIFY SPLIT QP to RTS>>>>\n");
+	}
+	*/
 
 	if (!ret		       &&
 	    (attr_mask & IBV_QP_STATE) &&
@@ -1283,6 +1403,7 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 		////
 	}
 
+err:
 	return ret;
 }
 
