@@ -52,8 +52,7 @@
 ////
 #include <inttypes.h>
 #define SPLIT_CHUNK_SIZE	1000
-#define SPLIT_QP_NUM_DIFF	2
-//#define SPLIT_CHUNK_SIZE	1000000
+#define SPLIT_QP_NUM_DIFF	1
 #define SPLIT_MAX_SEND_WR 	5000
 #define SPLIT_MAX_RECV_WR 	5000
 #define SPLIT_MAX_CQE		10000
@@ -877,6 +876,8 @@ void mlx4_qp_init_sq_ownership(struct mlx4_qp *qp);
 int __mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 		   struct ibv_send_wr **bad_wr) __MLX4_ALGN_FUNC__;
 int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
+		   struct ibv_send_wr **bad_wr) __MLX4_ALGN_FUNC__;
+int orig_mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 		   struct ibv_send_wr **bad_wr) __MLX4_ALGN_FUNC__;
 int __mlx4_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr,
 		   struct ibv_recv_wr **bad_wr) __MLX4_ALGN_FUNC__;
