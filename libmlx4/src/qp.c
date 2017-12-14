@@ -1554,6 +1554,11 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 					//printf("DEBUG POST SEND REALLY BAD!!, errno = %d\n", errno);
 					goto out;
 				}
+
+				// clean up wr & sge mem on heap
+				free(new_wr);
+				free(sge);
+
 				//// End of using linked list
 				mlx4_unlock(&qp->sq.lock);
 				return ret;

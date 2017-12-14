@@ -52,7 +52,7 @@
 ////
 #include <inttypes.h>
 #define SPLIT_CHUNK_SIZE	1000
-#define SPLIT_QP_NUM_DIFF	1
+#define SPLIT_QP_NUM_DIFF	2
 #define SPLIT_MAX_SEND_WR 	5000
 #define SPLIT_MAX_RECV_WR 	5000
 #define SPLIT_MAX_CQE		10000
