@@ -46,6 +46,11 @@
 #include "doorbell.h"
 #include "wqe.h"
 
+/* isolation */
+#include "qp_pacer.h"
+#include <inttypes.h>
+/* end */
+
 #ifndef htobe64
 #include <endian.h>
 # if __BYTE_ORDER == __LITTLE_ENDIAN
@@ -688,6 +693,9 @@ static inline int set_data_inl_seg(struct mlx4_qp *qp, int num_sge, struct ibv_s
 		off += len;
 	}
 
+	/* isolation */
+	*byte_count = inl;
+
 	if (likely(seg_len)) {
 		++num_seg;
 		/*
@@ -784,6 +792,10 @@ static inline void set_data_non_inl_seg(struct mlx4_qp *qp, int num_sge, struct 
 
 		set_ptr_data(seg, sg_list, owner_bit);
 
+		/* isolation */
+		*byte_count = sg_list->length;
+		/* end */
+
 		*size += (sizeof(*seg) / 16);
 	} else {
 		struct mlx4_wqe_data_seg *seg = wqe;
@@ -835,6 +847,15 @@ static inline int set_common_segments(struct ibv_send_wr *wr, struct mlx4_qp *qp
 		return ret;
 
 	*total_size = size;
+
+	/* isolation */
+	if (flow) {
+		__atomic_add_fetch(&bytes, (uint64_t)byte_count, __ATOMIC_RELAXED);
+		while(!__atomic_exchange_n(&go, 1, __ATOMIC_RELAXED));
+		__atomic_store_n(&go, 0, __ATOMIC_RELAXED);
+	}
+	/* end */
+
 	set_ctrl_seg(ctrl, wr, qp, imm, srcrb_flags, owner_bit, size,
 		     mlx4_ib_opcode[wr->opcode]);
 
@@ -1170,6 +1191,27 @@ out:
 int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 		     struct ibv_send_wr **bad_wr)
 {
+	/* isolation */
+	if (unlikely(start_flag))
+	{	
+		start_flag = 0;
+		if (flow) {
+			pthread_t th;
+			if (pthread_create(&th, NULL, (void *(*)(void *))write_byte_count, NULL))
+			{
+				perror("pthread_create: write_byte_count");
+				flow = NULL;
+			}
+			if (pthread_create(&th, NULL, (void *(*)(void *))check_target, NULL))
+			{
+				perror("pthread_create: check_target");
+				flow = NULL;
+			}
+			clock_gettime(CLOCK_MONOTONIC, &start);
+			clock_gettime(CLOCK_MONOTONIC, &last_check);
+		}
+	}
+	/* end */
 	struct mlx4_qp *qp = to_mqp(ibqp);
 	int nreq;
 	int ret = 0;
