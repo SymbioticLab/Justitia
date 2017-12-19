@@ -119,13 +119,11 @@ int main (int argc, char** argv) {
         error("mmap");
 
     /* initialize control block */
-    cb.active_chunk_size = DEFAULT_CHUNK_SIZE;
     for (i = 0; i < MAX_FLOWS; i++) {
         cb.flows[i].target = LINE_RATE_MB;
         cb.flows[i].active = 0;
         cb.flows[i].bytes = 0;
         cb.flows[i].measured = 0.0;
-        cb.flows[i].chunk_size = DEFAULT_CHUNK_SIZE;
     }
     
     /* start off thread handling incoming flows */
@@ -134,10 +132,10 @@ int main (int argc, char** argv) {
         error("pthread_create: flow_handler");
     }
     
-    // printf("starting thread for latency monitoring...\n");
-    // if(pthread_create(&th2, NULL, (void * (*)(void *))&monitor_latency, (void*)&param)){
-    //     error("pthread_create: monitor_latency");
-    // }
+    printf("starting thread for latency monitoring...\n");
+    if(pthread_create(&th2, NULL, (void * (*)(void *))&monitor_latency, (void*)&param)){
+        error("pthread_create: monitor_latency");
+    }
     
     /* main loop: rate calculation */
     uint32_t tput = 0;
@@ -148,7 +146,8 @@ int main (int argc, char** argv) {
     while (1) {
         nanosleep(&sleep_time, &remain_time);
         /* first sweep to gather total bandwidth usage */
-        cb.num_active_flows = 0;
+        __atomic_store_n(&cb.num_active_small_flows, 0, __ATOMIC_RELAXED);
+        __atomic_store_n(&cb.num_active_big_flows, 0, __ATOMIC_RELAXED); 
         cb.unused = 0;
         cb.num_saturated = 0;
         cb.true = 1;
@@ -159,35 +158,37 @@ int main (int argc, char** argv) {
                 tput = __atomic_load_n(&cb.flows[i].measured, __ATOMIC_RELAXED);
                 printf("@@@tput of slot %d = %d\n", i, tput);
                 printf("@@@target of slot %d = %d\n", i, cb.flows[i].target);
-                cb.num_active_flows++;
-                if (tput < cb.flows[i].target) {
-                    cb.unused += cb.flows[i].target - cb.flows[i].measured;
-                } else {
-                    cb.num_saturated++;
+                if (cb.flows[i].small)
+                    cb.num_active_small_flows++;
+                else {
+                    cb.num_active_big_flows++;
+                    if (tput < cb.flows[i].target) {
+                        cb.unused += cb.flows[i].target - cb.flows[i].measured;
+                    } else {
+                        cb.num_saturated++;
+                    }
                 }
             } 
         }
         if (__atomic_compare_exchange_n(&cb.test, &cb.true, 0, 0, __ATOMIC_RELAXED, __ATOMIC_RELAXED)) {
-            target = (uint32_t)LINE_RATE_MB / cb.num_active_flows;
+            target = (uint32_t)LINE_RATE_MB / cb.num_active_big_flows;
             printf("@@@equal target tput = %d\n", target);
             for (i = 0; i < MAX_FLOWS; i++) {
                 if (__atomic_load_n(&cb.flows[i].active, __ATOMIC_RELAXED)) {
                     __atomic_store_n(&cb.flows[i].target, target, __ATOMIC_RELAXED);
                 }
             }
-        } else {
-            if (cb.num_saturated && cb.unused) {
-                cb.redistributed = cb.unused / cb.num_saturated;
-                for (i = 0; i < MAX_FLOWS; i++) {
-                    if (__atomic_load_n(&cb.flows[i].active, __ATOMIC_RELAXED)) {
-                        tput = __atomic_load_n(&cb.flows[i].measured, __ATOMIC_RELAXED);
-                        printf("@@@tput of slot %d = %d\n", i, tput);
-                        printf("@@@target of slot %d = %d\n", i, cb.flows[i].target);
-                        if (tput >= cb.flows[i].target) {
-                            __atomic_add_fetch(&cb.flows[i].target, cb.redistributed, __ATOMIC_RELAXED);
-                        } else {
-                            __atomic_store_n(&cb.flows[i].target, tput, __ATOMIC_RELAXED);
-                        }
+        } else if (cb.num_saturated && cb.unused) {
+            cb.redistributed = cb.unused / cb.num_saturated;
+            for (i = 0; i < MAX_FLOWS; i++) {
+                if (__atomic_load_n(&cb.flows[i].active, __ATOMIC_RELAXED)) {
+                    tput = __atomic_load_n(&cb.flows[i].measured, __ATOMIC_RELAXED);
+                    printf("@@@tput of slot %d = %d\n", i, tput);
+                    printf("@@@target of slot %d = %d\n", i, cb.flows[i].target);
+                    if (tput >= cb.flows[i].target) {
+                        __atomic_add_fetch(&cb.flows[i].target, cb.redistributed, __ATOMIC_RELAXED);
+                    } else {
+                        __atomic_store_n(&cb.flows[i].target, tput, __ATOMIC_RELAXED);
                     }
                 }
             }

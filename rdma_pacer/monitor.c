@@ -3,24 +3,27 @@
 #include "p2.h"
 #include "get_clock.h"
 #include "countmin.h"
+#include "pacer.h"
 
 void monitor_latency(void *arg) {
     printf("starting monitor_latency...\n");
 
-    struct p2_meta_data p2;
+    // struct p2_meta_data p2;
     CMH_type *cmh;
     struct pingpong_context *ctx;
     struct ibv_send_wr wr, *bad_wr = NULL;
     struct ibv_sge sge;
     struct ibv_wc wc;
     cycles_t start_cycle, end_cycle;
-    unsigned int tail, tail_99, tail_999, lat; // in nanosecond
+    unsigned int tail_99, tail_999, lat, base_tail_99, base_tail_999; // in nanosecond
     int cpu_mhz, no_cpu_freq_warn = 1;
     long long seq = 0;
 
     const char *servername = ((struct monitor_param *)arg)->addr;
     int isclient = ((struct monitor_param *)arg)->isclient;
     int num_comp;
+    int i;
+    uint32_t chunk_size;
     
     ctx = init_monitor_chan(servername, isclient);
     if (!ctx) {
@@ -28,7 +31,7 @@ void monitor_latency(void *arg) {
         return;
     }
 
-    init_p2_meta_data(&p2);
+    // init_p2_meta_data(&p2);
     cmh = CMH_Init(32768, 16, 32, 1);
     printf("size of countmin sketches = %d Bytes\n", CMH_Size(cmh));
     if (!cmh) {
@@ -61,19 +64,27 @@ void monitor_latency(void *arg) {
                 end_cycle = get_cycles();
                 lat = (end_cycle - start_cycle) * 1000 / cpu_mhz;
 
-                tail = query_tail_p2(lat, &p2);
-
-                printf("@@@latency = %u\n", lat);
-                printf("@@@tail = %u\n", tail);
+                // tail = query_tail_p2(lat, &p2);
+                // printf("@@@latency = %u\n", lat);
+                // printf("@@@tail = %u\n", tail);
 
                 if (cmh) {
                     CMH_Update(cmh, lat, 1);
                     // fprintf(stderr, "DEBUG1\n");
                     tail_99 = CMH_Quantile(cmh, 0.99);
                     tail_999 = CMH_Quantile(cmh, 0.999);  
-                }            
-                if (tail > THRESHOLD || tail_99 > THRESHOLD || tail_999 > THRESHOLD) {
-                    // do something
+                }
+                if (__atomic_load_n(&cb.num_active_big_flows, __ATOMIC_RELAXED)) {
+                    if (__atomic_load_n(&cb.num_active_small_flows, __ATOMIC_RELAXED))
+                        if (tail_99 > base_tail_99 * 2 || tail_999 > base_tail_999 * 2) {
+                            for (i = 0; i < MAX_FLOWS; i++) {
+                                chunk_size = __atomic_load_n(&cb.flows[i].chunk_size, __ATOMIC_RELAXED) / 2;
+                                __atomic_store_n(&cb.flows[i].chunk_size, chunk_size > 1000 ? chunk_size : 1000, __ATOMIC_RELAXED);
+                            }
+                        }
+                } else {
+                    base_tail_99 = tail_99;
+                    base_tail_999 = tail_999;
                 }
             } else {
                 perror("ibv_poll_cq");

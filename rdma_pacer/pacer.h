@@ -32,7 +32,7 @@ struct flow_info {
     uint32_t target;
     uint32_t chunk_size;
     uint8_t active;
-
+    uint8_t small;
 };
 
 static struct control_block {
@@ -41,7 +41,8 @@ static struct control_block {
     double redistributed;
     uint32_t active_chunk_size;
     uint16_t next_slot;
-    uint16_t num_active_flows;
+    uint16_t num_active_big_flows;
+    uint16_t num_active_small_flows;
     uint16_t num_saturated;
     uint8_t test;
     uint8_t true;
