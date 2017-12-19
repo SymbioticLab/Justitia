@@ -1232,12 +1232,12 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 	for (nreq = 0; wr; ++nreq, wr = wr->next) {
 
 		//// splitting logic
-		if (wr->sg_list->length > SPLIT_CHUNK_SIZE) {
+		//// Update split chunk size
+		unsigned long split_chunk_size = flow->chunk_size;
+		if (wr->sg_list->length > split_chunk_size) {
 
 			//printf("[[[NEED TO SPLIT]]] [%d]\n", ++GLOBAL_CNT);
 
-			//// Update split chunk size
-			unsigned long split_chunk_size = __atomic_load_n(&SPLIT_CHUNK_SIZE, __ATOMIC_RELAXED);
 
 			int num_chunks_to_send = 1;
 			//int orig_num_chunks_to_send = 1;
