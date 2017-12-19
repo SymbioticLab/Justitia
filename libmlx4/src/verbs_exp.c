@@ -51,10 +51,6 @@
 #include "mlx4_exp.h"
 #include "wqe.h"
 
-/* isolation */
-#include "verbs_pacer.h"
-/* end */
-
 static const char *qptype2key(enum ibv_qp_type type)
 {
 	switch (type) {
@@ -607,21 +603,6 @@ struct ibv_qp *mlx4_exp_create_qp(struct ibv_context *context, struct ibv_exp_qp
 	qp->model_flags = thread_safe ? MLX4_QP_MODEL_FLAG_THREAD_SAFE : 0;
 	mlx4_update_post_send_one(qp);
 	qp->pattern = MLX4_QP_PATTERN;
-
-	/* isolation */
-	int fd_shm;
-	if ((fd_shm = shm_open(SHARED_MEM_NAME, O_RDWR, 0600)) == -1){
-		printf("@@@Pacer's shared memory is not found. Pacer won't be used.\n");
-		flow = NULL;
-	} else {
-		atexit(set_inactive_on_exit);
-		flow = mmap(NULL, MAX_FLOWS * sizeof(struct flow_info), PROT_WRITE | PROT_READ,
-			MAP_SHARED, fd_shm, 0);
-		contact_pacer();
-		flow += slot;
-		printf("@@@At slot %d.\n", slot);
-	}
-	/* end */
 
 	return &qp->verbs_qp.qp;
 
