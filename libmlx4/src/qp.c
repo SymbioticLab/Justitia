@@ -1224,6 +1224,9 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 
 			//printf("[[[NEED TO SPLIT]]] [%d]\n", ++GLOBAL_CNT);
 
+			//// Update split chunk size
+			unsigned long split_chunk_size = __atomic_load_n(&SPLIT_CHUNK_SIZE, __ATOMIC_RELAXED);
+
 			int num_chunks_to_send = 1;
 			//int orig_num_chunks_to_send = 1;
 			int current_length = 0;
@@ -1239,7 +1242,7 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 			orig_send_flags = wr->send_flags;
 
 			//// calculate num of chunks to split 
-			num_chunks_to_send = ceil_helper((float)orig_sge_length / (float)SPLIT_CHUNK_SIZE);
+			num_chunks_to_send = ceil_helper((float)orig_sge_length / (float)split_chunk_size);
 
 
 			// For two-sided ops, the first chunk still need to be what it is originally,
@@ -1262,7 +1265,7 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 
 				////
 
-				wr->sg_list->length = SPLIT_CHUNK_SIZE;
+				wr->sg_list->length = split_chunk_size;
 				wr->sg_list->length++;
 				
 				// Two-sided spliting
@@ -1351,11 +1354,11 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 					new_wr->sg_list = sge;
 					new_wr->num_sge = 1;
 					new_wr->send_flags = 0; //covered by memset though
-					new_wr->wr.rdma.remote_addr = wr->wr.rdma.remote_addr + SPLIT_CHUNK_SIZE * i;
+					new_wr->wr.rdma.remote_addr = wr->wr.rdma.remote_addr + split_chunk_size * i;
 					new_wr->wr.rdma.rkey = wr->wr.rdma.rkey;
 
-					sge->length = SPLIT_CHUNK_SIZE;
-					sge->addr = wr->sg_list->addr + SPLIT_CHUNK_SIZE * i;
+					sge->length = split_chunk_size;
+					sge->addr = wr->sg_list->addr + split_chunk_size * i;
 					sge->lkey = wr->sg_list->lkey;
 					printf("sge->addr:%" PRIu64 "\n", sge->addr);
 
@@ -1369,7 +1372,7 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 				}
 
 				// Last one with flag SIGNALED
-				current_length -= SPLIT_CHUNK_SIZE * num_unsignaled;
+				current_length -= split_chunk_size * num_unsignaled;
 				new_wr = (struct ibv_send_wr *)malloc(sizeof(struct ibv_send_wr));
 				memset(new_wr, 0, sizeof(struct ibv_send_wr));
 				sge = (struct ibv_sge *)malloc(sizeof(struct ibv_sge));
@@ -1379,11 +1382,11 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 				new_wr->sg_list = sge;
 				new_wr->num_sge = 1;
 				new_wr->send_flags = IBV_SEND_SIGNALED;
-				new_wr->wr.rdma.remote_addr = wr->wr.rdma.remote_addr + SPLIT_CHUNK_SIZE * i;
+				new_wr->wr.rdma.remote_addr = wr->wr.rdma.remote_addr + split_chunk_size * i;
 				new_wr->wr.rdma.rkey = wr->wr.rdma.rkey;
 
 				sge->length = current_length;
-				sge->addr = wr->sg_list->addr + SPLIT_CHUNK_SIZE * i;
+				sge->addr = wr->sg_list->addr + split_chunk_size * i;
 				sge->lkey = wr->sg_list->lkey;
 				printf("sge->addr:%" PRIu64 "\n", sge->addr);
 
@@ -1415,9 +1418,9 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 
 				//int cnt = 0;
 				while (num_chunks_to_send > 0) {
-					current_length -= SPLIT_CHUNK_SIZE;
-					wr->wr.rdma.remote_addr += SPLIT_CHUNK_SIZE;
-					wr->sg_list->addr += SPLIT_CHUNK_SIZE;
+					current_length -= split_chunk_size;
+					wr->wr.rdma.remote_addr += split_chunk_size;
+					wr->sg_list->addr += split_chunk_size;
 					//sleep(2);
 					
 					//printf("DEBUG POST SEND: posting rest SRs to split_qp. num_chunks_to_send = %d\n", num_chunks_to_send);
@@ -1535,11 +1538,11 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 					new_wr[i].num_sge = 1;
 					new_wr[i].send_flags = (i == num_wrs_to_split_qp - 1) ? IBV_SEND_SIGNALED : 0;	// last one is signaled for synchronization
 					//new_wr[i].send_flags = IBV_SEND_SIGNALED;
-					new_wr[i].wr.rdma.remote_addr = wr->wr.rdma.remote_addr + SPLIT_CHUNK_SIZE * i;
+					new_wr[i].wr.rdma.remote_addr = wr->wr.rdma.remote_addr + split_chunk_size * i;
 					new_wr[i].wr.rdma.rkey = wr->wr.rdma.rkey;
 
-					sge[i].length = SPLIT_CHUNK_SIZE;
-					sge[i].addr = wr->sg_list->addr + SPLIT_CHUNK_SIZE * i;
+					sge[i].length = split_chunk_size;
+					sge[i].addr = wr->sg_list->addr + split_chunk_size * i;
 					sge[i].lkey = wr->sg_list->lkey;
 					//printf("sge->addr:%" PRIu64 "; send_flag: %d\n", sge[i].addr, new_wr[i].send_flags);
 
@@ -1573,19 +1576,19 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 				//printf("ne = %d\n", ne);
 
 				// Very last one with the original send flag post to user's QP so it can possibly poll its wc
-				current_length -= SPLIT_CHUNK_SIZE * num_wrs_to_split_qp;
+				current_length -= split_chunk_size * num_wrs_to_split_qp;
 
 				new_wr[i].wr_id = wr->wr_id;
 				new_wr[i].opcode = wr->opcode;
 				new_wr[i].sg_list = &sge[i];
 				new_wr[i].num_sge = 1;
 				new_wr[i].send_flags = orig_send_flags;
-				new_wr[i].wr.rdma.remote_addr = wr->wr.rdma.remote_addr + SPLIT_CHUNK_SIZE * i;
+				new_wr[i].wr.rdma.remote_addr = wr->wr.rdma.remote_addr + split_chunk_size * i;
 				new_wr[i].wr.rdma.rkey = wr->wr.rdma.rkey;
 				new_wr[i].next = NULL;
 
 				sge[i].length = current_length;
-				sge[i].addr = wr->sg_list->addr + SPLIT_CHUNK_SIZE * i;
+				sge[i].addr = wr->sg_list->addr + split_chunk_size * i;
 				sge[i].lkey = wr->sg_list->lkey;
 				//printf("sge->addr:%" PRIu64 "; send_flag: %d\n", sge[i].addr, new_wr[i].send_flags);
 				//printf("DDDDDDD:  i = %d; current_length = %d\n", i, current_length);

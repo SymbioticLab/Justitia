@@ -51,13 +51,15 @@
 
 ////
 #include <inttypes.h>
-#define SPLIT_CHUNK_SIZE	1000
+//#define SPLIT_CHUNK_SIZE	1000
 #define SPLIT_QP_NUM_DIFF	2
 #define SPLIT_MAX_SEND_WR 	5000
 #define SPLIT_MAX_RECV_WR 	5000
 #define SPLIT_MAX_CQE		10000
 #define CUSTOM_CQ_SIZE	5
 ////
+
+unsigned long SPLIT_CHUNK_SIZE = 1000000;
 
 /* Use EXP mmap commands until it is pushed to upstream */
 #define MLX4_IB_EXP_MMAP_EXT_UAR_PAGE 0xFE
