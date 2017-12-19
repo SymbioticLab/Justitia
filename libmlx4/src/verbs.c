@@ -57,6 +57,10 @@
 #define SHARED_MR_PROC_DIR_NAME "/proc/driver/mlx4_ib/mrs"
 #define FPATH_MAX 128
 
+/* isolation */
+#include "verbs_pacer.h"
+/* end */
+
 int __mlx4_query_device(uint64_t raw_fw_ver,
 			struct ibv_device_attr *attr)
 {
@@ -1138,6 +1142,22 @@ struct ibv_qp *mlx4_create_qp(struct ibv_pd *pd, struct ibv_qp_init_attr *attr)
 
 	}
 	////
+
+	/* isolation */
+	int fd_shm;
+	if ((fd_shm = shm_open(SHARED_MEM_NAME, O_RDWR, 0600)) == -1){
+		printf("@@@Pacer's shared memory is not found. Pacer won't be used.\n");
+		flow = NULL;
+	} else {
+		atexit(set_inactive_on_exit);
+		flow = mmap(NULL, MAX_FLOWS * sizeof(struct flow_info), PROT_WRITE | PROT_READ,
+			MAP_SHARED, fd_shm, 0);
+		contact_pacer();
+		flow += slot;
+		printf("@@@At slot %d.\n", slot);
+	}
+	/* end */
+
 	return qp;
 
 }

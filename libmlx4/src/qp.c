@@ -49,6 +49,7 @@
 /* isolation */
 #include "qp_pacer.h"
 #include <inttypes.h>
+#define MAX_SMALL 1024
 /* end */
 
 #ifndef htobe64
@@ -645,9 +646,9 @@ static void set_ctrl_seg(struct mlx4_wqe_ctrl_seg *ctrl, struct ibv_send_wr *wr,
 }
 
 static inline int set_data_inl_seg(struct mlx4_qp *qp, int num_sge, struct ibv_sge *sg_list,
-				   void *wqe, int *size, unsigned int owner_bit) __attribute__((always_inline));
+				   void *wqe, int *size, unsigned int owner_bit, uint32_t *byte_count) __attribute__((always_inline));
 static inline int set_data_inl_seg(struct mlx4_qp *qp, int num_sge, struct ibv_sge *sg_list,
-				   void *wqe, int *size, unsigned int owner_bit)
+				   void *wqe, int *size, unsigned int owner_bit, uint32_t *byte_count)
 {
 	struct mlx4_wqe_inline_seg *seg;
 	void *addr;
@@ -783,9 +784,9 @@ static inline void set_data_inl_seg_fast(struct mlx4_qp *qp,
 }
 
 static inline void set_data_non_inl_seg(struct mlx4_qp *qp, int num_sge, struct ibv_sge *sg_list,
-					void *wqe, int *size, unsigned int owner_bit) __attribute__((always_inline));
+					void *wqe, int *size, unsigned int owner_bit, uint32_t *byte_count) __attribute__((always_inline));
 static inline void set_data_non_inl_seg(struct mlx4_qp *qp, int num_sge, struct ibv_sge *sg_list,
-					void *wqe, int *size, unsigned int owner_bit)
+					void *wqe, int *size, unsigned int owner_bit, uint32_t *byte_count)
 {
 	if (likely(num_sge == 1)) {
 		struct mlx4_wqe_data_seg *seg = wqe;
@@ -811,20 +812,23 @@ static inline void set_data_non_inl_seg(struct mlx4_qp *qp, int num_sge, struct 
 	}
 }
 
+/* isolation: added uint32_t *byte_count */
 static inline int set_data_seg(struct mlx4_qp *qp, void *seg, int *sz, int is_inl,
 			       int num_sge, struct ibv_sge *sg_list, int *inl,
-			       unsigned int owner_bit) __attribute__((always_inline));
+			       unsigned int owner_bit, uint32_t *byte_count) __attribute__((always_inline));
 static inline int set_data_seg(struct mlx4_qp *qp, void *seg, int *sz, int is_inl,
 			       int num_sge, struct ibv_sge *sg_list, int *inl,
-			       unsigned int owner_bit)
+			       unsigned int owner_bit, uint32_t *byte_count)
 {
 	if (is_inl) {
 		/* inl is set to true if this is an inline data segment and num_sge > 0 */
 		*inl = num_sge > 0;
+		/* isolation */
 		return set_data_inl_seg(qp, num_sge, sg_list, seg, sz,
-					owner_bit);
+					owner_bit, byte_count);
 	}
-	set_data_non_inl_seg(qp, num_sge, sg_list, seg, sz, owner_bit);
+	/* isolation */
+	set_data_non_inl_seg(qp, num_sge, sg_list, seg, sz, owner_bit, byte_count);
 
 	return 0;
 }
@@ -840,9 +844,11 @@ static inline int set_common_segments(struct ibv_send_wr *wr, struct mlx4_qp *qp
 {
 	int ret;
 	unsigned int owner_bit = (ind & qp->sq.wqe_cnt) ? htonl(WQE_CTRL_OWN) : 0;
+	/* isolation: use to count actual bytes to be sent */
+	uint32_t byte_count = 0;
 
 	ret = set_data_seg(qp, wqe, &size, !!(wr->send_flags & IBV_SEND_INLINE),
-			   wr->num_sge, wr->sg_list, inl, owner_bit);
+			   wr->num_sge, wr->sg_list, inl, owner_bit, &byte_count);
 	if (unlikely(ret))
 		return ret;
 
@@ -1196,6 +1202,7 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 	{	
 		start_flag = 0;
 		if (flow) {
+			flow->active = 1;
 			pthread_t th;
 			if (pthread_create(&th, NULL, (void *(*)(void *))write_byte_count, NULL))
 			{
@@ -1209,6 +1216,11 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 			}
 			clock_gettime(CLOCK_MONOTONIC, &start);
 			clock_gettime(CLOCK_MONOTONIC, &last_check);
+			if (wr->sg_list->length <= MAX_SMALL) {
+				flow->small = 1;
+			} else {
+				flow->small = 0;
+			}
 		}
 	}
 	/* end */
@@ -2301,6 +2313,7 @@ int mlx4_exp_post_send(struct ibv_qp *ibqp, struct ibv_exp_send_wr *wr,
 	int size = 0;
 	uint32_t mlx4_wr_op;
 	uint64_t exp_send_flags;
+	uint32_t byte_count = 0;
 
 	mlx4_lock(&qp->sq.lock);
 
@@ -2583,7 +2596,7 @@ int mlx4_exp_post_send(struct ibv_qp *ibqp, struct ibv_exp_send_wr *wr,
 		}
 
 		ret = set_data_seg(qp, wqe, &size, !!(exp_send_flags & IBV_EXP_SEND_INLINE),
-				   wr->num_sge, wr->sg_list, &inl, owner_bit);
+				   wr->num_sge, wr->sg_list, &inl, owner_bit, &byte_count);
 		if (unlikely(ret)) {
 			inl = 0;
 			*bad_wr = wr;

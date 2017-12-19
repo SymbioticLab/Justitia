@@ -49,6 +49,9 @@
 ////
 #include "wqe.h"
 ////
+/* isolation */
+#include "pacer.h"
+/* end */
 
 int mlx4_stall_num_loop = 300;
 
