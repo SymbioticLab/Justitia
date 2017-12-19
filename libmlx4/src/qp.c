@@ -1233,7 +1233,8 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 
 		//// splitting logic
 		//// Update split chunk size
-		unsigned long split_chunk_size = flow->chunk_size;
+		unsigned long split_chunk_size = flow == NULL ? SPLIT_CHUNK_SIZE : flow->chunk_size;
+
 		if (wr->sg_list->length > split_chunk_size) {
 
 			//printf("[[[NEED TO SPLIT]]] [%d]\n", ++GLOBAL_CNT);
