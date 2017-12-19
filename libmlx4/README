@@ -1,0 +1,14 @@
+Modified from libmlx4-1.2.1mlnx1 included in MLNX_OFED_SRC-4.0-2.0.0.1
+
+Modified functions and files:
+verbs_exp.c: mlx4_exp_create_qp (map the shared meomry to driver's address space)
+qp.c: set_common_segments (write current qpn and bytes to sent to the shared memory)
+
+Note that all pieces of code added for pacing by me enclosed within /* isolation */ and
+/* end */. ctrl+f or cmd+f can quickly locate all added pieces.
+
+Other parts are modified for splitting.
+They are in qp.c, cq.c, verbs.c, verbs_exp.c, mlx4.h
+
+Added file(s):
+verbs_pacer.h qp_pacer.h
