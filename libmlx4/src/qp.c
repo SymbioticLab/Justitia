@@ -1202,7 +1202,7 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 	{	
 		start_flag = 0;
 		if (flow) {
-			flow->active = 1;
+			__atomic_store_n(&flow->active, 1, __ATOMIC_RELAXED);
 			pthread_t th;
 			if (pthread_create(&th, NULL, (void *(*)(void *))write_byte_count, NULL))
 			{
@@ -1217,9 +1217,9 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 			clock_gettime(CLOCK_MONOTONIC, &start);
 			clock_gettime(CLOCK_MONOTONIC, &last_check);
 			if (wr->sg_list->length <= MAX_SMALL) {
-				flow->small = 1;
+				__atomic_store_n(&flow->small, 1, __ATOMIC_RELAXED);
 			} else {
-				flow->small = 0;
+				__atomic_store_n(&flow->small, 0, __ATOMIC_RELAXED);
 			}
 		}
 	}

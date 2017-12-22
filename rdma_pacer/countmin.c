@@ -20,21 +20,53 @@ to Creative Commons, 559 Nathan Abbott Way, Stanford, California
 #include "massdal.h"
 #include "countmin.h"
 
-/* ONLY KEEP CMH INIT, COPY, DESTROY, SIZE, AND FUNCTIONS NEEDED TO FIND QUANTILES */
+/* Code modified from implementations found on
+ * https://www.cs.rutgers.edu/~muthu/massdal-code-index.html
+ * 
+ * Comments adapted from comments in
+ * https://github.com/laserson/dsq/blob/master/dsq.py
+ *
+ * Reference paper http://dx.doi.org/10.1016/j.jalgor.2003.12.001
+ *
+ * This object requires knowledge of the domain of possible values.  This
+ * domain is split into dyadic intervals on a binary tree of specified depth
+ * (num_levels).  The precision of the result depends on the size of the
+ * smallest dyadic interval over the given domain.
+ */
 
-/************************************************************************/
-/* Routines to support hierarchical Count-Min sketches                  */
-/************************************************************************/
+/* CMH_Init: init a hierarchical set of sketches with domain and precision information.
+        
+ * The accuracy of the estimator is limited by the size of the smallest
+ * dyadic subdivision of the domain.  So if the domain is [0, 1], and
+ * num_levels is set to 10, the smallest subdivision has size 2^(-9).
 
-// initialize a hierarchical set of sketches for range queries 
-// heavy hitters or quantiles
+ * epsilon should be set to the allowable error in the estimate.  (Note
+ * that it must be compatible with the num_levels.  If there are not enough
+ * levels to achieve the necessary accuracy, this won't work.)
+
+ * delta should be set to the probability of getting a worse estimate
+ * (i.e., something small, say, 0.05)
+
+ * The three precision parameters, num_levels, epsilon, and delta
+ * ultimately define how much memory is necessary to store the data
+ * structures.  There is one CMSketch per level, and each sketch has a
+ * width and depth defined by epsilon and delta, as described in the paper.
+
+ * Args:
+ *   lower_bound: float lower bound of domain
+ *   upper_bound: float upper bound of domain
+ *   num_levels: int number of levels in binary tree dyadic partition of
+ *       the domain.
+ *   epsilon: float amount of error allowed in resulting rank
+ *   delta: float probability of error exceeding epsilon accuracy
+ */
 CMH_type * CMH_Init(int width, int depth, int U, int gran) {
     CMH_type * cmh;
     int i, j, k;
     prng_type * prng;
 
     if (U <= 0 || U > 32) return NULL;
-    // U is the log the size of the universe in bits
+    // U is the log size of the universe in bits
 
     if (gran > U || gran < 1) return NULL;
     // gran is the granularity to look at the universe in 
@@ -51,9 +83,9 @@ CMH_type * CMH_Init(int width, int depth, int U, int gran) {
         cmh->count = 0;
         cmh->U = U;
         cmh->gran = gran;
-        cmh->levels = (int)ceil(((float) U) / ((float) gran));
+        cmh->levels = (int)ceil(((double) U) / ((double) gran)); /* would be 32 */
         for (j = 0; j < cmh->levels; j++) {
-            if (1u << (cmh->gran * j) <= cmh->depth * cmh->width) {
+            if ((1u << (cmh->gran * j)) <= cmh->depth * cmh->width) {
                 cmh->freelim = j;
             } else {
                 break;
@@ -61,6 +93,7 @@ CMH_type * CMH_Init(int width, int depth, int U, int gran) {
         }
         //find the level up to which it is cheaper to keep exact counts
         cmh->freelim = cmh->levels - cmh->freelim;
+        /* cmh->freelim to 31 are levels keeping exact counts */
         
         cmh->counts = (int **) calloc(sizeof(int *), 1 + cmh->levels);
         cmh->hasha = (unsigned int **)calloc(sizeof(unsigned int *), 1 + cmh->levels);
@@ -89,6 +122,9 @@ CMH_type * CMH_Init(int width, int depth, int U, int gran) {
                     }
             }
         }
+    } else {
+        fprintf(stderr, "CMH_Init failed\n");
+        return NULL;
     }
     return cmh;
 }
@@ -113,13 +149,13 @@ void CMH_Destroy(CMH_type * cmh) {
     cmh = NULL;
 }
 
-// update with a new value
+// update with a new value item and increment cmh->count by diff
 void CMH_Update(CMH_type * cmh, unsigned int item, int diff) {
     int i, j, offset;
 
     if (!cmh) return;
     cmh->max = max(item, cmh->max);
-    printf("COUNT-MIN: maximum observation ever seen = %d\n", cmh->max);
+    //printf("COUNT-MIN: maximum observation ever seen = %d\n", cmh->max);
     cmh->count += diff;
     for (i = 0; i < cmh->levels; i++)
     {
@@ -137,6 +173,8 @@ void CMH_Update(CMH_type * cmh, unsigned int item, int diff) {
                     % cmh->width) + offset] += diff;
                 // this can be done more efficiently if the width is a power of two
                 offset += cmh->width;
+                /* 2D array represented as 1D array so offset needs to be
+                   incremented by cmh->width */
             }
         }
         item >>= cmh->gran;
@@ -181,7 +219,7 @@ int CMH_count(CMH_type * cmh, int depth, int item) {
 }
 
 // compute a range sum: 
-// start at bottom level
+// start at lowest level
 // compute any estimates needed at each level
 // work upwards
 int CMH_Rangesum(CMH_type * cmh, int start, int end) {
@@ -210,7 +248,7 @@ int CMH_Rangesum(CMH_type * cmh, int start, int end) {
             if ((leftend > 0) && (start < end))
                 for (i = 0; i < leftend; i++)
                 {
-                    result+=CMH_count(cmh, depth, start + i);
+                    result += CMH_count(cmh, depth, start + i);
                 }
             if ((rightend > 0) && (start < end))
                 for (i = 0; i < rightend; i++)
@@ -275,6 +313,6 @@ int CMH_Quantile(CMH_type * cmh, float frac) {
     // with high probability, these will be close: only a small number of values
     // will be between the estimates.
 
-    printf("COUNT-MIN: %f-percentile = %d\n", frac, res);
+    //printf("COUNT-MIN: %f-percentile = %d\n", frac, res);
     return res; 
 }

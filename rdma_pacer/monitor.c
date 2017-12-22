@@ -22,8 +22,9 @@ void monitor_latency(void *arg) {
     const char *servername = ((struct monitor_param *)arg)->addr;
     int isclient = ((struct monitor_param *)arg)->isclient;
     int num_comp;
-    int i;
-    uint32_t chunk_size;
+    uint32_t temp;
+    // int i;
+    // uint32_t chunk_size;
     
     ctx = init_monitor_chan(servername, isclient);
     if (!ctx) {
@@ -33,12 +34,15 @@ void monitor_latency(void *arg) {
 
     // init_p2_meta_data(&p2);
     cmh = CMH_Init(32768, 16, 32, 1);
-    printf("size of countmin sketches = %d Bytes\n", CMH_Size(cmh));
     if (!cmh) {
         printf("Failed to allocate hierarchical countmin sketches\n");
+        return;
     }
+    printf("The size of countmin sketches is %d Bytes\n", CMH_Size(cmh));
 
     cpu_mhz = get_cpu_mhz(no_cpu_freq_warn);
+
+    /* WR */
     memset(&wr, 0, sizeof wr);
     wr.opcode = IBV_WR_RDMA_WRITE;
     wr.sg_list = &sge;
@@ -52,6 +56,8 @@ void monitor_latency(void *arg) {
     sge.addr = (uintptr_t)ctx->send_buf;
     sge.length = BUF_SIZE;
     sge.lkey = ctx->send_mr->lkey;
+
+    /* monitor loop */
     while (1) {
         start_cycle = get_cycles();
         if(ibv_post_send(ctx->qp, &wr, &bad_wr)) {
@@ -68,20 +74,23 @@ void monitor_latency(void *arg) {
                 // printf("@@@latency = %u\n", lat);
                 // printf("@@@tail = %u\n", tail);
 
-                if (cmh) {
-                    CMH_Update(cmh, lat, 1);
-                    // fprintf(stderr, "DEBUG1\n");
-                    tail_99 = CMH_Quantile(cmh, 0.99);
-                    tail_999 = CMH_Quantile(cmh, 0.999);  
-                }
+                
+                CMH_Update(cmh, lat, 1);
+                // fprintf(stderr, "DEBUG1\n");
+                tail_99 = CMH_Quantile(cmh, 0.99);
+                tail_999 = CMH_Quantile(cmh, 0.999);  
+
                 if (__atomic_load_n(&cb.num_active_big_flows, __ATOMIC_RELAXED)) {
-                    if (__atomic_load_n(&cb.num_active_small_flows, __ATOMIC_RELAXED))
+                    if (__atomic_load_n(&cb.num_active_small_flows, __ATOMIC_RELAXED)) {
                         if (tail_99 > base_tail_99 * 2 || tail_999 > base_tail_999 * 2) {
-                            for (i = 0; i < MAX_FLOWS; i++) {
-                                chunk_size = __atomic_load_n(&cb.flows[i].chunk_size, __ATOMIC_RELAXED) / 2;
-                                __atomic_store_n(&cb.flows[i].chunk_size, chunk_size > 1000 ? chunk_size : 1000, __ATOMIC_RELAXED);
-                            }
+                            /* Multiplicative Decrease */
+                            temp = __atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED) / 2;
+                            __atomic_store_n(&cb.virtual_link_cap, temp, __ATOMIC_RELAXED);
+                        } else {
+                            /* Additive Increase */
+                            __atomic_fetch_add(&cb.virtual_link_cap, 1, __ATOMIC_RELAXED);
                         }
+                    }
                 } else {
                     base_tail_99 = tail_99;
                     base_tail_999 = tail_999;

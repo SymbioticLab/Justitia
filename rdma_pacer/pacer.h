@@ -19,11 +19,10 @@
 
 #define SHARED_MEM_NAME "/rdma-fairness"
 #define MAX_FLOWS 512
-#define LINE_RATE_GB 56 /* Gb/s */
 #define LINE_RATE_MB 6000 /* MB/s */
-#define LINE_RATE_KB 7340032 /* KB/s */
+#define DEFAULT_CHUNK_SIZE 1048576 /* bytes */
+#define MARGIN 10         /* allow MARGIN between measured throughput and the explicit throughput */
 #define MSG_LEN 8
-#define DEFAULT_CHUNK_SIZE 1048576
 #define SOCK_PATH "/users/yuetan/rdma_socket"
 
 struct flow_info {
@@ -39,6 +38,7 @@ static struct control_block {
     struct flow_info *flows;
     double unused;
     double redistributed;
+    uint32_t virtual_link_cap;             /* capacity of the virtual link that elephants go through */
     uint32_t active_chunk_size;
     uint16_t next_slot;
     uint16_t num_active_big_flows;
