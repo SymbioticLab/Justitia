@@ -1470,6 +1470,7 @@ static void mlx4_unlock_cqs(struct ibv_qp *qp)
 	}
 }
 
+//// also do cleanup for split_qp
 int mlx4_destroy_qp(struct ibv_qp *ibqp)
 {
 	struct mlx4_qp *qp = to_mqp(ibqp);
@@ -1483,14 +1484,20 @@ int mlx4_destroy_qp(struct ibv_qp *ibqp)
 	}
 
 	mlx4_lock_cqs(ibqp);
-	if (ibqp->recv_cq)
+	if (ibqp->recv_cq) {
 		__mlx4_cq_clean(to_mcq(ibqp->recv_cq), ibqp->qp_num,
 				ibqp->srq ? to_msrq(ibqp->srq) : NULL);
-	if (ibqp->send_cq && ibqp->send_cq != ibqp->recv_cq)
+		__mlx4_cq_clean(to_mcq(qp->split_qp->recv_cq), qp->split_qp->qp_num, NULL);
+	}
+	if (ibqp->send_cq && ibqp->send_cq != ibqp->recv_cq) {
 		__mlx4_cq_clean(to_mcq(ibqp->send_cq), ibqp->qp_num, NULL);
+		__mlx4_cq_clean(to_mcq(qp->split_qp->send_cq), qp->split_qp->qp_num, NULL);
+	}
 
-	if (qp->sq.wqe_cnt || qp->rq.wqe_cnt)
+	if (qp->sq.wqe_cnt || qp->rq.wqe_cnt) {
 		mlx4_clear_qp(to_mctx(ibqp->context), ibqp->qp_num);
+		mlx4_clear_qp(to_mctx(qp->split_qp->context), qp->split_qp->qp_num);
+	}
 
 	mlx4_unlock_cqs(ibqp);
 	pthread_mutex_unlock(&to_mctx(ibqp->context)->qp_table_mutex);
@@ -1511,10 +1518,13 @@ int mlx4_destroy_qp(struct ibv_qp *ibqp)
 		}
 	}
 
-	if (qp->rq.wqe_cnt)
+	if (qp->rq.wqe_cnt) {
 		mlx4_free_db(to_mctx(ibqp->context), MLX4_DB_TYPE_RQ, qp->db);
+		mlx4_free_db(to_mctx(qp->split_qp->context), MLX4_DB_TYPE_RQ, to_mqp(qp->split_qp)->db);
+	}
 
 	mlx4_dealloc_qp_buf(ibqp->context, qp);
+	mlx4_dealloc_qp_buf(qp->split_qp->context, to_mqp(qp->split_qp));
 
 	free(qp);
 

@@ -648,21 +648,8 @@ static int mlx4_poll_one(struct mlx4_cq *cq,
 	} else {
 		wq = &(*cur_qp)->rq;
 		wqe_index = wq->tail & (wq->wqe_cnt - 1);
-		////TODO
-		/*
-		if (cq->num_chunks_to_recv == 0) {
-			wqe_index = wq->tail & (wq->wqe_cnt - 1);
-		} else {
-			wqe_index = 0;
-		}
-		*/
-		////
 		wc->wr_id = wq->wrid[wqe_index];
 		++wq->tail;
-		//printf("DEBUG: mlx4_poll_one: ckpt4;  wqe_index: %d; wc->wr_id: %lu\n", wqe_index, wc->wr_id);
-		////TODO
-		//++wq->tail;
-		////
 	}
 
 	if (unlikely(is_error)) {
@@ -1218,7 +1205,6 @@ int mlx4_poll_cq(struct ibv_cq *ibcq, int ne, struct ibv_exp_wc *wc,
 
 	}
 	
-	//TODO: rewrite return
 	if (err == CQ_SPLIT) {
 		err = CQ_OK;
 	    wc->byte_len = total_bytes_recvd;

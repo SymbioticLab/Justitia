@@ -51,8 +51,8 @@
 
 ////
 #include <inttypes.h>
-#define SPLIT_CHUNK_SIZE	1000
-#define SPLIT_QP_NUM_DIFF	2
+#define SPLIT_CHUNK_SIZE	1000000
+#define SPLIT_QP_NUM_DIFF	1
 #define SPLIT_MAX_SEND_WR 	5000
 #define SPLIT_MAX_RECV_WR 	5000
 #define SPLIT_MAX_CQE		10000
@@ -281,7 +281,6 @@ enum mlx4_res_domain_bf_type {
 struct Split_FC_message {
 	enum FC_message_type type;
 	uint32_t num_split_chunks;
-	//TODO: add lkey for SEND message
 };
 
 //struct two_sided_header {
@@ -537,10 +536,7 @@ struct mlx4_cq {
 	int				creation_flags;
 	struct mlx4_qp			*last_qp;
 	uint32_t			model_flags; /* use mlx4_cq_model_flags */
-	//// TODO: clean up later
 	int num_chunks_to_recv;
-	struct mlx4_cqe *current_cqe;
-	uint32_t current_qpn;
 	//struct ibv_comp_channel *split_comp_channel;
 	////
 };

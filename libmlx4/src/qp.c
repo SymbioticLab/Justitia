@@ -1534,7 +1534,6 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 				memset(new_wr, 0, num_chunks_to_send * sizeof(struct ibv_send_wr));
 				sge = (struct ibv_sge *)malloc(num_chunks_to_send * sizeof(struct ibv_sge));
 				memset(sge, 0, num_chunks_to_send * sizeof(struct ibv_sge));
-				//TODO: later deallocate the heap memory
 
 				int i;
 				int num_wrs_to_split_qp = num_chunks_to_send - 1;
