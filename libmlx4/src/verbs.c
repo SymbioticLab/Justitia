@@ -200,7 +200,14 @@ int mlx4_free_pd(struct ibv_pd *pd)
 {
 	int ret;
 
+	//printf("calling free pd?\n");
+	//// cleanup split_fc_mr
+	if (mlx4_dereg_mr(to_mpd(pd)->split_fc_mr)) {
+		printf("error dereg split_fc_mr.\n");
+	}
+
 	ret = ibv_cmd_dealloc_pd(pd);
+	//printf("DEBUG free pd: ret = %d\n", ret);
 	if (ret)
 		return ret;
 
@@ -1137,8 +1144,10 @@ struct ibv_qp *mlx4_create_qp(struct ibv_pd *pd, struct ibv_qp_init_attr *attr)
 		mqp->split_cq = split_cq;
 		mqp->split_comp_channel = channel;
 		//// register mr for two-sided splitting header message
-		//// TODO: remember to free later in mlx4_destroy_qp
 		mqp->split_fc_mr = mlx4_reg_mr(pd, &mqp->split_fc_msg, sizeof(struct Split_FC_message), IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_WRITE);
+		//// add in pd for later deletion
+		to_mpd(pd)->split_fc_mr = mqp->split_fc_mr;
+		////
 
 	}
 	////
@@ -1484,19 +1493,23 @@ int mlx4_destroy_qp(struct ibv_qp *ibqp)
 	}
 
 	mlx4_lock_cqs(ibqp);
+	if (qp->split_qp->recv_cq) {
+		__mlx4_cq_clean(to_mcq(qp->split_qp->recv_cq), qp->split_qp->qp_num, NULL);
+	}
+	if (qp->split_qp->send_cq && qp->split_qp->send_cq != qp->split_qp->recv_cq) {
+		__mlx4_cq_clean(to_mcq(qp->split_qp->send_cq), qp->split_qp->qp_num, NULL);
+	}
 	if (ibqp->recv_cq) {
 		__mlx4_cq_clean(to_mcq(ibqp->recv_cq), ibqp->qp_num,
 				ibqp->srq ? to_msrq(ibqp->srq) : NULL);
-		__mlx4_cq_clean(to_mcq(qp->split_qp->recv_cq), qp->split_qp->qp_num, NULL);
 	}
 	if (ibqp->send_cq && ibqp->send_cq != ibqp->recv_cq) {
 		__mlx4_cq_clean(to_mcq(ibqp->send_cq), ibqp->qp_num, NULL);
-		__mlx4_cq_clean(to_mcq(qp->split_qp->send_cq), qp->split_qp->qp_num, NULL);
 	}
 
 	if (qp->sq.wqe_cnt || qp->rq.wqe_cnt) {
-		mlx4_clear_qp(to_mctx(ibqp->context), ibqp->qp_num);
 		mlx4_clear_qp(to_mctx(qp->split_qp->context), qp->split_qp->qp_num);
+		mlx4_clear_qp(to_mctx(ibqp->context), ibqp->qp_num);
 	}
 
 	mlx4_unlock_cqs(ibqp);
@@ -1508,6 +1521,7 @@ int mlx4_destroy_qp(struct ibv_qp *ibqp)
 	 */
 	if (qp->bf && (&qp->bf->cmn != &(to_mctx(ibqp->context)->bfs.cmn_bf))) {
 		struct mlx4_bfs_data *bfs = &to_mctx(ibqp->context)->bfs;
+		printf("USING BF?");
 		int idx = &(qp->bf->dedic) - bfs->dedic_bf;
 
 		if (0 <= idx && idx < (MLX4_MAX_BFS_IN_PAGE - 1)) {
@@ -1519,13 +1533,14 @@ int mlx4_destroy_qp(struct ibv_qp *ibqp)
 	}
 
 	if (qp->rq.wqe_cnt) {
-		mlx4_free_db(to_mctx(ibqp->context), MLX4_DB_TYPE_RQ, qp->db);
 		mlx4_free_db(to_mctx(qp->split_qp->context), MLX4_DB_TYPE_RQ, to_mqp(qp->split_qp)->db);
+		mlx4_free_db(to_mctx(ibqp->context), MLX4_DB_TYPE_RQ, qp->db);
 	}
 
-	mlx4_dealloc_qp_buf(ibqp->context, qp);
 	mlx4_dealloc_qp_buf(qp->split_qp->context, to_mqp(qp->split_qp));
+	mlx4_dealloc_qp_buf(ibqp->context, qp);
 
+	free(to_mqp(qp->split_qp));
 	free(qp);
 
 	return 0;

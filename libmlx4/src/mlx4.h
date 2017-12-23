@@ -502,9 +502,8 @@ struct mlx4_buf {
 struct mlx4_pd {
 	struct ibv_pd			ibv_pd;
 	uint32_t			pdn;
-	////
-	//struct ibv_context 	*context;
-	// No need to add this context, ibv_pd already has it
+	//// added for splitting cleanup
+	struct ibv_mr		*split_fc_mr;
 	////
 };
 
@@ -656,7 +655,7 @@ struct mlx4_qp {
 	int32_t				transposed_rx_csum_flags;
 	struct mlx4_inlr_buff		inlr_buff;
 	uint8_t				qp_cap_cache;
-	////
+	//// added for spliting
 	struct ibv_qp 		*split_qp;
 	struct ibv_cq		*split_cq;
 	struct ibv_comp_channel *split_comp_channel;
