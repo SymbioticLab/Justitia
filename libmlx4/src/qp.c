@@ -1295,9 +1295,9 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 				//num_chunks_to_send = 1;
 				////
 
-				qp->split_fc_msg.type = INFO;
-				qp->split_fc_msg.num_split_chunks = num_chunks_to_send;
-				//printf("DEBUG POST SEND: qp->split_fc_msg.num_split_chunks: %d\n", qp->split_fc_msg.num_split_chunks);
+				qp->split_fc_msg[0].type = INFO;
+				qp->split_fc_msg[0].msg.num_split_chunks = num_chunks_to_send;
+				//printf("DEBUG POST SEND: qp->split_fc_msg.msg.num_split_chunks: %d\n", qp->split_fc_msg[0].msg.num_split_chunks);
 				num_chunks_to_send--;
 
 				struct ibv_sge ssge;
@@ -1305,7 +1305,7 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 				struct ibv_send_wr *bad_swr;
 					
 				memset(&ssge, 0, sizeof(ssge));
-				ssge.addr	  = (uintptr_t)&qp->split_fc_msg;
+				ssge.addr	  = (uintptr_t)&qp->split_fc_msg[0];
 				ssge.length = sizeof(struct Split_FC_message);
 				ssge.lkey	  = qp->split_fc_mr->lkey;
 					
@@ -1336,7 +1336,7 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 					ne = mlx4_poll_ibv_cq(qp->split_cq, 1, &wc);
 				} while (ne == 0);
 				// check if the message is ACK: (for debug)
-				//if (qp->split_fc_msg.type == ACK) {
+				//if (qp->split_fc_msg[0].type == ACK) {
 				//	printf("INDEED received ACK from receiver.\n");
 				//}
 
@@ -1498,7 +1498,7 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 				struct ibv_recv_wr rwr;
 				struct ibv_recv_wr *bad_rwr;
 				memset(&rsge, 0, sizeof(rsge));
-				rsge.addr = (uintptr_t)&qp->split_fc_msg;
+				rsge.addr = (uintptr_t)&qp->split_fc_msg[0];
 				rsge.length = sizeof(struct Split_FC_message);
 				rsge.lkey = qp->split_fc_mr->lkey;
 				//printf("DDDDD: rsge.addr = %" PRIu64 "\n", rsge.addr);
@@ -1763,9 +1763,9 @@ int orig_mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 					//num_chunks_to_send = 1;
 					////
 
-					qp->split_fc_msg.type = INFO;
-					qp->split_fc_msg.num_split_chunks = num_chunks_to_send;
-					printf("DEBUG POST SEND: qp->split_fc_msg.num_split_chunks: %d\n", qp->split_fc_msg.num_split_chunks);
+					qp->split_fc_msg[0].type = INFO;
+					qp->split_fc_msg[0].msg.num_split_chunks = num_chunks_to_send;
+					printf("DEBUG POST SEND: qp->split_fc_msg.msg.num_split_chunks: %d\n", qp->split_fc_msg[0].msg.num_split_chunks);
 					num_chunks_to_send--;
 
 					struct ibv_sge ssge;
@@ -1773,7 +1773,7 @@ int orig_mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 					struct ibv_send_wr *bad_swr;
 					 
 					memset(&ssge, 0, sizeof(ssge));
-					ssge.addr	  = (uintptr_t)&qp->split_fc_msg;
+					ssge.addr	  = (uintptr_t)&qp->split_fc_msg[0];
 					ssge.length = sizeof(struct Split_FC_message);
 					ssge.lkey	  = qp->split_fc_mr->lkey;
 					 
@@ -1804,7 +1804,7 @@ int orig_mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 						ne = mlx4_poll_ibv_cq(qp->split_cq, 1, &wc);
 					} while (ne == 0);
 					// check if the message is ACK: (for debug)
-					if (qp->split_fc_msg.type == ACK) {
+					if (qp->split_fc_msg[0].type == ACK) {
 						printf("INDEED received ACK from receiver.\n");
 					}
 
@@ -1966,7 +1966,7 @@ int orig_mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 					struct ibv_recv_wr rwr;
 					struct ibv_recv_wr *bad_rwr;
 					memset(&rsge, 0, sizeof(rsge));
-					rsge.addr = (uintptr_t)&qp->split_fc_msg;
+					rsge.addr = (uintptr_t)&qp->split_fc_msg[0];
 					rsge.length = sizeof(struct Split_FC_message);
 					rsge.lkey = qp->split_fc_mr->lkey;
 					//printf("DDDDD: rsge.addr = %" PRIu64 "\n", rsge.addr);
