@@ -2633,8 +2633,25 @@ out:
 	return ret;
 }
 
+////
+int rr_buffer_enqueue(struct rr_buffer *rr_buf, struct ibv_recv_wr* wr) {
+	unsigned int i = rr_buf->size;
+	struct ibv_recv_wr **new_slot;
+	if (i >= rr_buf->capacity) {
+		rr_buf->capacity *= 2;	
+		new_slot = realloc(rr_buf->slot, rr_buf->capacity * sizeof(struct ibv_recv_wr *));	
+		if (!new_slot) { return -1; }
+		rr_buf->slot = new_slot;
+	}
+	struct ibv_recv_wr *rwr = (struct ibv_recv_wr*)malloc(sizeof(struct ibv_recv_wr));
+	memcpy(rwr, wr, sizeof(struct ibv_recv_wr));
+	rr_buf->slot[i] = rwr;
+	rr_buf->size += 1;
 
-//// original mlx4_post_recv. 
+	return 0;
+}
+////
+
 int __mlx4_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr,
 		   struct ibv_recv_wr **bad_wr)
 {
@@ -2671,12 +2688,26 @@ int __mlx4_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr,
 	struct mlx4_qp *qp = to_mqp(ibqp);
 	struct mlx4_wqe_data_seg *scat;
 	int ret = 0;
-	int nreq;
+	int nreq = 0;
 	unsigned int ind;
 	int i;
 	struct mlx4_inlr_rbuff *rbuffs;
 
 	mlx4_lock(&qp->rq.lock);
+
+	//// Buffer all recv requests if qp is at INIT state.
+	//// Split qp shall never post RRs at its own INIT state
+	if (ibqp->state == IBV_QPS_INIT) {
+		struct mlx4_qp *qp = to_mqp(ibqp);
+		if (!qp->split_qp_exchange_done) {
+			if (rr_buffer_enqueue(&qp->rr_buf, wr)) {
+				ret = 1;
+				fprintf(stderr, "Error adding wr to RR_buffer\n");
+				goto out;
+			}
+		}
+	}
+	////
 
 	/* XXX check that state is OK to post receive */
 	ind = qp->rq.head & (qp->rq.wqe_cnt - 1);
@@ -2748,14 +2779,11 @@ out:
 	return ret;
 }
 
-//// post recv testing:  see if we have to use split_qp on receiver side to post a rr
-//// if size > split_size, also post rr using split_qp
 int mlx4_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr,
 		   struct ibv_recv_wr **bad_wr)
 {
 	int ret = 0;
 	ret = __mlx4_post_recv(ibqp, wr, bad_wr);
-	////struct mlx4_qp *qp = to_mqp(ibqp);
 	////ret = __mlx4_post_recv(qp->split_qp, wr, bad_wr);	
 	return ret;
 }

@@ -57,6 +57,7 @@
 #define SPLIT_MAX_SEND_WR 	5000
 #define SPLIT_MAX_RECV_WR 	5000
 #define SPLIT_MAX_CQE		10000
+#define RR_BUFFER_INIT_CAP	1000
 #define CUSTOM_CQ_SIZE	5
 ////
 
@@ -286,6 +287,21 @@ struct Split_FC_message {
 		} split_qp_exchange;
 	} msg;
 };
+////
+
+//// Buffer holding Receive Requests posted at the user's qp at INIT state
+struct rr_buffer {
+	struct ibv_recv_wr **slot;	// head of the buffer
+	unsigned int size;			// number of wr_head pointers
+	unsigned int capacity;
+};
+
+int rr_buffer_init(struct rr_buffer *rr_buf, unsigned int cap);
+
+int rr_buffer_enqueue(struct rr_buffer *rr_buf, struct ibv_recv_wr* wr);
+
+int rr_buffer_post_and_clear(struct rr_buffer *rr_buf, struct ibv_qp *qp);
+
 ////
 
 struct mlx4_xsrq_table {
@@ -665,7 +681,8 @@ struct mlx4_qp {
 	int 				user_qp_mask_init;
 	struct ibv_qp_attr	*user_qp_attr_rtr;
 	int 				user_qp_mask_rtr;
-	//TODO: add a queue for RRs posted at INIT state
+	struct rr_buffer	rr_buf;
+	int 				split_qp_exchange_done;
 	////
 };
 

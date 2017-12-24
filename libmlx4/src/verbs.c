@@ -1080,6 +1080,17 @@ struct ibv_qp *mlx4_create_qp_ex(struct ibv_context *context,
 	return mlx4_exp_create_qp(context, (struct ibv_exp_qp_init_attr *)attr);
 }
 
+////
+int rr_buffer_init(struct rr_buffer *rr_buf, unsigned int cap) {
+	rr_buf->slot = (struct ibv_recv_wr **)malloc(cap * sizeof(struct ibv_recv_wr *));
+	if (!rr_buf->slot) { return -1; }
+	rr_buf->capacity = cap;
+	rr_buf->size = 0;
+
+	return 0;
+}
+////
+
 //// original mlx4_create_qp is here
 struct ibv_qp *__mlx4_create_qp(struct ibv_pd *pd, struct ibv_qp_init_attr *attr)
 {
@@ -1147,8 +1158,9 @@ struct ibv_qp *mlx4_create_qp(struct ibv_pd *pd, struct ibv_qp_init_attr *attr)
 		mqp->split_fc_mr = mlx4_reg_mr(pd, &mqp->split_fc_msg, 2 * sizeof(struct Split_FC_message), IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_WRITE);
 		//// add in pd for later deletion
 		to_mpd(pd)->split_fc_mr = mqp->split_fc_mr;
-		////
-
+		//// initalize recv request buffer
+		rr_buffer_init(&mqp->rr_buf, RR_BUFFER_INIT_CAP);
+		mqp->split_qp_exchange_done = 0;
 	}
 	////
 
@@ -1252,6 +1264,22 @@ int __mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 
 	return ret;
 }
+
+//// repost recv requests in the rr_buffer and free the memory
+int rr_buffer_post_and_clear(struct rr_buffer *rr_buf, struct ibv_qp *qp) {
+	int i;
+	struct ibv_recv_wr *rwr, *bad_rwr;
+	for (i = 0; i < rr_buf->size; i++) {
+		rwr = rr_buf->slot[i];
+		if (__mlx4_post_recv(qp, rwr, &bad_rwr)) {
+			fprintf(stderr, "Failed to repost recv requests to user qp.\n");
+			return 1;
+		}
+		free(rwr);
+	}
+	return 0;
+}
+////
 
 //// Modify to change the qp state of the custom qp
 // A more general design: AT INIT to RTR transition, we move user's QP to RTR and then to RTS using our own psn to exchange split qp's qpn.
@@ -1394,7 +1422,8 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 			}
 			mqp->user_qp_attr_rtr->rq_psn = orig_rq_psn;
 
-			//// TODO: turn off the flag for caching RRs
+			//// Turn off the flag for caching RRs
+			mqp->split_qp_exchange_done = 1;
 
 			//// Move user qp to RTS
 			struct ibv_qp_attr temp_rts_attr;	
@@ -1521,7 +1550,13 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 				goto err;
 			}
 			printf("<<<<USER QP back to RTR now.\n");
-			////TODO: repost cached RRs to UESR QP
+
+			////repost cached RRs to UESR QP
+			printf("RR buffer size = %u", mqp->rr_buf.size);
+			if (rr_buffer_post_and_clear(&mqp->rr_buf, qp)) {
+				ret = 1;
+				goto err;
+			}
 
 			// Move split_qp qp state to INIT
 			if (__mlx4_modify_qp(mqp->split_qp, mqp->user_qp_attr_init, mqp->user_qp_mask_init)) {
@@ -1529,6 +1564,15 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 				goto err;
 			}
 			printf("<<<<MODIFY SPLIT QP to INIT>>>>\n");	
+
+			// Move split_qp qp state to RTR
+			mqp->user_qp_attr_rtr->dest_qp_num = remote_split_qpn;
+			mqp->user_qp_attr_rtr->rq_psn = remote_split_sq_psn;
+			if (__mlx4_modify_qp(mqp->split_qp, mqp->user_qp_attr_rtr, mqp->user_qp_mask_rtr)) {
+				fprintf(stderr, "Failed to modify SPLIT QP to INIT State\n");
+				goto err;
+			}
+			printf("<<<<MODIFY SPLIT QP to RTR>>>>\n");	
 
 			// pre-post a RR for later use
 			struct ibv_sge sge;
@@ -1550,19 +1594,6 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 				goto err;
 			}
 
-			// Move split_qp qp state to RTR
-			uint32_t orig_dest_qpn = mqp->user_qp_attr_rtr->dest_qp_num;
-			orig_rq_psn = attr->rq_psn;
-			mqp->user_qp_attr_rtr->dest_qp_num = remote_split_qpn;
-			mqp->user_qp_attr_rtr->rq_psn = remote_split_sq_psn;
-			if (__mlx4_modify_qp(mqp->split_qp, mqp->user_qp_attr_rtr, mqp->user_qp_mask_rtr)) {
-				fprintf(stderr, "Failed to modify SPLIT QP to INIT State\n");
-				goto err;
-			}
-			mqp->user_qp_attr_rtr->dest_qp_num = orig_dest_qpn;
-			mqp->user_qp_attr_rtr->rq_psn = orig_rq_psn;
-			printf("<<<<MODIFY SPLIT QP to RTR>>>>\n");	
-
 			// Move split_qp qp state to RTS
 			temp_rts_attr.sq_psn = split_qp_sq_psn;
 			if (__mlx4_modify_qp(mqp->split_qp, &temp_rts_attr, rts_mask)) {
@@ -1571,7 +1602,8 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 			}
 			printf("<<<<MODIFY SPLIT QP to RTS>>>>\n");
 
-			// TODO: free memory on heap
+			free(mqp->user_qp_attr_init);
+			free(mqp->user_qp_attr_rtr);
 						
 		} else {
 			//// modify original user's qp state. In this case, ther user can move her qp to RTS
