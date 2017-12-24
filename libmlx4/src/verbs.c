@@ -1320,7 +1320,7 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 			struct ibv_recv_wr wr;
 			struct ibv_recv_wr *bad_wr;
 			memset(&sge, 0, sizeof(sge));
-			sge.addr = (uintptr_t)&mqp->split_fc_msg;
+			sge.addr = (uintptr_t)&mqp->split_fc_msg[0];
 			sge.length = sizeof(struct Split_FC_message);
 			sge.lkey = mqp->split_fc_mr->lkey;
 			//printf("DDDDD0: sge.addr = %" PRIu64 "\n", sge.addr);
@@ -1371,6 +1371,11 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 			mqp->user_qp_attr_init = (struct ibv_qp_attr *)malloc(sizeof(struct ibv_qp_attr));
 			memcpy(mqp->user_qp_attr_init, attr, sizeof(struct ibv_qp_attr));
 			mqp->user_qp_mask_init = attr_mask;
+			ret = ibv_cmd_modify_qp(qp, attr, attr_mask, &cmd, sizeof cmd);
+			if (ret) {
+				fprintf(stderr, "Failed to manually modify USER QP to INIT State. %s\n", strerror(errno));
+				goto err;
+			}
 		} else if (qp->state == IBV_QPS_INIT && attr->qp_state == IBV_QPS_RTR) {
 			//// USER QP INIT -> RTR transition.
 			printf("<<<<USER QP: INIT -> RTR.>>>>\n");
@@ -1382,9 +1387,9 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 			//// Move user qp to RTR
 			uint32_t orig_rq_psn = attr->rq_psn;
 			mqp->user_qp_attr_rtr->rq_psn = 18300;
-			ret = __mlx4_modify_qp(qp, mqp->user_qp_attr_rtr, attr_mask);
+			ret = ibv_cmd_modify_qp(qp, mqp->user_qp_attr_rtr, attr_mask, &cmd, sizeof cmd);
 			if (ret) {
-				fprintf(stderr, "Failed to manually modify USER QP to RTR State.\n");
+				fprintf(stderr, "Failed to manually modify USER QP to RTR State. %s\n", strerror(errno));
 				goto err;
 			}
 			mqp->user_qp_attr_rtr->rq_psn = orig_rq_psn;
@@ -1407,7 +1412,7 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 							IBV_QP_SQ_PSN             |
 							IBV_QP_MAX_QP_RD_ATOMIC;
 
-			ret = __mlx4_modify_qp(qp, &temp_rts_attr, rts_mask);
+			ret = ibv_cmd_modify_qp(qp, &temp_rts_attr, rts_mask, &cmd, sizeof cmd);
 			if (ret) {
 				fprintf(stderr, "Failed to manually modify USER QP to RTS State\n");
 				goto err;
@@ -1456,7 +1461,7 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 			swr.sg_list    = &ssge;
 			swr.num_sge    = 1;
 			swr.opcode     = IBV_WR_SEND;
-			swr.send_flags = 0;			// Unsignaled
+			swr.send_flags = IBV_SEND_SIGNALED;
 
 			ret = __mlx4_post_send(qp, &swr, &bad_swr);
 			if (ret != 0) {
@@ -1465,18 +1470,33 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 			}
 
 			// Recv exchange message
-			int ne = 0;
-			struct ibv_wc wc;
-			do {
-				ne = mlx4_poll_ibv_cq(qp->recv_cq, 1, &wc);
-			} while (ne == 0);
-			if (mqp->split_fc_msg[1].type != EXCHANGE) {
-				ret = 1;
-				fprintf(stderr, "Wrong message when exchange split qp info\n");
-				goto err;
-			}
 			uint32_t remote_split_qpn = mqp->split_fc_msg[1].msg.split_qp_exchange.qp_num;
 			uint32_t remote_split_sq_psn = mqp->split_fc_msg[1].msg.split_qp_exchange.sq_psn; 
+			int ne = 0;
+			int count_twice = 0;
+			struct ibv_wc wc;
+			while (count_twice < 2) {
+				do {
+					ne = mlx4_poll_ibv_cq(qp->recv_cq, 1, &wc);
+				} while (ne == 0);
+				count_twice++;
+				if (wc.opcode == IBV_WC_SEND) {
+					printf("exchange message sent.\n");
+				} else if (wc.opcode == IBV_WC_RECV) {
+					if (mqp->split_fc_msg[1].type != EXCHANGE) {
+						ret = 1;
+						fprintf(stderr, "Wrong message when exchange split qp info\n");
+						goto err;
+					}
+					remote_split_qpn = mqp->split_fc_msg[1].msg.split_qp_exchange.qp_num;
+					remote_split_sq_psn = mqp->split_fc_msg[1].msg.split_qp_exchange.sq_psn; 
+					printf("<<<<Received remote qpn: %06x\n", remote_split_qpn);
+					printf("<<<<Received remote sq_psn: %06x\n", remote_split_sq_psn);
+				} else {
+					ret = 1;
+					fprintf(stderr, "Impossible opcode when polling intial exchange messages\n");
+				}
+			}
 
 			// Reset user QP and move to RTR
 			int reset_mask = IBV_QP_STATE;
@@ -1503,13 +1523,34 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 			printf("<<<<USER QP back to RTR now.\n");
 			////TODO: repost cached RRs to UESR QP
 
-			// Move split_qp qp state
+			// Move split_qp qp state to INIT
 			if (__mlx4_modify_qp(mqp->split_qp, mqp->user_qp_attr_init, mqp->user_qp_mask_init)) {
 				fprintf(stderr, "Failed to modify SPLIT QP to INIT State\n");
 				goto err;
 			}
 			printf("<<<<MODIFY SPLIT QP to INIT>>>>\n");	
 
+			// pre-post a RR for later use
+			struct ibv_sge sge;
+			struct ibv_recv_wr wr;
+			struct ibv_recv_wr *bad_wr;
+			memset(&sge, 0, sizeof(sge));
+			sge.addr = (uintptr_t)&mqp->split_fc_msg[0];
+			sge.length = sizeof(struct Split_FC_message);
+			sge.lkey = mqp->split_fc_mr->lkey;
+
+			memset(&wr, 0, sizeof(wr));
+			wr.wr_id = 0;
+			wr.next = NULL;
+			wr.sg_list = &sge;
+			wr.num_sge = 1;
+
+			if (__mlx4_post_recv(mqp->split_qp, &wr, &bad_wr)) {
+				fprintf(stderr, "Failed to post the initial RR to split qp.\n");
+				goto err;
+			}
+
+			// Move split_qp qp state to RTR
 			uint32_t orig_dest_qpn = mqp->user_qp_attr_rtr->dest_qp_num;
 			orig_rq_psn = attr->rq_psn;
 			mqp->user_qp_attr_rtr->dest_qp_num = remote_split_qpn;
@@ -1522,13 +1563,19 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 			mqp->user_qp_attr_rtr->rq_psn = orig_rq_psn;
 			printf("<<<<MODIFY SPLIT QP to RTR>>>>\n");	
 
+			// Move split_qp qp state to RTS
 			temp_rts_attr.sq_psn = split_qp_sq_psn;
 			if (__mlx4_modify_qp(mqp->split_qp, &temp_rts_attr, rts_mask)) {
 				fprintf(stderr, "Failed to modify SPLIT QP to RTS State\n");
 				goto err;
 			}
 			printf("<<<<MODIFY SPLIT QP to RTS>>>>\n");
+
+			// TODO: free memory on heap
 						
+		} else {
+			//// modify original user's qp state. In this case, ther user can move her qp to RTS
+			ret = ibv_cmd_modify_qp(qp, attr, attr_mask, &cmd, sizeof cmd);
 		}
 	}
 
