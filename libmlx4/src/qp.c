@@ -1417,7 +1417,6 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 				*/
 				//// End of using linked list
 
-
 				// Originally WRs were not sent in a linked list
 				// starting from the 2nd chunk, all set to unsignaled
 				// ^^^ Actually in this case every chunk needs to be SIGNALED
@@ -2698,6 +2697,7 @@ int __mlx4_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr,
 	//// Buffer all recv requests if qp is at INIT state.
 	//// Split qp shall never post RRs at its own INIT state
 	if (ibqp->state == IBV_QPS_INIT) {
+		printf("i don't think so but just to double check...\n");
 		struct mlx4_qp *qp = to_mqp(ibqp);
 		if (!qp->split_qp_exchange_done) {
 			if (rr_buffer_enqueue(&qp->rr_buf, wr)) {

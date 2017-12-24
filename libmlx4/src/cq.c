@@ -262,7 +262,7 @@ static int __mlx4_poll_one(struct mlx4_cq *cq,
 	if (!cqe)
 		return CQ_EMPTY;
 
-	printf("DEBUG __mlx4_poll_one: ckpt1\n");
+	//printf("DEBUG __mlx4_poll_one: ckpt1\n");
 	if (cq->cqe_size == 64)
 		++cqe;
 

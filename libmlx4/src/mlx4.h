@@ -51,14 +51,13 @@
 
 ////
 #include <inttypes.h>
-#define SPLIT_CHUNK_SIZE	1000000			//// Initial Split Chunk Size
-#define MANUAL_SPLIT_QPN_DIFF 0
-#define SPLIT_QP_NUM_DIFF	1
-#define SPLIT_MAX_SEND_WR 	5000
-#define SPLIT_MAX_RECV_WR 	5000
-#define SPLIT_MAX_CQE		10000
-#define RR_BUFFER_INIT_CAP	1000
-#define CUSTOM_CQ_SIZE	5
+#define SPLIT_CHUNK_SIZE		1000000			//// Initial Split Chunk Size
+#define MANUAL_SPLIT_QPN_DIFF 	0
+#define SPLIT_QP_NUM_DIFF		1
+#define SPLIT_MAX_SEND_WR 		5000
+#define SPLIT_MAX_RECV_WR 		5000
+#define SPLIT_MAX_CQE			10000
+#define RR_BUFFER_INIT_CAP		1000
 ////
 
 /* Use EXP mmap commands until it is pushed to upstream */

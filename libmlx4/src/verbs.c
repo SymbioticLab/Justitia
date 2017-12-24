@@ -1474,7 +1474,10 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 			mqp->split_fc_msg[0].type = EXCHANGE;
 			mqp->split_fc_msg[0].msg.split_qp_exchange.qp_num = mqp->split_qp->qp_num;
 			mqp->split_fc_msg[0].msg.split_qp_exchange.sq_psn = split_qp_sq_psn;
+			printf("<<<<Local qpn: %06x\n", mqp->split_qp->qp_num);
+			printf("<<<<Local sq_psn: %06x\n", split_qp_sq_psn);
 
+			sleep(1);
 			// Post SR for ex message
 			struct ibv_sge ssge;
 			struct ibv_send_wr swr;
@@ -1502,29 +1505,55 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 			uint32_t remote_split_qpn = mqp->split_fc_msg[1].msg.split_qp_exchange.qp_num;
 			uint32_t remote_split_sq_psn = mqp->split_fc_msg[1].msg.split_qp_exchange.sq_psn; 
 			int ne = 0;
-			int count_twice = 0;
 			struct ibv_wc wc;
-			while (count_twice < 2) {
+			if (qp->recv_cq == qp->send_cq) {
+				int count_twice = 0;
+				while (count_twice < 2) {
+					do {
+						ne = mlx4_poll_ibv_cq(qp->recv_cq, 1, &wc);
+					} while (ne == 0);
+					count_twice++;
+					if (wc.opcode == IBV_WC_SEND) {
+						printf("<<<<exchange message sent.>>>>\n");
+					} else if (wc.opcode == IBV_WC_RECV) {
+						if (mqp->split_fc_msg[1].type != EXCHANGE) {
+							ret = 1;
+							fprintf(stderr, "Wrong message when exchange split qp info\n");
+							goto err;
+						}
+						remote_split_qpn = mqp->split_fc_msg[1].msg.split_qp_exchange.qp_num;
+						remote_split_sq_psn = mqp->split_fc_msg[1].msg.split_qp_exchange.sq_psn; 
+						printf("<<<<Received remote qpn: %06x\n", remote_split_qpn);
+						printf("<<<<Received remote sq_psn: %06x\n", remote_split_sq_psn);
+					} else {
+						ret = 1;
+						fprintf(stderr, "Impossible opcode when polling intial exchange messages\n");
+					}
+				}
+			} else {
+				do {
+					ne = mlx4_poll_ibv_cq(qp->send_cq, 1, &wc);
+				} while (ne == 0);
+				if (wc.opcode != IBV_WC_SEND) {
+					fprintf(stderr, "Wrong opcode when polling exchange sr\n");
+				}
+				printf("<<<<exchange message sent.>>>>\n");
+
 				do {
 					ne = mlx4_poll_ibv_cq(qp->recv_cq, 1, &wc);
 				} while (ne == 0);
-				count_twice++;
-				if (wc.opcode == IBV_WC_SEND) {
-					printf("exchange message sent.\n");
-				} else if (wc.opcode == IBV_WC_RECV) {
-					if (mqp->split_fc_msg[1].type != EXCHANGE) {
-						ret = 1;
-						fprintf(stderr, "Wrong message when exchange split qp info\n");
-						goto err;
-					}
-					remote_split_qpn = mqp->split_fc_msg[1].msg.split_qp_exchange.qp_num;
-					remote_split_sq_psn = mqp->split_fc_msg[1].msg.split_qp_exchange.sq_psn; 
-					printf("<<<<Received remote qpn: %06x\n", remote_split_qpn);
-					printf("<<<<Received remote sq_psn: %06x\n", remote_split_sq_psn);
-				} else {
-					ret = 1;
-					fprintf(stderr, "Impossible opcode when polling intial exchange messages\n");
+				if (wc.opcode != IBV_WC_RECV) {
+					fprintf(stderr, "Wrong opcode when polling exchange rr\n");
 				}
+				if (mqp->split_fc_msg[1].type != EXCHANGE) {
+					ret = 1;
+					fprintf(stderr, "Wrong message when exchange split qp info\n");
+					goto err;
+				}
+				remote_split_qpn = mqp->split_fc_msg[1].msg.split_qp_exchange.qp_num;
+				remote_split_sq_psn = mqp->split_fc_msg[1].msg.split_qp_exchange.sq_psn; 
+				printf("<<<<Received remote qpn: %06x\n", remote_split_qpn);
+				printf("<<<<Received remote sq_psn: %06x\n", remote_split_sq_psn);
 			}
 
 			// Reset user QP and move to RTR
