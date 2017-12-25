@@ -51,8 +51,9 @@
 
 ////
 #include <inttypes.h>
-#define SPLIT_CHUNK_SIZE		1000000			//// Initial Split Chunk Size
+#define SPLIT_CHUNK_SIZE		1000			//// Initial Split Chunk Size
 #define MANUAL_SPLIT_QPN_DIFF 	0
+#define SPLIT_USE_LINKED_LIST	0
 #define SPLIT_QP_NUM_DIFF		1
 #define SPLIT_MAX_SEND_WR 		5000
 #define SPLIT_MAX_RECV_WR 		5000
