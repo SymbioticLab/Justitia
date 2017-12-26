@@ -52,9 +52,10 @@
 ////
 #include <inttypes.h>
 #define SPLIT_CHUNK_SIZE		1000			//// Initial Split Chunk Size
-#define MANUAL_SPLIT_QPN_DIFF 	0
-#define SPLIT_USE_LINKED_LIST	0
-#define SPLIT_QP_NUM_DIFF		1
+#define MANUAL_SPLIT_QPN_DIFF 	0				//// manually set (guess) split qpn/psn or general approcah
+#define SPLIT_QP_NUM_DIFF		1				//// DC if MANUAL_SPLIT is off
+#define SPLIT_USE_EVENT			1				//// event-triggered polling for splitting
+#define SPLIT_USE_LINKED_LIST	0				//// post using a linked list or not
 #define SPLIT_MAX_SEND_WR 		5000
 #define SPLIT_MAX_RECV_WR 		5000
 #define SPLIT_MAX_CQE			10000

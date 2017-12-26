@@ -1323,6 +1323,23 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 
 				int ne = 0;
 				struct ibv_wc wc;
+				struct ibv_cq *ev_cq;
+				void *ev_ctx;
+				if (SPLIT_USE_EVENT) {
+					ret = ibv_get_cq_event(qp->split_comp_channel, &ev_cq, &ev_ctx);
+					if (ret) {
+						fprintf(stderr, "Failed to get CQ event.\n");
+						return ret;
+					}
+
+					ibv_ack_cq_events(ev_cq, 1);
+ 
+					ret = ibv_req_notify_cq(ev_cq, 0);
+					if (ret) {
+						fprintf(stderr, "Couldn't request CQ notification\n");
+						return ret;
+					}
+				}
 				do {
 					ne = mlx4_poll_ibv_cq(qp->split_cq, 1, &wc);
 				} while (ne == 0);
@@ -1330,6 +1347,21 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 				// <3> poll from split_cq for receiver's ACK
 				// TODO: do event-triggered later
 				//printf("SENDER <3> poll from split_cq for receiver's ACK\n");
+				if (SPLIT_USE_EVENT) {
+					ret = ibv_get_cq_event(qp->split_comp_channel, &ev_cq, &ev_ctx);
+					if (ret) {
+						fprintf(stderr, "Failed to get CQ event.\n");
+						return ret;
+					}
+
+					ibv_ack_cq_events(ev_cq, 1);
+ 
+					ret = ibv_req_notify_cq(ev_cq, 0);
+					if (ret) {
+						fprintf(stderr, "Couldn't request CQ notification\n");
+						return ret;
+					}
+				}
 				do {
 					ne = mlx4_poll_ibv_cq(qp->split_cq, 1, &wc);
 				} while (ne == 0);
@@ -1469,6 +1501,21 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 				printf("ne = %d, message transfer completed\n", ne);
 				*/
 				//// selective signalling to poll the wc of the last wr
+				if (SPLIT_USE_EVENT) {
+					ret = ibv_get_cq_event(qp->split_comp_channel, &ev_cq, &ev_ctx);
+					if (ret) {
+						fprintf(stderr, "Failed to get CQ event.\n");
+						return ret;
+					}
+
+					ibv_ack_cq_events(ev_cq, 1);
+ 
+					ret = ibv_req_notify_cq(ev_cq, 0);
+					if (ret) {
+						fprintf(stderr, "Couldn't request CQ notification\n");
+						return ret;
+					}
+				}
 				do {
 					ne = mlx4_poll_ibv_cq(qp->split_cq, 1, &wc);
 					//printf("ne = %d\n", ne);
@@ -1556,6 +1603,23 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 					//// selective signalling to poll the wc of the last wr
 					struct ibv_wc wc;
 					int ne = 0;
+					struct ibv_cq *ev_cq;
+					void *ev_ctx;
+					if (SPLIT_USE_EVENT) {
+						ret = ibv_get_cq_event(qp->split_comp_channel, &ev_cq, &ev_ctx);
+						if (ret) {
+							fprintf(stderr, "Failed to get CQ event.\n");
+							return ret;
+						}
+
+						ibv_ack_cq_events(ev_cq, 1);
+	
+						ret = ibv_req_notify_cq(ev_cq, 0);
+						if (ret) {
+							fprintf(stderr, "Couldn't request CQ notification\n");
+							return ret;
+						}
+					}
 					do {
 						ne = mlx4_poll_ibv_cq(qp->split_cq, 1, &wc);
 						//printf("ne = %d\n", ne);
@@ -1637,6 +1701,23 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 					//// selective signalling to poll the wc of the last wr
 					struct ibv_wc wc;
 					int ne = 0;
+					struct ibv_cq *ev_cq;
+					void *ev_ctx;
+					if (SPLIT_USE_EVENT) {
+						ret = ibv_get_cq_event(qp->split_comp_channel, &ev_cq, &ev_ctx);
+						if (ret) {
+							fprintf(stderr, "Failed to get CQ event.\n");
+							return ret;
+						}
+
+						ibv_ack_cq_events(ev_cq, 1);
+	
+						ret = ibv_req_notify_cq(ev_cq, 0);
+						if (ret) {
+							fprintf(stderr, "Couldn't request CQ notification\n");
+							return ret;
+						}
+					}
 					do {
 						ne = mlx4_poll_ibv_cq(qp->split_cq, 1, &wc);
 						//printf("ne = %d\n", ne);

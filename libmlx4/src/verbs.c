@@ -1329,6 +1329,7 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 		if (qp->state == IBV_QPS_INIT) {
 			if (__mlx4_modify_qp(mqp->split_qp, attr, attr_mask)) {
 				fprintf(stderr, "Failed to modify SPLIT QP to INIT State\n");
+				ret = 1;
 				goto err;
 			}
 			printf("<<<<MODIFY SPLIT QP to INIT>>>>\n");
@@ -1363,11 +1364,13 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 
 			if (__mlx4_post_recv(mqp->split_qp, &wr, &bad_wr)) {
 				fprintf(stderr, "Failed to post the initial RR to split qp.\n");
+				ret = 1;
 				goto err;
 			}
 
 			if (__mlx4_modify_qp(mqp->split_qp, &split_attr, split_mask)) {
 				fprintf(stderr, "Failed to modify SPLIT QP to RTR State\n");
+				ret = 1;
 				goto err;
 			}
 			printf("<<<<MODIFY SPLIT QP to RTR>>>>\n");
@@ -1387,9 +1390,20 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 
 			if (__mlx4_modify_qp(mqp->split_qp, &split_attr, rts_mask)) {
 				fprintf(stderr, "Failed to modify SPLIT QP to RTS State\n");
+				ret = 1;
 				goto err;
 			}
 			printf("<<<<MODIFY SPLIT QP to RTS>>>>\n");
+
+			printf("<<<<Request SPLIT CQ evnt notification\n");
+			if (SPLIT_USE_EVENT) {
+				ret = ibv_req_notify_cq(mqp->split_cq, 0); 
+				if (ret) {
+					fprintf(stderr, "Couldn't request CQ notification\n");
+					goto err;
+				}
+			}
+
 		}
 	} else {	// a general solution for split qp qpn exchange
 		if (qp->state == IBV_QPS_RESET && attr->qp_state == IBV_QPS_INIT) {
@@ -1633,7 +1647,16 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 
 			free(mqp->user_qp_attr_init);
 			free(mqp->user_qp_attr_rtr);
-						
+
+			printf("<<<<Request SPLIT CQ evnt notification\n");
+			if (SPLIT_USE_EVENT) {
+				ret = ibv_req_notify_cq(mqp->split_cq, 0);
+				if (ret) {
+					fprintf(stderr, "Couldn't request CQ notification\n");
+					goto err;
+				}
+			}
+
 		} else {
 			//// modify original user's qp state. In this case, ther user can move her qp to RTS
 			ret = ibv_cmd_modify_qp(qp, attr, attr_mask, &cmd, sizeof cmd);
