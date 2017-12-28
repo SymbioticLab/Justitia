@@ -22,9 +22,6 @@ to Creative Commons, 559 Nathan Abbott Way, Stanford, California
 
 /* Code modified from implementations found on
  * https://www.cs.rutgers.edu/~muthu/massdal-code-index.html
- * 
- * Comments adapted from comments in
- * https://github.com/laserson/dsq/blob/master/dsq.py
  *
  * Reference paper http://dx.doi.org/10.1016/j.jalgor.2003.12.001
  *
@@ -34,32 +31,6 @@ to Creative Commons, 559 Nathan Abbott Way, Stanford, California
  * smallest dyadic interval over the given domain.
  */
 
-/* CMH_Init: init a hierarchical set of sketches with domain and precision information.
-        
- * The accuracy of the estimator is limited by the size of the smallest
- * dyadic subdivision of the domain.  So if the domain is [0, 1], and
- * num_levels is set to 10, the smallest subdivision has size 2^(-9).
-
- * epsilon should be set to the allowable error in the estimate.  (Note
- * that it must be compatible with the num_levels.  If there are not enough
- * levels to achieve the necessary accuracy, this won't work.)
-
- * delta should be set to the probability of getting a worse estimate
- * (i.e., something small, say, 0.05)
-
- * The three precision parameters, num_levels, epsilon, and delta
- * ultimately define how much memory is necessary to store the data
- * structures.  There is one CMSketch per level, and each sketch has a
- * width and depth defined by epsilon and delta, as described in the paper.
-
- * Args:
- *   lower_bound: float lower bound of domain
- *   upper_bound: float upper bound of domain
- *   num_levels: int number of levels in binary tree dyadic partition of
- *       the domain.
- *   epsilon: float amount of error allowed in resulting rank
- *   delta: float probability of error exceeding epsilon accuracy
- */
 CMH_type * CMH_Init(int width, int depth, int U, int gran) {
     CMH_type * cmh;
     int i, j, k;
@@ -149,13 +120,21 @@ void CMH_Destroy(CMH_type * cmh) {
     cmh = NULL;
 }
 
-// update with a new value item and increment cmh->count by diff
-void CMH_Update(CMH_type * cmh, unsigned int item, int diff) {
+/* update with a new value item and increment cmh->count by diff
+ * return 0 on success
+ * return 1 on count overflow or NULL cmh pointer
+ */
+int CMH_Update(CMH_type * cmh, unsigned int item, int diff) {
     int i, j, offset;
 
-    if (!cmh) return;
+    if (!cmh) return 1;
     cmh->max = max(item, cmh->max);
     //printf("COUNT-MIN: maximum observation ever seen = %d\n", cmh->max);
+    if (cmh->count + diff < cmh->count) {
+        fprintf(stderr, "count overflow\n");
+        return 1;
+    }
+
     cmh->count += diff;
     for (i = 0; i < cmh->levels; i++)
     {
@@ -179,6 +158,7 @@ void CMH_Update(CMH_type * cmh, unsigned int item, int diff) {
         }
         item >>= cmh->gran;
     }
+    return 0;
 }
 
 // return the size used in bytes
@@ -206,7 +186,7 @@ int CMH_count(CMH_type * cmh, int depth, int item) {
     if (depth >= cmh->levels) return cmh->count;
     if (depth >= cmh->freelim) return cmh->counts[depth][item];
     // else, use the appropriate sketch to make an estimate
-    offset=0;
+    offset = 0;
     estimate = cmh->counts[depth][(hash31(cmh->hasha[depth][0], cmh->hashb[depth][0],item) 
         % cmh->width) + offset];
     for (j = 1; j < cmh->depth; j++) {
@@ -223,37 +203,36 @@ int CMH_count(CMH_type * cmh, int depth, int item) {
 // compute any estimates needed at each level
 // work upwards
 int CMH_Rangesum(CMH_type * cmh, int start, int end) {
-    int leftend, rightend, i, depth, result, topend;
+    int leftend, rightend, i, level, result, topend;
 
     topend = 1 << cmh->U;
-    end = min(topend, end);
+    // end = min(topend, end);
     if ((end > topend) && (start == 0))
         return cmh->count;
+    end = min(topend, end);
 
     end += 1; // adjust for end effects
     result = 0;
-    for (depth = 0; depth <= cmh->levels; depth++)
-    {
+    for (level = 0; level <= cmh->levels; level++) {
         if (start == end) break;
-        if ((end - start + 1) < (1 << cmh->gran))
-        { // at the highest level, avoid overcounting 
+        if ((end - start + 1) < (1 << cmh->gran)) { 
+            // at the highest level, avoid overcounting 
             for (i = start; i < end; i++)
-                result += CMH_count(cmh, depth, i);
+                result += CMH_count(cmh, level, i);
             break;
-        }
-        else
-        {  // figure out what needs to be done at each end
+        } else {  
+            // figure out what needs to be done at each end
             leftend = (((start >> cmh->gran) + 1) << cmh->gran) - start;
             rightend = (end) - ((end >> cmh->gran) << cmh->gran);
             if ((leftend > 0) && (start < end))
                 for (i = 0; i < leftend; i++)
                 {
-                    result += CMH_count(cmh, depth, start + i);
+                    result += CMH_count(cmh, level, start + i);
                 }
             if ((rightend > 0) && (start < end))
                 for (i = 0; i < rightend; i++)
                 {
-                    result += CMH_count(cmh, depth, end - i - 1);
+                    result += CMH_count(cmh, level, end - i - 1);
                 }
             start = start >> cmh->gran;
             if (leftend > 0) start++;
@@ -264,7 +243,7 @@ int CMH_Rangesum(CMH_type * cmh, int start, int end) {
 }
 
 // find a range starting from zero that adds up to sum
-int CMH_FindRange(CMH_type * cmh, int sum) {
+int CMH_FindRange(CMH_type * cmh, long long sum) {
     unsigned long low, high, mid = 0, est;
     int i;
 
@@ -283,7 +262,7 @@ int CMH_FindRange(CMH_type * cmh, int sum) {
 }
 
 // find a range starting from the right hand side that adds up to sum
-int CMH_AltFindRange(CMH_type * cmh, int sum) {
+int CMH_AltFindRange(CMH_type * cmh, long long sum) {
     unsigned long low, high, mid = 0, est, top;
     int i;
 
@@ -304,7 +283,7 @@ int CMH_AltFindRange(CMH_type * cmh, int sum) {
 }
 
 // find a quantile by doing the appropriate range search
-int CMH_Quantile(CMH_type * cmh, float frac) {
+int CMH_Quantile(CMH_type * cmh, double frac) {
     if (frac < 0) return 0;
     if (frac > 1) return 1 << cmh->U;
     int res = (CMH_FindRange(cmh, cmh->count * frac) 
