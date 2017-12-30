@@ -56,7 +56,6 @@ static void flow_handler() {
         error("listen");
 
     /* handling loop */
-    cb.next_slot = 0;
     while (1) {
         len = sizeof(struct sockaddr_un);
         if((s2 = accept(s, (struct sockaddr *)&remote, &len)) == -1)
@@ -156,10 +155,15 @@ int main (int argc, char** argv) {
         error("mmap");
 
     /* initialize control block */
+    cb.tokens = 0;
     cb.virtual_link_cap = LINE_RATE_MB;
+    cb.next_slot = 0;
     cb.sb->active_chunk_size = DEFAULT_CHUNK_SIZE;
+    cb.sb->num_active_big_flows = 0;
+    cb.sb->num_active_small_flows = -1; /* cancel out pacer's monitor flow */
     for (i = 0; i < MAX_FLOWS; i++) {
         cb.sb->flows[i].pending = 0;
+        cb.sb->flows[i].active = 0;
     }
     
     /* start thread handling incoming flows */
