@@ -854,14 +854,6 @@ static inline int set_common_segments(struct ibv_send_wr *wr, struct mlx4_qp *qp
 
 	*total_size = size;
 
-	/* isolation */
-	if (flow) {
-		__atomic_add_fetch(&bytes, (uint64_t)byte_count, __ATOMIC_RELAXED);
-		while(!__atomic_exchange_n(&go, 1, __ATOMIC_RELAXED));
-		__atomic_store_n(&go, 0, __ATOMIC_RELAXED);
-	}
-	/* end */
-
 	set_ctrl_seg(ctrl, wr, qp, imm, srcrb_flags, owner_bit, size,
 		     mlx4_ib_opcode[wr->opcode]);
 
@@ -1104,7 +1096,14 @@ int ceil_helper(float num_chunks) {
 //// original mlx4_post_send without lock
 int __mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 		     struct ibv_send_wr **bad_wr)
-{
+{	
+	/* isolation */
+	if (flow && !__atomic_load_n(&flow->small, __ATOMIC_RELAXED)) {
+		__atomic_fetch_add(&flow->pending, 1, __ATOMIC_RELAXED);
+		while (__atomic_load_n(&flow->pending, __ATOMIC_RELAXED))
+			cpu_relax();
+	}
+	/* end */
 	//printf("DEBUG __mlx4_post_send: enter\n");
 	//printf("DEBUG __mlx4_post_send: raddr:%" PRIu64 "\n", wr->wr.rdma.remote_addr);
 	//printf("DEBUG __mlx4_post_send: sg_addr:%" PRIu64 "\n", wr->sg_list->addr);
@@ -1198,32 +1197,20 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 		     struct ibv_send_wr **bad_wr)
 {
 	/* isolation */
-	if (unlikely(start_flag))
-	{	
+	if (unlikely(start_flag)) {	
 		start_flag = 0;
 		if (flow) {
-			__atomic_store_n(&flow->active, 1, __ATOMIC_RELAXED);
-			pthread_t th;
-			if (pthread_create(&th, NULL, (void *(*)(void *))write_byte_count, NULL))
-			{
-				perror("pthread_create: write_byte_count");
-				flow = NULL;
-			}
-			if (pthread_create(&th, NULL, (void *(*)(void *))check_target, NULL))
-			{
-				perror("pthread_create: check_target");
-				flow = NULL;
-			}
-			clock_gettime(CLOCK_MONOTONIC, &start);
-			clock_gettime(CLOCK_MONOTONIC, &last_check);
 			if (wr->sg_list->length <= MAX_SMALL) {
 				__atomic_store_n(&flow->small, 1, __ATOMIC_RELAXED);
+				__atomic_fetch_add(&sb->num_active_small_flows, 1, __ATOMIC_RELAXED);
 			} else {
 				__atomic_store_n(&flow->small, 0, __ATOMIC_RELAXED);
+				__atomic_fetch_add(&sb->num_active_big_flows, 1, __ATOMIC_RELAXED);
 			}
 		}
 	}
 	/* end */
+
 	struct mlx4_qp *qp = to_mqp(ibqp);
 	int nreq;
 	int ret = 0;
@@ -1233,7 +1220,7 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 
 		//// splitting logic
 		//// Update split chunk size
-		unsigned long split_chunk_size = flow == NULL ? SPLIT_CHUNK_SIZE : flow->chunk_size;
+		uint32_t split_chunk_size = sb ? __atomic_load_n(&sb->active_chunk_size, __ATOMIC_RELAXED) : SPLIT_CHUNK_SIZE;
 
 		if (wr->sg_list->length > split_chunk_size) {
 

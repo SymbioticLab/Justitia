@@ -26,25 +26,24 @@
 #define SOCK_PATH "/users/yuetan/rdma_socket"
 
 struct flow_info {
-    uint64_t bytes;
-    uint32_t measured;
-    uint32_t target;
-    uint32_t chunk_size;
+    uint8_t pending;
     uint8_t active;
     uint8_t small;
 };
 
-static struct control_block {
-    struct flow_info *flows;
-    double unused;
-    double redistributed;
-    uint32_t virtual_link_cap;             /* capacity of the virtual link that elephants go through */
+struct shared_block {
+    struct flow_info flows[MAX_FLOWS];
     uint32_t active_chunk_size;
-    uint16_t next_slot;
-    uint16_t num_active_big_flows;
-    uint16_t num_active_small_flows;
-    uint16_t num_saturated;
-    uint8_t test;
-    uint8_t true;
-} cb;
+    uint16_t num_active_big_flows;         /* incremented when an elephant first sends a message */
+    uint16_t num_active_small_flows;       /* incremented when a mouse first sends a message */
+};
 
+struct control_block {
+    struct shared_block *sb;
+
+    uint64_t tokens;                       /* number of available tokens */
+    uint32_t virtual_link_cap;             /* capacity of the virtual link that elephants go through */    
+    uint16_t next_slot;
+};
+
+extern struct control_block cb;            /* declaration */

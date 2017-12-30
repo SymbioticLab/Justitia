@@ -6,8 +6,8 @@ struct monitor_param {
     int  isclient;
 };
 
-static const int THRESHOLD = 1;
-
 void monitor_latency(void *);
+
+extern struct control_block cb;
 
 #endif

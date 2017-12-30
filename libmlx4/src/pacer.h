@@ -23,14 +23,19 @@
 #define MAX_FLOWS 512
 
 struct flow_info {
-    uint64_t bytes;
-    uint32_t measured;
-    uint32_t target;
-    uint32_t chunk_size;
+    uint8_t pending;
     uint8_t active;
     uint8_t small;
-} *flow;
+};
 
-unsigned int slot;
+struct shared_block {
+    struct flow_info flows[MAX_FLOWS];
+    uint32_t active_chunk_size;
+    uint16_t num_active_big_flows;
+    uint16_t num_active_small_flows;
+};
+
+extern struct flow_info *flow;  /* declaration; initialization inside verbs.c */
+extern struct shared_block *sb; /* declaration; initialization inside verbs.c */
 
 #endif

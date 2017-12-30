@@ -1,8 +1,13 @@
 #include "pacer.h"
 #include "monitor.h"
+#include "get_clock.h"
+#include <immintrin.h> /* For _mm_pause */
 #define DEBUG 0
 
-void error (char * msg) {
+struct control_block cb;
+
+/* utility fuctions */
+static void error (char * msg) {
     perror(msg);
     exit(1);
 }
@@ -11,7 +16,22 @@ static void usage() {
    printf("Usage: program remote-addr isclient\n");
 }
 
+static inline void cpu_relax() __attribute__((always_inline));
+static inline void cpu_relax() {
+#if (COMPILER == MVCC)
+    _mm_pause();
+#elif (COMPILER == GCC || COMPILER == LLVM)
+    asm("pause");
+#endif
+}
 
+static void termination_handler(int sig) {
+    remove("/dev/shm/rdma-fairness");
+    _exit(0);
+}
+/* end */
+
+/* handle incoming flows one by one; assign a slot to an incoming flow */
 static void flow_handler() {
     /* prepare unix domain socket communication */
     printf("starting flow_handler...\n");
@@ -42,7 +62,7 @@ static void flow_handler() {
         if((s2 = accept(s, (struct sockaddr *)&remote, &len)) == -1)
             error("accept");
 
-        /* check join or quit */
+        /* check join */
         len = recv(s2, (void *)buf, (size_t)MSG_LEN, 0);
         printf("receive message of length %d.\n", len);
         buf[len] = '\0';
@@ -51,28 +71,45 @@ static void flow_handler() {
             /* send back slot number */
             printf("sending back slot number %d...\n", cb.next_slot);
             len = snprintf(buf, MSG_LEN, "%d", cb.next_slot);
-            // cb.flows[cb.next_slot].active = 1;
-            cb.flows[cb.next_slot].chunk_size = cb.active_chunk_size;
+            cb.sb->flows[cb.next_slot].active = 1;
             send(s2, &buf, len, 0);
 
             /* find next empty slot */
             cb.next_slot++;
-            while (__atomic_load_n(&cb.flows[cb.next_slot].active, __ATOMIC_RELAXED)) {
+            while (__atomic_load_n(&cb.sb->flows[cb.next_slot].active, __ATOMIC_RELAXED)) {
                 cb.next_slot++;
             }
         }
-        /* A new flow comes in.
-         * We need first enforce every flow to have equal allocation. */
-        __atomic_store_n(&cb.test, 1, __ATOMIC_RELAXED);
     }
 }
 
-// static inline double subtract_time(struct timespec *time1, struct timespec *time2) {
-//     return difftime(time1->tv_sec, time2->tv_sec) * 1000000 + (double) (time1->tv_nsec - time2->tv_nsec) / 1000;
-// }
-static void termination_handler(int sig) {
-    remove("/dev/shm/rdma-fairness");
-    _exit(0);
+/* fetch one token; block if no token is available 
+ */
+static inline void fetch_token() __attribute__((always_inline));
+static inline void fetch_token() {
+    while (!__atomic_load_n(&cb.tokens, __ATOMIC_RELAXED));
+    __atomic_fetch_sub(&cb.tokens, 1, __ATOMIC_RELAXED);
+}
+
+/* generate tokens at some rate
+ */
+static void generate_tokens() {
+    cycles_t start_cycle;
+    double cpu_mhz = get_cpu_mhz(1);
+    /* infinite loop: generate tokens at a rate calculated 
+     * from virtual_link_cap and active chunk size 
+     */
+    while (1) {
+        if (__atomic_load_n(&cb.sb->num_active_big_flows, __ATOMIC_RELAXED)) {
+            start_cycle = get_cycles();
+            __atomic_fetch_add(&cb.tokens, 1, __ATOMIC_RELAXED);
+            while ((get_cycles() - start_cycle) < 
+            (cpu_mhz * __atomic_load_n(&cb.sb->active_chunk_size, __ATOMIC_RELAXED)) /
+            __atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED)) {
+                cpu_relax();
+            }
+        }
+    }
 }
 
 int main (int argc, char** argv) {
@@ -96,7 +133,7 @@ int main (int argc, char** argv) {
     /* end */
 
     int fd_shm, i;
-    pthread_t th1, th2;
+    pthread_t th1, th2, th3;
     struct monitor_param param;
     char *endPtr;
     param.addr = argv[1];
@@ -111,21 +148,18 @@ int main (int argc, char** argv) {
     if ((fd_shm = shm_open(SHARED_MEM_NAME, O_RDWR | O_CREAT, 0666)) < 0)
         error("shm_open");
 
-    if (ftruncate(fd_shm, MAX_FLOWS * sizeof(struct flow_info)) < 0)
+    if (ftruncate(fd_shm, sizeof(struct shared_block)) < 0)
         error("ftruncate");
 
-    if ((cb.flows = mmap(NULL, MAX_FLOWS * sizeof(struct flow_info), 
+    if ((cb.sb = mmap(NULL, sizeof(struct shared_block), 
         PROT_WRITE | PROT_READ, MAP_SHARED, fd_shm, 0)) == MAP_FAILED)
         error("mmap");
 
     /* initialize control block */
     cb.virtual_link_cap = LINE_RATE_MB;
-    cb.active_chunk_size = DEFAULT_CHUNK_SIZE;
+    cb.sb->active_chunk_size = DEFAULT_CHUNK_SIZE;
     for (i = 0; i < MAX_FLOWS; i++) {
-        cb.flows[i].target = LINE_RATE_MB;
-        cb.flows[i].active = 0;
-        cb.flows[i].bytes = 0;
-        cb.flows[i].measured = 0.0;
+        cb.sb->flows[i].pending = 0;
     }
     
     /* start thread handling incoming flows */
@@ -139,62 +173,20 @@ int main (int argc, char** argv) {
     if(pthread_create(&th2, NULL, (void * (*)(void *))&monitor_latency, (void*)&param)){
         error("pthread_create: monitor_latency");
     }
+
+    /* start token generating thread */
+    printf("starting thread for token generating...\n");
+    if(pthread_create(&th3, NULL, (void * (*)(void *))&generate_tokens, NULL)) {
+        error("pthread_create: generate_tokens");
+    }
     
-    /* main loop: rate calculation */
-    uint32_t tput_adjusted = 0;
-    uint32_t target = 0.0;
-    struct timespec sleep_time, remain_time;
-    sleep_time.tv_nsec = 100000000;
-    sleep_time.tv_sec = 0;
+    /* main loop: fetch token */
     while (1) {
-        nanosleep(&sleep_time, &remain_time);
-        /* first sweep to gather total bandwidth usage */
-        __atomic_store_n(&cb.num_active_small_flows, 0, __ATOMIC_RELAXED);
-        __atomic_store_n(&cb.num_active_big_flows, 0, __ATOMIC_RELAXED); 
-        cb.unused = 0;
-        cb.num_saturated = 0;
-        cb.true = 1;
         for (i = 0; i < MAX_FLOWS; i++) {
-            if (__atomic_load_n(&cb.flows[i].active, __ATOMIC_RELAXED)) {
-                // printf("Flow at slot %d: throughput %d\n", i,
-                //     (tput_adjusted = __atomic_load_n(&cb.flows[i].measured, __ATOMIC_RELAXED)));
-                tput_adjusted = __atomic_load_n(&cb.flows[i].measured, __ATOMIC_RELAXED) + MARGIN;
-                printf(">>>tput_adjusted of slot %d = %d\n", i, tput_adjusted);
-                printf(">>>target of slot %d = %d\n", i, cb.flows[i].target);
-                if (cb.flows[i].small)
-                    cb.num_active_small_flows++;
-                else {
-                    cb.num_active_big_flows++;
-                    if (tput_adjusted < cb.flows[i].target - MARGIN) {
-                        cb.unused += cb.flows[i].target - cb.flows[i].measured;
-                    } else {
-                        cb.num_saturated++;
-                    }
-                }
+            if (__atomic_load_n(&cb.sb->flows[i].pending, __ATOMIC_RELAXED)) {
+                fetch_token();
+                __atomic_fetch_sub(&cb.sb->flows[i].pending, 1, __ATOMIC_RELAXED);
             } 
-        }
-        if (cb.num_active_big_flows) {
-            if (__atomic_compare_exchange_n(&cb.test, &cb.true, 0, 0, __ATOMIC_RELAXED, __ATOMIC_RELAXED)) {
-                target = cb.virtual_link_cap / cb.num_active_big_flows;
-                printf(">>>enforce equal throughput target %d MBps\n", target);
-                for (i = 0; i < MAX_FLOWS; i++) {
-                    if (__atomic_load_n(&cb.flows[i].active, __ATOMIC_RELAXED)) {
-                        __atomic_store_n(&cb.flows[i].target, target, __ATOMIC_RELAXED);
-                    }
-                }
-            } else if (cb.num_saturated && cb.unused) {
-                cb.redistributed = cb.unused / cb.num_saturated;
-                for (i = 0; i < MAX_FLOWS; i++) {
-                    if (__atomic_load_n(&cb.flows[i].active, __ATOMIC_RELAXED)) {
-                        tput_adjusted = __atomic_load_n(&cb.flows[i].measured, __ATOMIC_RELAXED) + MARGIN;
-                        if (tput_adjusted >= cb.flows[i].target) {
-                            __atomic_add_fetch(&cb.flows[i].target, cb.redistributed, __ATOMIC_RELAXED);
-                        } else {
-                            __atomic_store_n(&cb.flows[i].target, tput_adjusted, __ATOMIC_RELAXED);
-                        }
-                    }
-                }
-            }
         }
     }
 }
