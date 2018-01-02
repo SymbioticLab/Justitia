@@ -19,7 +19,7 @@ void monitor_latency(void *arg) {
     printf(">>>starting monitor_latency...\n");
 
     // struct p2_meta_data p2;
-    CMH_type *cmh_ns;
+    CMH_type *cmh_ns = NULL;
     // CMH_type *cmh_us;
     struct pingpong_context *ctx;
     struct ibv_send_wr wr, *bad_wr = NULL;
@@ -43,6 +43,13 @@ void monitor_latency(void *arg) {
     uint32_t temp;
     // int i;
     // uint32_t chunk_size;
+
+    ctx = init_monitor_chan(servername, isclient);
+    if (!ctx) {
+        fprintf(stderr, ">>>exiting monitor_latency\n");
+        return;
+    }
+    cpu_mhz = get_cpu_mhz(no_cpu_freq_warn);
 
     /* get base tail latencies */
     int i, total = 100000;
@@ -92,12 +99,6 @@ void monitor_latency(void *arg) {
     free(delta);
     free(tposted);
     free(tcompleted);
-    
-    ctx = init_monitor_chan(servername, isclient);
-    if (!ctx) {
-        fprintf(stderr, ">>>exiting monitor_latency\n");
-        return;
-    }
 
     // init_p2_meta_data(&p2);
     cmh_ns = CMH_Init(32768, 16, 30, 1);
@@ -115,8 +116,6 @@ void monitor_latency(void *arg) {
     // if (!digest) {
     //     return;
     // }
-
-    cpu_mhz = get_cpu_mhz(no_cpu_freq_warn);
 
     /* WR */
     memset(&wr, 0, sizeof wr);
@@ -194,14 +193,15 @@ void monitor_latency(void *arg) {
 
         if (__atomic_load_n(&cb.sb->num_active_big_flows, __ATOMIC_RELAXED)) {
             if (__atomic_load_n(&cb.sb->num_active_small_flows, __ATOMIC_RELAXED)) {
+                // __atomic_store_n(&cb.sb->active_chunk_size, 2048, __ATOMIC_RELAXED);
                 if (tail_99_ns > base_tail_99 * 2 || tail_999_ns > base_tail_999 * 2) {
+                // if (lat_ns > base_tail_99) {
                     /* Multiplicative Decrease */
                     temp = __atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED) / 2;
                     __atomic_store_n(&cb.virtual_link_cap, temp, __ATOMIC_RELAXED);
-                    /* TODO: for now use 1K directly */
-                    printf(">>>set chunk size to 1024B\n");
+                    // printf(">>>set chunk size to 1024B\n");
                     __atomic_store_n(&cb.sb->active_chunk_size, 1024, __ATOMIC_RELAXED);
-                } else {
+                } else if (__atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED) < LINE_RATE_MB) {
                     /* Additive Increase */
                     __atomic_fetch_add(&cb.virtual_link_cap, 1, __ATOMIC_RELAXED);
                 }
