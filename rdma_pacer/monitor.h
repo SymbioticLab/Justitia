@@ -8,6 +8,4 @@ struct monitor_param {
 
 void monitor_latency(void *);
 
-extern struct control_block cb;
-
 #endif

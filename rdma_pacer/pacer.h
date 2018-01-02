@@ -19,9 +19,8 @@
 
 #define SHARED_MEM_NAME "/rdma-fairness"
 #define MAX_FLOWS 512
-#define LINE_RATE_MB 6000 /* MB/s */
+#define LINE_RATE_MB 6750 /* MBps */
 #define DEFAULT_CHUNK_SIZE 1048576 /* bytes */
-#define MARGIN 10         /* allow MARGIN between measured throughput and the explicit throughput */
 #define MSG_LEN 8
 #define SOCK_PATH "/users/yuetan/rdma_socket"
 

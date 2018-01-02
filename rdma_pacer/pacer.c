@@ -86,7 +86,8 @@ static void flow_handler() {
  */
 static inline void fetch_token() __attribute__((always_inline));
 static inline void fetch_token() {
-    while (!__atomic_load_n(&cb.tokens, __ATOMIC_RELAXED));
+    while (!__atomic_load_n(&cb.tokens, __ATOMIC_RELAXED))
+        cpu_relax();
     __atomic_fetch_sub(&cb.tokens, 1, __ATOMIC_RELAXED);
 }
 
@@ -137,7 +138,7 @@ int main (int argc, char** argv) {
     char *endPtr;
     param.addr = argv[1];
     if (argc == 3) {
-        param.isclient = strtol(argv[2], &endPtr, MARGIN);
+        param.isclient = strtol(argv[2], &endPtr, 10);
     } else {
         usage();
         exit(1);

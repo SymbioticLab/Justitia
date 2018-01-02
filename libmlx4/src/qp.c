@@ -1097,13 +1097,6 @@ int ceil_helper(float num_chunks) {
 int __mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 		     struct ibv_send_wr **bad_wr)
 {	
-	/* isolation */
-	if (flow && !__atomic_load_n(&flow->small, __ATOMIC_RELAXED)) {
-		__atomic_fetch_add(&flow->pending, 1, __ATOMIC_RELAXED);
-		while (__atomic_load_n(&flow->pending, __ATOMIC_RELAXED))
-			cpu_relax();
-	}
-	/* end */
 	//printf("DEBUG __mlx4_post_send: enter\n");
 	//printf("DEBUG __mlx4_post_send: raddr:%" PRIu64 "\n", wr->wr.rdma.remote_addr);
 	//printf("DEBUG __mlx4_post_send: sg_addr:%" PRIu64 "\n", wr->sg_list->addr);
@@ -1122,6 +1115,13 @@ int __mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 	ind = qp->sq.head;
 
 	for (nreq = 0; wr; ++nreq, wr = wr->next) {
+		/* isolation */
+		if (flow && !__atomic_load_n(&flow->small, __ATOMIC_RELAXED)) {
+			__atomic_fetch_add(&flow->pending, 1, __ATOMIC_RELAXED);
+			while (__atomic_load_n(&flow->pending, __ATOMIC_RELAXED))
+				cpu_relax();
+		}
+		/* end */
 		//printf("ORIG POST SEND: wr->sg_list->length = %d\n", wr->sg_list->length);
 		/* to be considered whether can throw first check, create_qp_exp with post_send */
 		if (!(qp->create_flags & IBV_EXP_QP_CREATE_IGNORE_SQ_OVERFLOW))
