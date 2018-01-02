@@ -21,7 +21,7 @@ void monitor_latency(void *arg) {
     // struct p2_meta_data p2;
     CMH_type *cmh_ns = NULL;
     // CMH_type *cmh_us;
-    struct pingpong_context *ctx;
+    struct pingpong_context *ctx = NULL;
     struct ibv_send_wr wr, *bad_wr = NULL;
     struct ibv_sge sge;
     struct ibv_wc wc;
@@ -41,15 +41,28 @@ void monitor_latency(void *arg) {
     int isclient = ((struct monitor_param *)arg)->isclient;
     int num_comp;
     uint32_t temp;
-    // int i;
-    // uint32_t chunk_size;
 
     ctx = init_monitor_chan(servername, isclient);
     if (!ctx) {
         fprintf(stderr, ">>>exiting monitor_latency\n");
-        return;
+        _exit(1);
     }
     cpu_mhz = get_cpu_mhz(no_cpu_freq_warn);
+
+    /* WR */
+    memset(&wr, 0, sizeof wr);
+    wr.opcode = IBV_WR_RDMA_WRITE;
+    wr.sg_list = &sge;
+    wr.num_sge = 1;
+    wr.send_flags = (IBV_SEND_SIGNALED | IBV_SEND_INLINE);
+    wr.wr_id = seq;
+    seq++;
+    wr.wr.rdma.rkey = ctx->rem_dest->rkey;
+    wr.wr.rdma.remote_addr = ctx->rem_dest->vaddr;
+
+    sge.addr = (uintptr_t)ctx->send_buf;
+    sge.length = BUF_SIZE;
+    sge.lkey = ctx->send_mr->lkey;
 
     /* get base tail latencies */
     int i, total = 100000;
@@ -104,7 +117,7 @@ void monitor_latency(void *arg) {
     cmh_ns = CMH_Init(32768, 16, 30, 1);
     // cmh_us = CMH_Init(32768, 16, 10, 1);
     if (!cmh_ns) {
-        printf(">>>Failed to allocate hierarchical count-min sketches: cmmh_ns\n");
+        printf(">>>Failed to allocate hierarchical count-min sketches: cmh_ns\n");
         return;
     }
     printf(">>>The size of count-min sketches cmh_ns is %d Bytes\n", CMH_Size(cmh_ns));
@@ -116,21 +129,6 @@ void monitor_latency(void *arg) {
     // if (!digest) {
     //     return;
     // }
-
-    /* WR */
-    memset(&wr, 0, sizeof wr);
-    wr.opcode = IBV_WR_RDMA_WRITE;
-    wr.sg_list = &sge;
-    wr.num_sge = 1;
-    wr.send_flags = (IBV_SEND_SIGNALED | IBV_SEND_INLINE);
-    wr.wr_id = seq;
-    seq++;
-    wr.wr.rdma.rkey = ctx->rem_dest->rkey;
-    wr.wr.rdma.remote_addr = ctx->rem_dest->vaddr;
-
-    sge.addr = (uintptr_t)ctx->send_buf;
-    sge.length = BUF_SIZE;
-    sge.lkey = ctx->send_mr->lkey;
 
     /* monitor loop */
     while (1) {
