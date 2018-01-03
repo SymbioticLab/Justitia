@@ -1510,7 +1510,7 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 			swr.opcode     = IBV_WR_SEND;
 			swr.send_flags = IBV_SEND_SIGNALED;
 
-			ret = __mlx4_post_send(qp, &swr, &bad_swr);
+			ret = mlx4_post_send(qp, &swr, &bad_swr);
 			if (ret != 0) {
 				fprintf(stderr, "Failed to post exchange SR to user qp.\n");
 				goto err;
