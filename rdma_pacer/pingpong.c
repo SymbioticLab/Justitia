@@ -22,7 +22,7 @@ struct pingpong_context *init_monitor_chan(const char *addr, int isclient){
         return NULL;
     }
 
-    printf("%d", isclient);
+    // printf("%d", isclient);
     my_dest.lid = ctx->portinfo.lid;
     // do not use gid for now
     memset(&my_dest.gid, 0, sizeof my_dest.gid);
