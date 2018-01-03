@@ -1,17 +1,4 @@
 Modified from libmlx4-1.2.1mlnx1 included in MLNX_OFED_SRC-4.0-2.0.0.1
 
-Pacer Part
-Modified functions and files:
-verbs.c: mlx4_create_qp (map the shared meomry to driver's address space)
-qp.c: set_common_segments (check target rate)
-      set_data_inl_seg & set_data_non_inl_seg & set_data_seg (add uint32_t *byte_count as a parameter)
-      mlx4_post_send (upon first user message, spin off the two other threads and set the flow to active)
-
-Note that all pieces of code added for the pacer logic enclosed within /* isolation */ and
-/* end */
-
 Added file(s):
 verbs_pacer.h qp_pacer.h pacer.h
-
-Splitting Part
-TODO

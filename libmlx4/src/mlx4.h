@@ -51,12 +51,15 @@
 
 ////
 #include <inttypes.h>
-#define SPLIT_CHUNK_SIZE	1048576
-#define SPLIT_QP_NUM_DIFF	1
-#define SPLIT_MAX_SEND_WR 	5000
-#define SPLIT_MAX_RECV_WR 	5000
-#define SPLIT_MAX_CQE		10000
-#define CUSTOM_CQ_SIZE	5
+#define SPLIT_CHUNK_SIZE		1000			//// Initial Split Chunk Size
+#define MANUAL_SPLIT_QPN_DIFF 	0				//// manually set (guess) split qpn/psn or general approcah
+#define SPLIT_QP_NUM_DIFF		1				//// DC if MANUAL_SPLIT is off
+#define SPLIT_USE_EVENT			1				//// event-triggered polling for splitting
+#define SPLIT_USE_LINKED_LIST	0				//// post using a linked list or not
+#define SPLIT_MAX_SEND_WR 		5000
+#define SPLIT_MAX_RECV_WR 		5000
+#define SPLIT_MAX_CQE			10000
+#define RR_BUFFER_INIT_CAP		1000
 ////
 
 /* Use EXP mmap commands until it is pushed to upstream */
@@ -194,13 +197,10 @@ static inline uint32_t mlx4_transpose(uint32_t val, uint32_t from, uint32_t to)
 //// enums for two-sided splitting
 enum FC_message_type {
 	ACK,
-	INFO	// inform num_chunks_split
+	INFO,		// inform num_chunks_split
+	EXCHANGE	// exchange split qpn & psn
 };
 
-enum split_ack {
-	ACK_OK,
-	ACK_ERR
-};
 ////
 
 enum {
@@ -277,16 +277,31 @@ enum mlx4_res_domain_bf_type {
 
 };
 
-//// Flow Control message for two-sided RDMA message splitting
+//// Flow Control message for RDMA message splitting
 struct Split_FC_message {
 	enum FC_message_type type;
-	uint32_t num_split_chunks;
-	//TODO: add lkey for SEND message
+	union {
+		uint32_t num_split_chunks;
+		struct {
+			uint32_t qp_num;
+			uint32_t sq_psn;
+		} split_qp_exchange;
+	} msg;
+};
+////
+
+//// Buffer holding Receive Requests posted at the user's qp at INIT state
+struct rr_buffer {
+	struct ibv_recv_wr **slot;	// head of the buffer
+	unsigned int size;			// number of wr_head pointers
+	unsigned int capacity;
 };
 
-//struct two_sided_header {
-//	uint32_t num_split_chunks;
-//};
+int rr_buffer_init(struct rr_buffer *rr_buf, unsigned int cap);
+
+int rr_buffer_enqueue(struct rr_buffer *rr_buf, struct ibv_recv_wr* wr);
+
+int rr_buffer_post_and_clear(struct rr_buffer *rr_buf, struct ibv_qp *qp);
 
 ////
 
@@ -503,9 +518,8 @@ struct mlx4_buf {
 struct mlx4_pd {
 	struct ibv_pd			ibv_pd;
 	uint32_t			pdn;
-	////
-	//struct ibv_context 	*context;
-	// No need to add this context, ibv_pd already has it
+	//// added for splitting cleanup
+	struct ibv_mr		*split_fc_mr;
 	////
 };
 
@@ -537,10 +551,7 @@ struct mlx4_cq {
 	int				creation_flags;
 	struct mlx4_qp			*last_qp;
 	uint32_t			model_flags; /* use mlx4_cq_model_flags */
-	//// TODO: clean up later
 	int num_chunks_to_recv;
-	struct mlx4_cqe *current_cqe;
-	uint32_t current_qpn;
 	//struct ibv_comp_channel *split_comp_channel;
 	////
 };
@@ -660,13 +671,19 @@ struct mlx4_qp {
 	int32_t				transposed_rx_csum_flags;
 	struct mlx4_inlr_buff		inlr_buff;
 	uint8_t				qp_cap_cache;
-	////
+	//// added for spliting
 	struct ibv_qp 		*split_qp;
 	struct ibv_cq		*split_cq;
 	struct ibv_comp_channel *split_comp_channel;
 	uint32_t			split_dest_qpn;
-	struct Split_FC_message split_fc_msg;
+	struct Split_FC_message split_fc_msg[2];
 	struct ibv_mr		*split_fc_mr;
+	struct ibv_qp_attr	*user_qp_attr_init;
+	int 				user_qp_mask_init;
+	struct ibv_qp_attr	*user_qp_attr_rtr;
+	int 				user_qp_mask_rtr;
+	struct rr_buffer	rr_buf;
+	int 				split_qp_exchange_done;
 	////
 };
 
