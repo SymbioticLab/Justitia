@@ -16,7 +16,7 @@ static void contact_pacer() {
         exit(1);
     }
 
-    printf("Trying to connect...\n");
+    printf("Contacting pacer...\n");
 
     remote.sun_family = AF_UNIX;
     strcpy(remote.sun_path, SOCK_PATH);
@@ -26,9 +26,8 @@ static void contact_pacer() {
         exit(1);
     }
 
-    printf("Connected.\n");
-
     /* send join message */
+    printf("Sending join message...\n");
     strcpy(str, "join");
     if (send(s, str, strlen(str), 0) == -1) {
         perror("send");
@@ -44,7 +43,7 @@ static void contact_pacer() {
         exit(1);
     }
     slot = strtol(str, NULL, 10);
-
+    printf("Received slot number.\n");
     close(s);
 }
 

@@ -45,7 +45,7 @@ void monitor_latency(void *arg) {
     ctx = init_monitor_chan(servername, isclient);
     if (!ctx) {
         fprintf(stderr, ">>>exiting monitor_latency\n");
-        _exit(1);
+        exit(1);
     }
     cpu_mhz = get_cpu_mhz(no_cpu_freq_warn);
 
@@ -219,5 +219,5 @@ cleanup_tposted:
 cleanup_exit:
     CMH_Destroy(cmh_ns);
 
-    _exit(1);
+    exit(1);
 }

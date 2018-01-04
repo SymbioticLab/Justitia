@@ -29,6 +29,10 @@ static void termination_handler(int sig) {
     remove("/dev/shm/rdma-fairness");
     _exit(0);
 }
+
+static void rm_shmem_on_exit() {
+    remove("/dev/shm/rdma-fairness");
+}
 /* end */
 
 /* handle incoming flows one by one; assign a slot to an incoming flow */
@@ -131,7 +135,8 @@ int main (int argc, char** argv) {
     if (old_action.sa_handler != SIG_IGN)
         sigaction (SIGTERM, &new_action, NULL);
     /* end */
-
+    atexit(rm_shmem_on_exit);
+    
     int fd_shm, i;
     pthread_t th1, th2, th3;
     struct monitor_param param;
