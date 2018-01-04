@@ -1431,12 +1431,12 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 				*/
 				//// End of using linked list
 
-				// Originally WRs were not sent in a linked list
-				// starting from the 2nd chunk, all set to unsignaled
-				// ^^^ Actually in this case every chunk needs to be SIGNALED
-				//wr->send_flags = wr->send_flags | IBV_SEND_SIGNALED;
-				// ^^^ Well, not necesarily...
-				wr->send_flags = wr->send_flags & (~(IBV_SEND_SIGNALED));
+				//wr->send_flags = wr->send_flags & (~(IBV_SEND_SIGNALED));
+				if (!SPLIT_USE_SELECTIVE_SIGNALING) {
+					wr->send_flags = wr->send_flags | IBV_SEND_SIGNALED;
+				} else {
+					wr->send_flags = wr->send_flags & (~(IBV_SEND_SIGNALED));
+				}
 
 				//int cnt = 0;
 				while (num_chunks_to_send > 0) {
@@ -1450,9 +1450,6 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 					//printf("sg_addr:%" PRIu64 "\n", wr->sg_list->addr);
 					//printf("rkey:%" PRIu32 "\n", wr->wr.rdma.rkey);
 
-					if (!SPLIT_USE_SELECTIVE_SIGNALING) {
-						wr->send_flags = wr->send_flags | IBV_SEND_SIGNALED;
-					}
 					if (num_chunks_to_send == 1) {
 						wr->sg_list->length = current_length;
 						// the last one has to be SIGNALED to synchronize. Otherwise we'll go to the next iteration directly.
@@ -1478,31 +1475,17 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 				//TODO: if necessary, study the performance difference of polling multiple WCs at a time.
 				// Drawbacks of this is that you need to provide a big array of wc structs to pass in.
 				//printf("DEBUG POST_SEND: orig_num_chunks_to_send = %d\n", orig_num_chunks_to_send);	
-
+				/*
 				ne = 0;
-				if (!SPLIT_USE_SELECTIVE_SIGNALING) {
-					if (SPLIT_USE_EVENT) {
-						ret = ibv_get_cq_event(qp->split_comp_channel, &ev_cq, &ev_ctx);
-						if (ret) {
-							fprintf(stderr, "Failed to get CQ event.\n");
-							return ret;
-						}
+				do {
+					ne += mlx4_poll_ibv_cq(qp->split_cq, 1, &wc);
+					//ne += mlx4_poll_ibv_cq(qp->split_cq, orig_num_chunks_to_send - 1, &wc);
+					//printf("ne = %d\n", ne);
+				} while (ne < orig_num_chunks_to_send - 1);
+				//printf("ne = %d, message transfer completed\n", ne);
+				*/
 
-						ibv_ack_cq_events(ev_cq, 1);
-
-						ret = ibv_req_notify_cq(ev_cq, 0);
-						if (ret) {
-							fprintf(stderr, "Couldn't request CQ notification\n");
-							return ret;
-						}
-					}
-					do {
-						ne += mlx4_poll_ibv_cq(qp->split_cq, 1, &wc);
-						//ne += mlx4_poll_ibv_cq(qp->split_cq, orig_num_chunks_to_send - 1, &wc);
-						//printf("ne = %d\n", ne);
-					} while (ne < orig_num_chunks_to_send - 1);
-					//printf("ne = %d, message transfer completed\n", ne);
-				} else {
+				if (SPLIT_USE_SELECTIVE_SIGNALING) {
 					//// selective signalling to poll the wc of the last wr
 					if (SPLIT_USE_EVENT) {
 						ret = ibv_get_cq_event(qp->split_comp_channel, &ev_cq, &ev_ctx);
@@ -1523,9 +1506,35 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 						ne = mlx4_poll_ibv_cq(qp->split_cq, 1, &wc);
 						//printf("ne = %d\n", ne);
 					} while (ne == 0);
+				} else {
+					int total_npolled = 0;
+					while (total_npolled < orig_num_chunks_to_send - 1) {
+						if (SPLIT_USE_EVENT) {
+							ret = ibv_get_cq_event(qp->split_comp_channel, &ev_cq, &ev_ctx);
+							if (ret) {
+								fprintf(stderr, "Failed to get CQ event.\n");
+								return ret;
+							}
+
+							ibv_ack_cq_events(ev_cq, 1);
+
+							ret = ibv_req_notify_cq(ev_cq, 0);
+							if (ret) {
+								fprintf(stderr, "Couldn't request CQ notification\n");
+								return ret;
+							}
+						}
+
+						do {
+							//ne += mlx4_poll_ibv_cq(qp->split_cq, num_wrs_to_split_qp, &wc);
+							ne = mlx4_poll_ibv_cq(qp->split_cq, 1, &wc);
+							//printf("ne = %d\n", ne);
+							total_npolled += ne;
+							//printf("total_npolled = %d\n", total_npolled);
+						} while (ne != 0);
+					}
 				}
 				
-
 
 				// <6> post another RR to split_qp for future splitting
 				//printf("SENDER <6> post another RR to split_qp for future splitting\n");
