@@ -2,7 +2,7 @@
 #define QP_PACER_H
 
 #include "pacer.h"
-#include <immintrin.h> /* For _mm_pause */
+#include <immintrin.h> /* For _mm_pause */  // remember to take off this header file and __mm_pause() when running on ConFlux
 
 int start_flag = 1;
 int go = 0;

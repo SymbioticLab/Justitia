@@ -176,14 +176,14 @@ void monitor_latency(void *arg) {
             // tail_99_us = CMH_Quantile(cmh_us, 0.99);
             // tail_999_us = CMH_Quantile(cmh_us, 0.999);
 
-            // printf(">>>measured latency is %" PRIu32 "ns\n", lat_ns);
-            // printf(">>>measured median is %" PRIu32 "ns\n", median_ns);
-            // printf(">>>measured 99 percentile is %" PRIu32 "ns\n", tail_99_ns);
-            // printf(">>>measured 99.9 percentile is %" PRIu32 "ns\n", tail_999_ns);
-            // printf(">>>measured latency is %" PRIu32 "us\n", lat_us);
-            // printf(">>>measured median is %" PRIu32 "us\n", median_us);
-            // printf(">>>measured 99 percentile is %" PRIu32 "us\n", tail_99_us);
-            // printf(">>>measured 99.9 percentile is %" PRIu32 "us\n", tail_999_us);
+            //printf(">>>measured latency is %" PRIu32 "ns\n", lat_ns);
+            //printf(">>>measured median is %" PRIu32 "ns\n", median_ns);
+            //printf(">>>measured 99 percentile is %" PRIu32 "ns\n", tail_99_ns);
+            //printf(">>>measured 99.9 percentile is %" PRIu32 "ns\n", tail_999_ns);
+            //printf(">>>measured latency is %" PRIu32 "us\n", lat_us);
+            //printf(">>>measured median is %" PRIu32 "us\n", median_us);
+            //printf(">>>measured 99 percentile is %" PRIu32 "us\n", tail_99_us);
+            //printf(">>>measured 99.9 percentile is %" PRIu32 "us\n", tail_999_us);
         } else {
             fprintf(stderr, "!!!measured latency is greater than the set maximum 2^30ns\n");
         }
@@ -197,7 +197,7 @@ void monitor_latency(void *arg) {
                     /* Multiplicative Decrease */
                     temp = __atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED) / 2;
                     __atomic_store_n(&cb.virtual_link_cap, temp, __ATOMIC_RELAXED);
-                    // printf(">>>set chunk size to 1024B\n");
+                    printf(">>>set chunk size to 1024B\n");
                     __atomic_store_n(&cb.sb->active_chunk_size, 1024, __ATOMIC_RELAXED);
                 } else if (__atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED) < LINE_RATE_MB) {
                     /* Additive Increase */

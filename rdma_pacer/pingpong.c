@@ -22,7 +22,7 @@ struct pingpong_context *init_monitor_chan(const char *addr, int isclient){
         return NULL;
     }
 
-    // printf("%d", isclient);
+    printf("%d", isclient);
     my_dest.lid = ctx->portinfo.lid;
     // do not use gid for now
     memset(&my_dest.gid, 0, sizeof my_dest.gid);
@@ -307,7 +307,7 @@ static struct pingpong_dest * pp_server_exch_dest(struct pingpong_context *ctx,
         fprintf(stderr, "accept() failed\n");
         return NULL;
     }
-
+    
     n = recv(connfd, msg, sizeof(msg), MSG_WAITALL);
     if (n != sizeof msg) {
         perror("server read");
@@ -323,12 +323,16 @@ static struct pingpong_dest * pp_server_exch_dest(struct pingpong_context *ctx,
                             &rem_dest->psn, &rem_dest->rkey, &rem_dest->vaddr, gid);
     wire_gid_to_gid(gid, &rem_dest->gid);
 
+    ////
+    /* 
     if (pp_connect_ctx(ctx, my_dest->psn, rem_dest)) {
         fprintf(stderr, "Couldn't connect to remote QP\n");
         free(rem_dest);
         rem_dest = NULL;
         goto out;
     }
+    */
+    ////
 
 
     gid_to_wire_gid(&my_dest->gid, gid);
@@ -344,6 +348,13 @@ static struct pingpong_dest * pp_server_exch_dest(struct pingpong_context *ctx,
     /* expecting "done" msg */
     if (read(connfd, msg, sizeof(msg)) <= 0) {
         fprintf(stderr, "Couldn't read \"done\" msg\n");
+        free(rem_dest);
+        rem_dest = NULL;
+        goto out;
+    }
+
+    if (pp_connect_ctx(ctx, my_dest->psn, rem_dest)) {
+        fprintf(stderr, "Couldn't connect to remote QP\n");
         free(rem_dest);
         rem_dest = NULL;
         goto out;
