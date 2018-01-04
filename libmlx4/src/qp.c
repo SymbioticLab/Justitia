@@ -1502,20 +1502,7 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 					ne = mlx4_poll_ibv_cq(qp->split_cq, 1, &wc);
 					//printf("ne = %d\n", ne);
 				} while (ne == 0);
-				////
 
-				/*	
-				int ret_ne = 0;
-				while (ne < orig_num_chunks_to_send - 1) {
-					do {
-						ret_ne = mlx4_poll_ibv_cq(qp->split_cq, 1, &wc);	
-					} while (ret_ne == 0);
-					++ne;	
-				}
-				printf("ne = %d, message transfer completed\n", ne);
-				*/
-
-				////
 
 				// <6> post another RR to split_qp for future splitting
 				//printf("SENDER <6> post another RR to split_qp for future splitting\n");
@@ -1563,7 +1550,9 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 						swr.opcode = wr->opcode;
 						swr.sg_list = &sge;
 						swr.num_sge = 1;
-						swr.send_flags = (i == num_wrs_to_split_qp - 1 || !SPLIT_USE_SELECTIVE_SIGNALING) ? IBV_SEND_SIGNALED : 0; // last one is signaled for synchronization
+						//swr.send_flags = (i == num_wrs_to_split_qp - 1 || !SPLIT_USE_SELECTIVE_SIGNALING) ? IBV_SEND_SIGNALED : 0; // last one is signaled for synchronization
+						swr.send_flags = (i == num_wrs_to_split_qp - 1 || !SPLIT_USE_SELECTIVE_SIGNALING) ? 
+											(orig_send_flags | IBV_SEND_SIGNALED) : (orig_send_flags & (~(IBV_SEND_SIGNALED)));
 						swr.wr.rdma.remote_addr = wr->wr.rdma.remote_addr + split_chunk_size * i;
 						swr.wr.rdma.rkey = wr->wr.rdma.rkey;
 						swr.next = NULL;
@@ -1676,7 +1665,9 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 						new_wr[i].opcode = wr->opcode;
 						new_wr[i].sg_list = &sge[i];
 						new_wr[i].num_sge = 1;
-						new_wr[i].send_flags = (i == num_wrs_to_split_qp - 1 || !SPLIT_USE_SELECTIVE_SIGNALING) ? IBV_SEND_SIGNALED : 0; // last one is signaled for synchronization
+						//new_wr[i].send_flags = (i == num_wrs_to_split_qp - 1 || !SPLIT_USE_SELECTIVE_SIGNALING) ? IBV_SEND_SIGNALED : 0; // last one is signaled for synchronization
+						new_wr[i].send_flags = (i == num_wrs_to_split_qp - 1 || !SPLIT_USE_SELECTIVE_SIGNALING) ? 
+											(orig_send_flags | IBV_SEND_SIGNALED) : (orig_send_flags & (~(IBV_SEND_SIGNALED)));
 						//new_wr[i].send_flags = IBV_SEND_SIGNALED;
 						new_wr[i].wr.rdma.remote_addr = wr->wr.rdma.remote_addr + split_chunk_size * i;
 						new_wr[i].wr.rdma.rkey = wr->wr.rdma.rkey;
