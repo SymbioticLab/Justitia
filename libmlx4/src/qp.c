@@ -1230,7 +1230,7 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 			//printf("[[[NEED TO SPLIT]]] [%d]\n", ++GLOBAL_CNT);
 
 			int num_chunks_to_send = 1;
-			//int orig_num_chunks_to_send = 1;
+			int orig_num_chunks_to_send = 1;
 			int current_length = 0;
 			uint64_t orig_raddr = 0;
 			uint64_t orig_sge_addr = 0;
@@ -1245,6 +1245,7 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 
 			//// calculate num of chunks to split
 			num_chunks_to_send = ceil_helper((float)orig_sge_length / (float)split_chunk_size);
+			orig_num_chunks_to_send = num_chunks_to_send;
 
 			// For two-sided ops, the first chunk still need to be what it is originally,
 			// because the user will poll the first one at the end
@@ -1448,10 +1449,14 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 					//printf("raddr:%" PRIu64 "\n", wr->wr.rdma.remote_addr);
 					//printf("sg_addr:%" PRIu64 "\n", wr->sg_list->addr);
 					//printf("rkey:%" PRIu32 "\n", wr->wr.rdma.rkey);
+
+					if (!SPLIT_USE_SELECTIVE_SIGNALING) {
+						wr->send_flags = wr->send_flags | IBV_SEND_SIGNALED;
+					}
 					if (num_chunks_to_send == 1) {
 						wr->sg_list->length = current_length;
 						// the last one has to be SIGNALED to synchronize. Otherwise we'll go to the next iteration directly.
-						wr->send_flags = IBV_SEND_SIGNALED;
+						wr->send_flags = wr->send_flags | IBV_SEND_SIGNALED;
 					}
 
 					//__mlx4_post_send(qp->split_qp, wr, bad_wr);
@@ -1469,39 +1474,57 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 
 				// <5> poll from the split_cq for all chunks to ensure the completion message has done transfering.
 				//printf("SENDER <5> poll from the split_cq for all chunks to ensure the completion message has done transfering.\n");
-				ne = 0;
 				//// All signalled
-				/*
 				//TODO: if necessary, study the performance difference of polling multiple WCs at a time.
 				// Drawbacks of this is that you need to provide a big array of wc structs to pass in.
-				printf("DEBUG POST_SEND: orig_num_chunks_to_send = %d\n", orig_num_chunks_to_send);	
-				do {
-					ne += mlx4_poll_ibv_cq(qp->split_cq, 1, &wc);
-					//ne += mlx4_poll_ibv_cq(qp->split_cq, orig_num_chunks_to_send - 1, &wc);
-					printf("ne = %d\n", ne);
-				} while (ne < orig_num_chunks_to_send - 1);
-				printf("ne = %d, message transfer completed\n", ne);
-				*/
-				//// selective signalling to poll the wc of the last wr
-				if (SPLIT_USE_EVENT) {
-					ret = ibv_get_cq_event(qp->split_comp_channel, &ev_cq, &ev_ctx);
-					if (ret) {
-						fprintf(stderr, "Failed to get CQ event.\n");
-						return ret;
-					}
+				//printf("DEBUG POST_SEND: orig_num_chunks_to_send = %d\n", orig_num_chunks_to_send);	
 
-					ibv_ack_cq_events(ev_cq, 1);
+				ne = 0;
+				if (!SPLIT_USE_SELECTIVE_SIGNALING) {
+					if (SPLIT_USE_EVENT) {
+						ret = ibv_get_cq_event(qp->split_comp_channel, &ev_cq, &ev_ctx);
+						if (ret) {
+							fprintf(stderr, "Failed to get CQ event.\n");
+							return ret;
+						}
 
-					ret = ibv_req_notify_cq(ev_cq, 0);
-					if (ret) {
-						fprintf(stderr, "Couldn't request CQ notification\n");
-						return ret;
+						ibv_ack_cq_events(ev_cq, 1);
+
+						ret = ibv_req_notify_cq(ev_cq, 0);
+						if (ret) {
+							fprintf(stderr, "Couldn't request CQ notification\n");
+							return ret;
+						}
 					}
+					do {
+						ne += mlx4_poll_ibv_cq(qp->split_cq, 1, &wc);
+						//ne += mlx4_poll_ibv_cq(qp->split_cq, orig_num_chunks_to_send - 1, &wc);
+						//printf("ne = %d\n", ne);
+					} while (ne < orig_num_chunks_to_send - 1);
+					//printf("ne = %d, message transfer completed\n", ne);
+				} else {
+					//// selective signalling to poll the wc of the last wr
+					if (SPLIT_USE_EVENT) {
+						ret = ibv_get_cq_event(qp->split_comp_channel, &ev_cq, &ev_ctx);
+						if (ret) {
+							fprintf(stderr, "Failed to get CQ event.\n");
+							return ret;
+						}
+
+						ibv_ack_cq_events(ev_cq, 1);
+
+						ret = ibv_req_notify_cq(ev_cq, 0);
+						if (ret) {
+							fprintf(stderr, "Couldn't request CQ notification\n");
+							return ret;
+						}
+					}
+					do {
+						ne = mlx4_poll_ibv_cq(qp->split_cq, 1, &wc);
+						//printf("ne = %d\n", ne);
+					} while (ne == 0);
 				}
-				do {
-					ne = mlx4_poll_ibv_cq(qp->split_cq, 1, &wc);
-					//printf("ne = %d\n", ne);
-				} while (ne == 0);
+				
 
 
 				// <6> post another RR to split_qp for future splitting
@@ -1597,27 +1620,31 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 							//printf("ne = %d\n", ne);
 						} while (ne == 0);
 					} else {
-						ne = 0;
-						if (SPLIT_USE_EVENT) {
-							ret = ibv_get_cq_event(qp->split_comp_channel, &ev_cq, &ev_ctx);
-							if (ret) {
-								fprintf(stderr, "Failed to get CQ event.\n");
-								return ret;
+						int total_npolled = 0;
+						while (total_npolled < num_wrs_to_split_qp) {
+							if (SPLIT_USE_EVENT) {
+								ret = ibv_get_cq_event(qp->split_comp_channel, &ev_cq, &ev_ctx);
+								if (ret) {
+									fprintf(stderr, "Failed to get CQ event.\n");
+									return ret;
+								}
+
+								ibv_ack_cq_events(ev_cq, 1);
+
+								ret = ibv_req_notify_cq(ev_cq, 0);
+								if (ret) {
+									fprintf(stderr, "Couldn't request CQ notification\n");
+									return ret;
+								}
 							}
 
-							ibv_ack_cq_events(ev_cq, 1);
-
-							ret = ibv_req_notify_cq(ev_cq, 0);
-							if (ret) {
-								fprintf(stderr, "Couldn't request CQ notification\n");
-								return ret;
-							}
+							do {
+								//ne += mlx4_poll_ibv_cq(qp->split_cq, num_wrs_to_split_qp, &wc);
+								ne = mlx4_poll_ibv_cq(qp->split_cq, 1, &wc);
+								//printf("ne = %d\n", ne);
+								total_npolled += ne;
+							} while (ne != 0);
 						}
-						do {
-							//ne += mlx4_poll_ibv_cq(qp->split_cq, num_wrs_to_split_qp, &wc);
-							ne += mlx4_poll_ibv_cq(qp->split_cq, 1, &wc);
-							//printf("ne = %d\n", ne);
-						} while (ne < num_wrs_to_split_qp);
 					}
 
 					// Very last one with the original send flag post to user's QP so the user can possibly poll its wc
@@ -1721,27 +1748,31 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 							//printf("ne = %d\n", ne);
 						} while (ne == 0);
 					} else {
-						ne = 0;
-						if (SPLIT_USE_EVENT) {
-							ret = ibv_get_cq_event(qp->split_comp_channel, &ev_cq, &ev_ctx);
-							if (ret) {
-								fprintf(stderr, "Failed to get CQ event.\n");
-								return ret;
+						int total_npolled = 0;
+						while (total_npolled < num_wrs_to_split_qp) {
+							if (SPLIT_USE_EVENT) {
+								ret = ibv_get_cq_event(qp->split_comp_channel, &ev_cq, &ev_ctx);
+								if (ret) {
+									fprintf(stderr, "Failed to get CQ event.\n");
+									return ret;
+								}
+
+								ibv_ack_cq_events(ev_cq, 1);
+
+								ret = ibv_req_notify_cq(ev_cq, 0);
+								if (ret) {
+									fprintf(stderr, "Couldn't request CQ notification\n");
+									return ret;
+								}
 							}
 
-							ibv_ack_cq_events(ev_cq, 1);
-
-							ret = ibv_req_notify_cq(ev_cq, 0);
-							if (ret) {
-								fprintf(stderr, "Couldn't request CQ notification\n");
-								return ret;
-							}
+							do {
+								//ne += mlx4_poll_ibv_cq(qp->split_cq, num_wrs_to_split_qp, &wc);
+								ne = mlx4_poll_ibv_cq(qp->split_cq, 1, &wc);
+								//printf("ne = %d\n", ne);
+								total_npolled += ne;
+							} while (ne != 0);
 						}
-						do {
-							//ne += mlx4_poll_ibv_cq(qp->split_cq, num_wrs_to_split_qp, &wc);
-							ne += mlx4_poll_ibv_cq(qp->split_cq, 1, &wc);
-							//printf("ne = %d\n", ne);
-						} while (ne < num_wrs_to_split_qp);
 					}
 
 					// Very last one with the original send flag post to user's QP so it can possibly poll its wc
