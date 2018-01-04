@@ -1222,6 +1222,7 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 		//// splitting logic
 		//// Update split chunk size
 		uint32_t split_chunk_size = sb ? __atomic_load_n(&sb->active_chunk_size, __ATOMIC_RELAXED) : SPLIT_CHUNK_SIZE;
+		//printf("split_chunk_size = %" PRIu32 " \n", split_chunk_size);
 
 		if (wr->sg_list->length > split_chunk_size)
 		{
@@ -1562,7 +1563,7 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 						swr.opcode = wr->opcode;
 						swr.sg_list = &sge;
 						swr.num_sge = 1;
-						swr.send_flags = (i == num_wrs_to_split_qp - 1) ? IBV_SEND_SIGNALED : 0; // last one is signaled for synchronization
+						swr.send_flags = (i == num_wrs_to_split_qp - 1 || !SPLIT_USE_SELECTIVE_SIGNALING) ? IBV_SEND_SIGNALED : 0; // last one is signaled for synchronization
 						swr.wr.rdma.remote_addr = wr->wr.rdma.remote_addr + split_chunk_size * i;
 						swr.wr.rdma.rkey = wr->wr.rdma.rkey;
 						swr.next = NULL;
@@ -1580,32 +1581,56 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 						}
 					}
 
-					//// selective signalling to poll the wc of the last wr
+					//// poll the wc of send requests for split chunks
 					struct ibv_wc wc;
 					int ne = 0;
 					struct ibv_cq *ev_cq;
 					void *ev_ctx;
-					if (SPLIT_USE_EVENT) {
-						ret = ibv_get_cq_event(qp->split_comp_channel, &ev_cq, &ev_ctx);
-						if (ret) {
-							fprintf(stderr, "Failed to get CQ event.\n");
-							return ret;
-						}
+					if (SPLIT_USE_SELECTIVE_SIGNALING) {
+						if (SPLIT_USE_EVENT) {
+							ret = ibv_get_cq_event(qp->split_comp_channel, &ev_cq, &ev_ctx);
+							if (ret) {
+								fprintf(stderr, "Failed to get CQ event.\n");
+								return ret;
+							}
 
-						ibv_ack_cq_events(ev_cq, 1);
+							ibv_ack_cq_events(ev_cq, 1);
 
-						ret = ibv_req_notify_cq(ev_cq, 0);
-						if (ret) {
-							fprintf(stderr, "Couldn't request CQ notification\n");
-							return ret;
+							ret = ibv_req_notify_cq(ev_cq, 0);
+							if (ret) {
+								fprintf(stderr, "Couldn't request CQ notification\n");
+								return ret;
+							}
 						}
+						//// selective signalling to poll the wc of the last wr
+						do {
+							ne = mlx4_poll_ibv_cq(qp->split_cq, 1, &wc);
+							//printf("ne = %d\n", ne);
+						} while (ne == 0);
+					} else {
+						ne = 0;
+						do {
+							if (SPLIT_USE_EVENT) {
+								ret = ibv_get_cq_event(qp->split_comp_channel, &ev_cq, &ev_ctx);
+								if (ret) {
+									fprintf(stderr, "Failed to get CQ event.\n");
+									return ret;
+								}
+
+								ibv_ack_cq_events(ev_cq, 1);
+
+								ret = ibv_req_notify_cq(ev_cq, 0);
+								if (ret) {
+									fprintf(stderr, "Couldn't request CQ notification\n");
+									return ret;
+								}
+							}
+							ne += mlx4_poll_ibv_cq(qp->split_cq, num_wrs_to_split_qp, &wc);
+							//printf("ne = %d\n", ne);
+						} while (ne < num_wrs_to_split_qp);
 					}
-					do {
-						ne = mlx4_poll_ibv_cq(qp->split_cq, 1, &wc);
-						//printf("ne = %d\n", ne);
-					} while (ne == 0);
 
-					// Very last one with the original send flag post to user's QP so it can possibly poll its wc
+					// Very last one with the original send flag post to user's QP so the user can possibly poll its wc
 					current_length -= split_chunk_size * num_wrs_to_split_qp;
 
 					swr.wr_id = wr->wr_id;
@@ -1650,7 +1675,7 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 						new_wr[i].opcode = wr->opcode;
 						new_wr[i].sg_list = &sge[i];
 						new_wr[i].num_sge = 1;
-						new_wr[i].send_flags = (i == num_wrs_to_split_qp - 1) ? IBV_SEND_SIGNALED : 0; // last one is signaled for synchronization
+						new_wr[i].send_flags = (i == num_wrs_to_split_qp - 1 || !SPLIT_USE_SELECTIVE_SIGNALING) ? IBV_SEND_SIGNALED : 0; // last one is signaled for synchronization
 						//new_wr[i].send_flags = IBV_SEND_SIGNALED;
 						new_wr[i].wr.rdma.remote_addr = wr->wr.rdma.remote_addr + split_chunk_size * i;
 						new_wr[i].wr.rdma.rkey = wr->wr.rdma.rkey;
@@ -1682,29 +1707,49 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 					int ne = 0;
 					struct ibv_cq *ev_cq;
 					void *ev_ctx;
-					if (SPLIT_USE_EVENT) {
-						ret = ibv_get_cq_event(qp->split_comp_channel, &ev_cq, &ev_ctx);
-						if (ret) {
-							fprintf(stderr, "Failed to get CQ event.\n");
-							return ret;
-						}
+					if (SPLIT_USE_SELECTIVE_SIGNALING) {
+						if (SPLIT_USE_EVENT) {
+							ret = ibv_get_cq_event(qp->split_comp_channel, &ev_cq, &ev_ctx);
+							if (ret) {
+								fprintf(stderr, "Failed to get CQ event.\n");
+								return ret;
+							}
 
-						ibv_ack_cq_events(ev_cq, 1);
+							ibv_ack_cq_events(ev_cq, 1);
 
-						ret = ibv_req_notify_cq(ev_cq, 0);
-						if (ret) {
-							fprintf(stderr, "Couldn't request CQ notification\n");
-							return ret;
+							ret = ibv_req_notify_cq(ev_cq, 0);
+							if (ret) {
+								fprintf(stderr, "Couldn't request CQ notification\n");
+								return ret;
+							}
 						}
+						//// selective signalling to poll the wc of the last wr
+						do {
+							ne = mlx4_poll_ibv_cq(qp->split_cq, 1, &wc);
+							//printf("ne = %d\n", ne);
+						} while (ne == 0);
+					} else {
+						ne = 0;
+						do {
+							if (SPLIT_USE_EVENT) {
+								ret = ibv_get_cq_event(qp->split_comp_channel, &ev_cq, &ev_ctx);
+								if (ret) {
+									fprintf(stderr, "Failed to get CQ event.\n");
+									return ret;
+								}
+
+								ibv_ack_cq_events(ev_cq, 1);
+
+								ret = ibv_req_notify_cq(ev_cq, 0);
+								if (ret) {
+									fprintf(stderr, "Couldn't request CQ notification\n");
+									return ret;
+								}
+							}
+							ne += mlx4_poll_ibv_cq(qp->split_cq, num_wrs_to_split_qp, &wc);
+							//printf("ne = %d\n", ne);
+						} while (ne < num_wrs_to_split_qp);
 					}
-					do {
-						ne = mlx4_poll_ibv_cq(qp->split_cq, 1, &wc);
-						//printf("ne = %d\n", ne);
-					} while (ne == 0);
-					//do {
-					//	ne += mlx4_poll_ibv_cq(qp->split_cq, 1, &wc);
-					//} while (ne < num_wrs_to_split_qp);
-					//printf("ne = %d\n", ne);
 
 					// Very last one with the original send flag post to user's QP so it can possibly poll its wc
 					current_length -= split_chunk_size * num_wrs_to_split_qp;
