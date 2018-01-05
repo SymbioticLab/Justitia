@@ -800,17 +800,6 @@ static struct ibv_cq *create_cq(struct ibv_context *context,
 	}
 
 	cq->pattern = MLX4_CQ_PATTERN;
-	////TODO: look into this later
-	//cq->num_chunks_to_recv = 0;
-	//cq->current_cqe = NULL;
-	//cq->current_qpn = 0;
-	//// store channel pointer
-	/*
-	if (channel != NULL) {
-		cq->comp_channel = channel;
-	}	
-	*/
-	////
 	return &cq->ibv_cq;
 
 err_db:
@@ -1163,6 +1152,10 @@ struct ibv_qp *mlx4_create_qp(struct ibv_pd *pd, struct ibv_qp_init_attr *attr)
 		//// initalize recv request buffer
 		rr_buffer_init(&mqp->rr_buf, RR_BUFFER_INIT_CAP);
 		mqp->split_qp_exchange_done = 0;
+		mqp->prev_chunk_size = SPLIT_CHUNK_SIZE;
+	} else {
+		fprintf(stderr, "Error creating Split QP\n");
+		return qp;
 	}
 	////
 

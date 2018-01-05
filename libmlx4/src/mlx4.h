@@ -51,7 +51,7 @@
 
 ////
 #include <inttypes.h>
-#define SPLIT_CHUNK_SIZE		1000			//// Default Split Chunk Size
+#define SPLIT_CHUNK_SIZE		1048576			//// Default Split Chunk Size; HAS TO BE equal to the intial value that Pacer sets
 #define MANUAL_SPLIT_QPN_DIFF 	0				//// manually set (guess) split qpn/psn or general approcah
 #define SPLIT_QP_NUM_DIFF		1				//// DC if MANUAL_SPLIT is off
 #define SPLIT_USE_EVENT			1				//// event-triggered polling for splitting
@@ -282,7 +282,11 @@ enum mlx4_res_domain_bf_type {
 struct Split_FC_message {
 	enum FC_message_type type;
 	union {
-		uint32_t num_split_chunks;
+		//uint32_t num_split_chunks;
+		struct {
+			uint32_t num_split_chunks;
+			uint32_t current_chunk_size;
+		} split_chunk_info;
 		struct {
 			uint32_t qp_num;
 			uint32_t sq_psn;
@@ -685,6 +689,7 @@ struct mlx4_qp {
 	int 				user_qp_mask_rtr;
 	struct rr_buffer	rr_buf;
 	int 				split_qp_exchange_done;
+	uint32_t			prev_chunk_size;		// used in 2-sided chunk size varying
 	////
 };
 

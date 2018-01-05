@@ -1065,7 +1065,7 @@ int mlx4_poll_cq(struct ibv_cq *ibcq, int ne, struct ibv_exp_wc *wc,
 		//if (qp->split_fc_msg[0].type == INFO) {
 		//	printf("DEBUG: mlx4_poll_cq: EQUAL INFO\n");
 		//}
-		num_chunks_to_recv = qp->split_fc_msg[0].msg.num_split_chunks - 1;
+		num_chunks_to_recv = qp->split_fc_msg[0].msg.split_chunk_info.num_split_chunks - 1;
 		//printf("DEBUG: mlx4_poll_cq: split_FC_msg.msg.num_split_chunks = %d\n", qp->split_fc_msg[0].msg.num_split_chunks);
 		//printf("DEBUG: mlx4_poll_cq: num_chunks_to_recv = %d\n", num_chunks_to_recv);
 

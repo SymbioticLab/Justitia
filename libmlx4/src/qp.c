@@ -1243,9 +1243,6 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 			orig_sge_length = wr->sg_list->length;
 			orig_send_flags = wr->send_flags;
 
-			//// calculate num of chunks to split
-			num_chunks_to_send = ceil_helper((float)orig_sge_length / (float)split_chunk_size);
-			orig_num_chunks_to_send = num_chunks_to_send;
 
 			// For two-sided ops, the first chunk still need to be what it is originally,
 			// because the user will poll the first one at the end
@@ -1255,17 +1252,21 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 			if (wr->opcode == IBV_WR_RDMA_WRITE_WITH_IMM ||
 				wr->opcode == IBV_WR_SEND ||
 				wr->opcode == IBV_WR_SEND_WITH_IMM) { 				//// two-sided op
-
 				//printf("[[[Splitting two-sided op]]]\n");
 				//printf("ORIG QP local QPN: %#06x\n", ibqp->qp_num);
 				//printf("SPLIT QP local QPN: %#06x\n", qp->split_qp->qp_num);
-				//// qpn hack:
-				//qp->split_qp->qp_num = ibqp->qp_num;
-				//printf("SPLIT QP local QPN: %#06x\n", qp->split_qp->qp_num);
 
-				////
+				//// In two-sided case, the very first chunk will be sent using the previous set chunk size
+				//// so that the remote side can still recognize a split message.
+				//// After the first chunk, a flow control message containing the updated chunk size and corresponding num_chunks_to_send will be sent to the receiver
+				//// num_chunks_to_send here is the remainning chunks left to send to the receiver (based on the updated chunk size)
 
-				wr->sg_list->length = split_chunk_size;
+				//// calculate num of chunks to split based on the updated chunk size
+				num_chunks_to_send = ceil_helper((float)(orig_sge_length - qp->prev_chunk_size) / (float)split_chunk_size);
+				orig_num_chunks_to_send = num_chunks_to_send;
+
+				// extra dummy byte + use previous split chunk size
+				wr->sg_list->length = qp->prev_chunk_size;
 				wr->sg_list->length++;
 
 				// Two-sided spliting
@@ -1276,20 +1277,19 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 					errno = ret;
 					goto out;
 				}
-				wr->sg_list->length--;
 
-				// <2> post a SR to split_qp to send num_chunks_to_send to the receiver and poll its wc
+				wr->sg_list->length--;
+				wr->sg_list->length = split_chunk_size;
+
+				// <2> post a SR to split_qp to send num_chunks_to_send as well as the current(updated)_chunk_size to the receiver and poll its wc
 				// will first implement WRITE_IMM
 				//printf("SENDER <2> post a SR to split_qp to send num_chunks_to_send to the receiver and poll its wc\n");
 
-				//// temp for debugging:
-				//num_chunks_to_send = 1;
-				////
-
 				qp->split_fc_msg[0].type = INFO;
-				qp->split_fc_msg[0].msg.num_split_chunks = num_chunks_to_send;
-				//printf("DEBUG POST SEND: qp->split_fc_msg.msg.num_split_chunks: %d\n", qp->split_fc_msg[0].msg.num_split_chunks);
-				num_chunks_to_send--;
+				qp->split_fc_msg[0].msg.split_chunk_info.num_split_chunks = num_chunks_to_send;
+				qp->split_fc_msg[0].msg.split_chunk_info.current_chunk_size = split_chunk_size;
+				//printf("DEBUG POST SEND: qp->split_fc_msg.msg.split_chunk_info.num_split_chunks: %d\n", qp->split_fc_msg[0].msg.split_chunk_info.num_split_chunks);
+				//num_chunks_to_send--;		// no longer needed
 
 				struct ibv_sge ssge;
 				struct ibv_send_wr swr;
@@ -1440,9 +1440,6 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 
 				//int cnt = 0;
 				while (num_chunks_to_send > 0) {
-					current_length -= split_chunk_size;
-					wr->wr.rdma.remote_addr += split_chunk_size;
-					wr->sg_list->addr += split_chunk_size;
 					//sleep(2);
 
 					//printf("DEBUG POST SEND: posting rest SRs to split_qp. num_chunks_to_send = %d\n", num_chunks_to_send);
@@ -1466,6 +1463,10 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 						goto out;
 					}
 
+					current_length -= split_chunk_size;
+					wr->wr.rdma.remote_addr += split_chunk_size;
+					wr->sg_list->addr += split_chunk_size;
+
 					num_chunks_to_send--;
 				}
 
@@ -1475,15 +1476,6 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 				//TODO: if necessary, study the performance difference of polling multiple WCs at a time.
 				// Drawbacks of this is that you need to provide a big array of wc structs to pass in.
 				//printf("DEBUG POST_SEND: orig_num_chunks_to_send = %d\n", orig_num_chunks_to_send);	
-				/*
-				ne = 0;
-				do {
-					ne += mlx4_poll_ibv_cq(qp->split_cq, 1, &wc);
-					//ne += mlx4_poll_ibv_cq(qp->split_cq, orig_num_chunks_to_send - 1, &wc);
-					//printf("ne = %d\n", ne);
-				} while (ne < orig_num_chunks_to_send - 1);
-				//printf("ne = %d, message transfer completed\n", ne);
-				*/
 
 				if (SPLIT_USE_SELECTIVE_SIGNALING) {
 					//// selective signalling to poll the wc of the last wr
@@ -1508,7 +1500,7 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 					} while (ne == 0);
 				} else {
 					int total_npolled = 0;
-					while (total_npolled < orig_num_chunks_to_send - 1) {
+					while (total_npolled < orig_num_chunks_to_send) {
 						if (SPLIT_USE_EVENT) {
 							ret = ibv_get_cq_event(qp->split_comp_channel, &ev_cq, &ev_ctx);
 							if (ret) {
@@ -1563,14 +1555,24 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 					fprintf(stderr, "Failed to call __mlx4_post_recv, errno = %d\n", errno);
 				}
 
+				//// update previous chunk size
+				qp->prev_chunk_size = split_chunk_size;	
+				////
+
 				//// Restore original qp before return
 				wr->wr.rdma.remote_addr = orig_raddr;
 				wr->sg_list->addr = orig_sge_addr;
 				wr->sg_list->length = orig_sge_length;
 				wr->send_flags = orig_send_flags;
 				mlx4_unlock(&qp->sq.lock);
+
 				return 0;
-			} else if (wr->opcode == IBV_WR_RDMA_WRITE || wr->opcode == IBV_WR_RDMA_READ) { // One-sided verbs
+
+			} else if (wr->opcode == IBV_WR_RDMA_WRITE || wr->opcode == IBV_WR_RDMA_READ) { 	// One-sided verbs
+
+				//// calculate num of chunks to split (based on the current(updated) chunk size)
+				num_chunks_to_send = ceil_helper((float)orig_sge_length / (float)split_chunk_size);
+
 				if (!SPLIT_USE_LINKED_LIST) {
 					//// without using linked list
 					struct ibv_send_wr swr;
@@ -1963,8 +1965,8 @@ int orig_mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 					////
 
 					qp->split_fc_msg[0].type = INFO;
-					qp->split_fc_msg[0].msg.num_split_chunks = num_chunks_to_send;
-					printf("DEBUG POST SEND: qp->split_fc_msg.msg.num_split_chunks: %d\n", qp->split_fc_msg[0].msg.num_split_chunks);
+					qp->split_fc_msg[0].msg.split_chunk_info.num_split_chunks = num_chunks_to_send;
+					printf("DEBUG POST SEND: qp->split_fc_msg.msg.split_chunk_info.num_split_chunks: %d\n", qp->split_fc_msg[0].msg.split_chunk_info.num_split_chunks);
 					num_chunks_to_send--;
 
 					struct ibv_sge ssge;
