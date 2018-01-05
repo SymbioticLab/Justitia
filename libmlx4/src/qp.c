@@ -1363,7 +1363,7 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 				//	printf("INDEED received ACK from receiver.\n");
 				//}
 
-				// <4> send using split_qp with the rest of the original message chunks using a linked list of WRs.
+				// <4> send using split_qp with the rest of the original message chunks
 				//printf("SENDER <4> send using split_qp with the rest of the original message chunks\n");
 				//printf("SENDER <4> send using split_qp with the rest of the original message chunks using a linked list of WRs\n");
 
@@ -1438,14 +1438,22 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 					wr->send_flags = wr->send_flags & (~(IBV_SEND_SIGNALED));
 				}
 
-				//int cnt = 0;
 				while (num_chunks_to_send > 0) {
-					//sleep(2);
 
 					//printf("DEBUG POST SEND: posting rest SRs to split_qp. num_chunks_to_send = %d\n", num_chunks_to_send);
 					//printf("raddr:%" PRIu64 "\n", wr->wr.rdma.remote_addr);
 					//printf("sg_addr:%" PRIu64 "\n", wr->sg_list->addr);
 					//printf("rkey:%" PRIu32 "\n", wr->wr.rdma.rkey);
+
+					if (num_chunks_to_send == orig_num_chunks_to_send) {
+						current_length -= qp->prev_chunk_size;
+						wr->wr.rdma.remote_addr += qp->prev_chunk_size;
+						wr->sg_list->addr += qp->prev_chunk_size;
+					} else {
+						current_length -= split_chunk_size;
+						wr->wr.rdma.remote_addr += split_chunk_size;
+						wr->sg_list->addr += split_chunk_size;
+					}
 
 					if (num_chunks_to_send == 1) {
 						wr->sg_list->length = current_length;
@@ -1455,17 +1463,11 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 
 					//__mlx4_post_send(qp->split_qp, wr, bad_wr);
 					ret = __mlx4_post_send(qp->split_qp, wr, bad_wr);
-					//cnt++;
-					//printf("post_send [%d]\n", cnt);
 					if (ret != 0) {
 						errno = ret;
 						fprintf(stderr, "DEBUG POST SEND REALLY BAD!!, errno = %d\n", errno);
 						goto out;
 					}
-
-					current_length -= split_chunk_size;
-					wr->wr.rdma.remote_addr += split_chunk_size;
-					wr->sg_list->addr += split_chunk_size;
 
 					num_chunks_to_send--;
 				}
@@ -1570,7 +1572,7 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 
 			} else if (wr->opcode == IBV_WR_RDMA_WRITE || wr->opcode == IBV_WR_RDMA_READ) { 	// One-sided verbs
 
-				//// calculate num of chunks to split (based on the current(updated) chunk size)
+				//// calculate num of chunks to split (based on the current(updated) chunk size) (1 + remaining)
 				num_chunks_to_send = ceil_helper((float)orig_sge_length / (float)split_chunk_size);
 
 				if (!SPLIT_USE_LINKED_LIST) {

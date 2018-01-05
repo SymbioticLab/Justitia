@@ -800,6 +800,10 @@ static struct ibv_cq *create_cq(struct ibv_context *context,
 	}
 
 	cq->pattern = MLX4_CQ_PATTERN;
+
+	//// initialize prev_chunk_size
+	cq->split_chunk_size = SPLIT_CHUNK_SIZE;
+	////
 	return &cq->ibv_cq;
 
 err_db:

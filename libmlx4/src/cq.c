@@ -735,9 +735,9 @@ static int mlx4_poll_one(struct mlx4_cq *cq,
 		wc->byte_len = ntohl(cqe->byte_cnt);
 		//printf("DEBUG: mlx4_poll_one: wc->byte_len: %u\n", wc->byte_len);
 		////
-		if (wc->byte_len > SPLIT_CHUNK_SIZE) {
+		if (wc->byte_len > cq->split_chunk_size) {
 			//printf("DEBUG: mlx4_poll_one: large message detected.\n");
-			// get receive request corresponding to this wc
+			//// get receive request corresponding to this wc
 			if (scat != NULL) {
 				*scat = (struct mlx4_wqe_data_seg *)mlx4_get_recv_wqe(*cur_qp, wqe_index);
 				//printf("DEBUG: get RR: scat->addr: %" PRIu64 "\n", ntohll((*scat)->addr));
@@ -1036,9 +1036,9 @@ int mlx4_poll_cq(struct ibv_cq *ibcq, int ne, struct ibv_exp_wc *wc,
 		//struct mlx4_qp *split_qp = NULL;
 		struct ibv_cq *split_cq = qp->split_cq;
 		struct ibv_exp_wc split_wc;
-		//int split_err = 0;
-		int num_chunks_to_recv;
-		// TODO: modify to event_triggered polling later
+		uint32_t num_chunks_to_recv;
+		uint32_t split_chunk_size;
+
 		int ne2;
 		struct ibv_cq *ev_cq;
 		void *ev_ctx;
@@ -1056,7 +1056,6 @@ int mlx4_poll_cq(struct ibv_cq *ibcq, int ne, struct ibv_exp_wc *wc,
 			}
 		}
 		do {
-			//split_err = mlx4_poll_one(split_cq, &split_qp, &split_wc, wc_size, is_exp, NULL);
 			ne2 = __mlx4_poll_cq(split_cq, 1, &split_wc, wc_size, is_exp);
 		} while (ne2 == 0);
 
@@ -1065,7 +1064,11 @@ int mlx4_poll_cq(struct ibv_cq *ibcq, int ne, struct ibv_exp_wc *wc,
 		//if (qp->split_fc_msg[0].type == INFO) {
 		//	printf("DEBUG: mlx4_poll_cq: EQUAL INFO\n");
 		//}
-		num_chunks_to_recv = qp->split_fc_msg[0].msg.split_chunk_info.num_split_chunks - 1;
+
+		num_chunks_to_recv = qp->split_fc_msg[0].msg.split_chunk_info.num_split_chunks;
+		split_chunk_size = qp->split_fc_msg[0].msg.split_chunk_info.current_chunk_size;
+		cq->split_chunk_size = split_chunk_size;	
+
 		//printf("DEBUG: mlx4_poll_cq: split_FC_msg.msg.num_split_chunks = %d\n", qp->split_fc_msg[0].msg.num_split_chunks);
 		//printf("DEBUG: mlx4_poll_cq: num_chunks_to_recv = %d\n", num_chunks_to_recv);
 
@@ -1078,7 +1081,7 @@ int mlx4_poll_cq(struct ibv_cq *ibcq, int ne, struct ibv_exp_wc *wc,
 
 		memset(&rsge, 0, sizeof(rsge));
 		rsge.addr = (uintptr_t)ntohll(scat->addr);
-		rsge.length = SPLIT_CHUNK_SIZE;
+		rsge.length = split_chunk_size;
 		rsge.lkey = ntohl(scat->lkey); 
 		
 		//printf("DEBUG: print scat: rsge.addr: %" PRIu64 "\n", rsge.addr);
@@ -1094,7 +1097,7 @@ int mlx4_poll_cq(struct ibv_cq *ibcq, int ne, struct ibv_exp_wc *wc,
 		int ret;
 		//printf("DEBUG mlx4_poll_cq: num_chunks_to_recv = %d\n", num_chunks_to_recv);
 		for (i = 0; i < num_chunks_to_recv; i++) {
-			rsge.addr += SPLIT_CHUNK_SIZE;
+			rsge.addr += split_chunk_size;
 			//__mlx4_post_recv(qp->split_qp, &rwr, &bad_rwr);
 			ret = __mlx4_post_recv(qp->split_qp, &rwr, &bad_rwr);
 			if (ret != 0) {
@@ -1128,7 +1131,6 @@ int mlx4_poll_cq(struct ibv_cq *ibcq, int ne, struct ibv_exp_wc *wc,
 		// <5> send ACK back to sender using split_qp, and poll its wc
 		//printf("RECEIVER <5> send ACK back to sender using split_qp, and poll its wc\n");
 		//printf("DEBUG5: mlx4_poll_cq: split_fc_msg.msg.num_split_chunks = %d\n", qp->split_fc_msg[0].msg.num_split_chunks);
-		//sleep(1);
 		qp->split_fc_msg[0].type = ACK;
 		struct ibv_sge ssge;
 		struct ibv_send_wr swr;
@@ -1176,38 +1178,11 @@ int mlx4_poll_cq(struct ibv_cq *ibcq, int ne, struct ibv_exp_wc *wc,
 		} while (ne2 == 0);
 
 		// <6> poll from split_qp, and keep counting successful wc until all chunks are polled
-		// TODO: modify to event_triggered polling later
 		//printf("RECEIVER <6> poll from split_qp, and keep counting successful wc until all chunks are polled\n");
-		total_bytes_recvd = SPLIT_CHUNK_SIZE + 1;
-		//int chunk_count = 0;
-
-		/*
-		while (chunk_count < num_chunks_to_recv) {
-			printf("DEBUG: mlx4_poll_cq: chunk_count = %d\n", chunk_count);
-			//err = mlx4_poll_one(split_cq, &split_qp, ((void *)&split_wc) + chunk_count * wc_size,
-			err = mlx4_poll_one(split_cq, &split_qp, ((void *)&split_wc),
-						wc_size, is_exp, NULL);
-			//if (unlikely(err != CQ_OK && err != CQ_SPLIT))
-			if (likely(err == CQ_OK)) {
-				++chunk_count;
-			} else {
-				//printf("DEBUG: mlx4_poll_cq: err = %d\n", err);
-			}
-		}	
-		*/
-		////
-		/*
-		ne2 = 0;
-		do {
-			//ne2 += __mlx4_poll_cq(split_cq, 1, &split_wc, wc_size, is_exp);
-			ne2 += __mlx4_poll_cq(split_cq, num_chunks_to_recv, &split_wc, wc_size, is_exp);
-		} while (ne2 < num_chunks_to_recv);
-		printf("PUPU1; ne2 = %d; num_chunks_to_recv = %d\n", ne2, num_chunks_to_recv);
-		*/
-		////
+		total_bytes_recvd = split_chunk_size + 1;
 
 		////
-		int ret_ne = 0;
+		uint32_t ret_ne = 0;
 		ne2 = 0;
 		if (SPLIT_USE_EVENT) {
 			if (ibv_get_cq_event(qp->split_comp_channel, &ev_cq, &ev_ctx)) {
@@ -1231,10 +1206,9 @@ int mlx4_poll_cq(struct ibv_cq *ibcq, int ne, struct ibv_exp_wc *wc,
 			total_bytes_recvd += split_wc.byte_len;
 			//printf("ne2 = %d, byte_len: %d\n", ne2, split_wc.byte_len);
 		}
-		//printf("ne2 = %d, message transfer completed\n", ne2);
 		////
 
-		// increment npolled;
+		//// increment npolled;
 		++npolled;
 	}
 

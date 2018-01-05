@@ -558,8 +558,7 @@ struct mlx4_cq {
 	int				creation_flags;
 	struct mlx4_qp			*last_qp;
 	uint32_t			model_flags; /* use mlx4_cq_model_flags */
-	int num_chunks_to_recv;
-	//struct ibv_comp_channel *split_comp_channel;
+	uint32_t 		split_chunk_size;
 	////
 };
 
