@@ -1315,6 +1315,12 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 		////
 	}
 
+	//// Ignore QPs that are not RC for now
+	if (qp->qp_type != IBV_QPT_RC) {
+		ret = ibv_cmd_modify_qp(qp, attr, attr_mask, &cmd, sizeof cmd);
+		goto check;
+	}
+
 	if (MANUAL_SPLIT_QPN_DIFF) {
 
 		//// modify original user's qp state
@@ -1656,7 +1662,7 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 			}
 
 		} else {
-			//// modify original user's qp state. In this case, ther user can move her qp to RTS
+			//// modify original user's qp state. In this case, the user can move her qp to RTS
 			ret = ibv_cmd_modify_qp(qp, attr, attr_mask, &cmd, sizeof cmd);
 		}
 	}
@@ -1707,6 +1713,7 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 	}
 	*/
 
+check:
 	if (!ret		       &&
 	    (attr_mask & IBV_QP_STATE) &&
 	    attr->qp_state == IBV_QPS_RESET) {
@@ -1721,18 +1728,20 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 		if (to_mqp(qp)->rq.wqe_cnt)
 			*to_mqp(qp)->db = 0;
 
-		//// do same for custom_qp
-		qp = mqp->split_qp;
-		if (qp->recv_cq)
-			mlx4_cq_clean(to_mcq(qp->recv_cq), qp->qp_num,
-				      qp->srq ? to_msrq(qp->srq) : NULL);
-		if (qp->send_cq && qp->send_cq != qp->recv_cq)
-			mlx4_cq_clean(to_mcq(qp->send_cq), qp->qp_num, NULL);
+		if (qp->qp_type == IBV_QPT_RC) {
+			//// do same for custom_qp
+			qp = mqp->split_qp;
+			if (qp->recv_cq)
+				mlx4_cq_clean(to_mcq(qp->recv_cq), qp->qp_num,
+						qp->srq ? to_msrq(qp->srq) : NULL);
+			if (qp->send_cq && qp->send_cq != qp->recv_cq)
+				mlx4_cq_clean(to_mcq(qp->send_cq), qp->qp_num, NULL);
 
-		mlx4_init_qp_indices(to_mqp(qp));
-		if (to_mqp(qp)->rq.wqe_cnt)
-			*to_mqp(qp)->db = 0;
-		////
+			mlx4_init_qp_indices(to_mqp(qp));
+			if (to_mqp(qp)->rq.wqe_cnt)
+				*to_mqp(qp)->db = 0;
+			////
+		}
 	}
 
 err:
