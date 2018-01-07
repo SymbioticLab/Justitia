@@ -37,5 +37,6 @@ struct shared_block {
 
 extern struct flow_info *flow;  /* declaration; initialization inside verbs.c */
 extern struct shared_block *sb; /* declaration; initialization inside verbs.c */
+extern int start_flag;          /* Initialized in verbs.c */
 
 #endif

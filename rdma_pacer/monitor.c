@@ -191,7 +191,8 @@ void monitor_latency(void *arg) {
 
         if (__atomic_load_n(&cb.sb->num_active_big_flows, __ATOMIC_RELAXED)) {
             if (__atomic_load_n(&cb.sb->num_active_small_flows, __ATOMIC_RELAXED)) {
-                // __atomic_store_n(&cb.sb->active_chunk_size, 2048, __ATOMIC_RELAXED);
+                printf(">>>set chunk size to 2048B\n");
+                __atomic_store_n(&cb.sb->active_chunk_size, 2048, __ATOMIC_RELAXED);
                 if (tail_99_ns > base_tail_99 * 2 || tail_999_ns > base_tail_999 * 2) {
                 // if (lat_ns > base_tail_99) {
                     /* Multiplicative Decrease */

@@ -48,6 +48,7 @@
 
 /* isolation */
 #include "qp_pacer.h"
+#include "pacer.h"
 #include <inttypes.h>
 #define MAX_SMALL 1024
 /* end */
@@ -62,7 +63,8 @@
 #endif
 
 ////
-int GLOBAL_CNT = 0;
+//int GLOBAL_CNT = 0;
+//int start_flag = 1;
 ////
 
 #ifdef MLX4_WQE_FORMAT
@@ -1202,10 +1204,14 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 		if (flow) {
 			if (wr->sg_list->length <= MAX_SMALL) {
 				__atomic_store_n(&flow->small, 1, __ATOMIC_RELAXED);
+				printf("DEBUG POST SEND: INDEED increment SMALL flow counter\n");
 				__atomic_fetch_add(&sb->num_active_small_flows, 1, __ATOMIC_RELAXED);
+				printf("DEBUG POST SEND: Now num_active_small_flows = %" PRIu16 "\n", __atomic_load_n(&sb->num_active_small_flows, __ATOMIC_RELAXED));
 			} else {
 				__atomic_store_n(&flow->small, 0, __ATOMIC_RELAXED);
+				printf("DEBUG POST SEND: INDEED increment BIG flow counter\n");
 				__atomic_fetch_add(&sb->num_active_big_flows, 1, __ATOMIC_RELAXED);
+				printf("DEBUG POST SEND: Now num_active_big_flows = %" PRIu16 "\n", __atomic_load_n(&sb->num_active_big_flows, __ATOMIC_RELAXED));
 			}
 		}
 	}
@@ -1876,7 +1882,6 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 	}
 out:
 	mlx4_unlock(&qp->sq.lock);
-
 	return ret;
 }
 

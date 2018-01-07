@@ -59,8 +59,10 @@
 
 /* isolation */
 #include "verbs_pacer.h"
+#include "pacer.h"
 struct flow_info *flow = NULL;
 struct shared_block *sb = NULL;
+int start_flag = 0;
 /* end */
 
 int __mlx4_query_device(uint64_t raw_fw_ver,
@@ -1174,6 +1176,7 @@ struct ibv_qp *mlx4_create_qp(struct ibv_pd *pd, struct ibv_qp_init_attr *attr)
 		contact_pacer();
 		flow = &sb->flows[slot];
 		printf("@@@At slot %d.\n", slot);
+		flow->small = 1;		/* Initialize small to be 1 so that any flow control message is recognized as mouse when start_flag = 0) */
 	}
 	/* end */
 
@@ -1513,6 +1516,7 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 			swr.opcode     = IBV_WR_SEND;
 			swr.send_flags = IBV_SEND_SIGNALED;
 
+			//printf("@@@before mlx4_post_send, start_flag = %d.\n", start_flag);
 			ret = mlx4_post_send(qp, &swr, &bad_swr);
 			if (ret != 0) {
 				fprintf(stderr, "Failed to post exchange SR to user qp.\n");
@@ -1661,6 +1665,8 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 				}
 			}
 
+			//// Set start_flag to 1 after possible split qp info exchange
+			start_flag = 1;
 		} else {
 			//// modify original user's qp state. In this case, the user can move her qp to RTS
 			ret = ibv_cmd_modify_qp(qp, attr, attr_mask, &cmd, sizeof cmd);
@@ -1668,50 +1674,6 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 	}
 
 
-
-	/*
-	else if (qp->state == IBV_QPS_RTS) {
-		struct ibv_qp_attr split_attr;
-		memcpy(&split_attr, attr, sizeof(struct ibv_qp_attr));
-
-		split_attr.dest_qp_num -= SPLIT_QP_NUM_DIFF;
-		split_attr.qp_state	    = IBV_QPS_RTS;
-		//split_attr.sq_psn	    = lrand48() & 0xffffff;
-		//split_attr.sq_psn	    = 4410;
-		split_attr.timeout	    = 14;
-		split_attr.retry_cnt	= 7;
-		split_attr.rnr_retry	= 7;
-		split_attr.max_rd_atomic  = 1;
-		
-		int rts_mask = 	IBV_QP_STATE              |
-						IBV_QP_TIMEOUT            |
-						IBV_QP_RETRY_CNT          |
-						IBV_QP_RNR_RETRY          |
-						IBV_QP_SQ_PSN             |
-						IBV_QP_MAX_QP_RD_ATOMIC;
-
-		if (rts_mask != attr_mask) {
-			printf("PUPU1\n");
-		}
-		if (split_attr.timeout != attr->timeout) {
-			printf("PUPU2\n");
-		}
-		if (split_attr.qp_state != attr->qp_state) {
-			printf("PUPU3\n");
-		}
-		if (split_attr.qp_state != attr->qp_state) {
-			printf("PUPU3\n");
-		}
-		
-
-		if (__mlx4_modify_qp(mqp->split_qp, &split_attr, rts_mask)) {
-		//if (__mlx4_modify_qp(mqp->split_qp, &split_attr, attr_mask)) {
-			fprintf(stderr, "Failed to modify SPLIT QP to RTS State\n");
-			goto err;
-		}
-		printf("<<<<MODIFY SPLIT QP to RTS>>>>\n");
-	}
-	*/
 
 check:
 	if (!ret		       &&
