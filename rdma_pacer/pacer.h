@@ -25,6 +25,8 @@
 #define MSG_LEN 8
 #define SOCK_PATH "/users/yuetan/rdma_socket"
 
+#define ELEPHANT_HAS_LOWER_BOUND 1  /* whether elephant has a minimum virtual link cap set by AIMD */
+
 struct flow_info {
     uint8_t pending;
     uint8_t active;

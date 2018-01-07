@@ -189,16 +189,25 @@ void monitor_latency(void *arg) {
         }
           
 
-        if (__atomic_load_n(&cb.sb->num_active_big_flows, __ATOMIC_RELAXED)) {
-            if (__atomic_load_n(&cb.sb->num_active_small_flows, __ATOMIC_RELAXED)) {
-                printf(">>>set chunk size to 2048B\n");
+        uint16_t num_active_big_flows = __atomic_load_n(&cb.sb->num_active_big_flows, __ATOMIC_RELAXED);
+        uint16_t num_active_small_flows = __atomic_load_n(&cb.sb->num_active_small_flows, __ATOMIC_RELAXED);
+        //if (__atomic_load_n(&cb.sb->num_active_big_flows, __ATOMIC_RELAXED)) {
+        if (num_active_big_flows) {
+            //if (__atomic_load_n(&cb.sb->num_active_small_flows, __ATOMIC_RELAXED)) {
+            if (num_active_small_flows) {
+                uint32_t min_virtual_link_cap = round((double) num_active_big_flows / (num_active_big_flows + num_active_small_flows) * LINE_RATE_MB);
+                //printf(">>>set chunk size to 2048B\n");
                 __atomic_store_n(&cb.sb->active_chunk_size, 2048, __ATOMIC_RELAXED);
                 if (tail_99_ns > base_tail_99 * 2 || tail_999_ns > base_tail_999 * 2) {
                 // if (lat_ns > base_tail_99) {
                     /* Multiplicative Decrease */
                     temp = __atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED) / 2;
-                    __atomic_store_n(&cb.virtual_link_cap, temp, __ATOMIC_RELAXED);
-                    printf(">>>set chunk size to 1024B\n");
+                    if (ELEPHANT_HAS_LOWER_BOUND && temp < min_virtual_link_cap) {
+                        __atomic_store_n(&cb.virtual_link_cap, min_virtual_link_cap, __ATOMIC_RELAXED);
+                    } else {
+                        __atomic_store_n(&cb.virtual_link_cap, temp, __ATOMIC_RELAXED);
+                    }
+                    //printf(">>>set chunk size to 1024B\n");
                     __atomic_store_n(&cb.sb->active_chunk_size, 1024, __ATOMIC_RELAXED);
                 } else if (__atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED) < LINE_RATE_MB) {
                     /* Additive Increase */
@@ -208,6 +217,7 @@ void monitor_latency(void *arg) {
                 __atomic_store_n(&cb.virtual_link_cap, LINE_RATE_MB, __ATOMIC_RELAXED);
                 __atomic_store_n(&cb.sb->active_chunk_size, DEFAULT_CHUNK_SIZE, __ATOMIC_RELAXED);
             }
+            //printf(">>>> virtual link cap: %" PRIu32 "\n", __atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED));
         }
     }
 
