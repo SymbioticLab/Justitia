@@ -1412,6 +1412,8 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 			}
 
 		}
+		//// Set start_flag to 1
+		start_flag = 1;
 	} else {	// a general solution for split qp qpn exchange
 		if (qp->state == IBV_QPS_RESET && attr->qp_state == IBV_QPS_INIT) {
 			//// USER QP RESET->INIT transition.
