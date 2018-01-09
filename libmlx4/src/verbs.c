@@ -597,7 +597,10 @@ struct ibv_mr *mlx4_reg_mr(struct ibv_pd *pd, void *addr,
 
 	in.pd = pd;
 	in.addr = addr;
-	in.length = length;
+	//// Increase length by 1 to handle the LENGTH_ERR when 2-sided verbs first start to split
+	in.length = length + 1;
+	//in.length = length;
+	////
 	in.exp_access = access;
 	in.comp_mask = 0;
 

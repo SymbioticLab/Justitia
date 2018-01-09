@@ -1,0 +1,90 @@
+512,513c512,513
+< 		initattr.cap.max_send_sge = 2;
+< 		initattr.cap.max_recv_sge = 2;
+---
+> 		initattr.cap.max_send_sge = 1;
+> 		initattr.cap.max_recv_sge = 1;
+739a740,741
+> 	printf("PUPUPUPU\n");
+> 	/*
+741d742
+< 
+749c750
+< 	double cpu_mhz = get_cpu_mhz(no_cpu_freq_fail);
+---
+> 	printf("PUPUPUPU\n");
+756a758,764
+> 	*/
+> 	double cpu_mhz = get_cpu_mhz(no_cpu_freq_fail);
+> 	printf("[message per sec] = %.2f\n", iters / ((double)(tcompleted[iters - 1] - tposted[0]) / cpu_mhz / 1000000));
+> 	printf("tposted[0] = %.2f\n", (double)tposted[0] / cpu_mhz);
+> 	printf("tposted[1] = %.2f\n", (double)tposted[1] / cpu_mhz);
+> 	printf("tcompleted[iters - 1] = %.2f\n", (double)tcompleted[iters-1] / cpu_mhz);
+> 	printf("iters = %d\n", iters);
+916d923
+< 			//printf("Iter\t[%d]\n", rcnt+1);
+955d961
+< 			//printf("Received[%d]\n", rcnt);
+1038a1045
+> 		printf("tx_depth = %d\n", user_param->tx_depth);
+1040c1047
+< 
+---
+> 			//printf("totccnt %d\n", totccnt);
+1051c1058
+< 			//printf("Iter [%d]\n", totccnt+1);
+---
+> 		//int batch = 1;
+1055,1060c1062,1073
+< 			    if (ibv_post_send(qp, &ctx->wr, &bad_wr)) {
+< 		            fprintf(stderr, "Couldn't post send: qp index = %d qp scnt=%d total scnt %d\n",
+< 		                    index,ctx->scnt[index],totscnt);
+< 					perror("ibv_post_send error: ");
+< 		            return 1;
+< 			    } 
+---
+> 				int i;
+> 				for (i = 0; i < user_param->tx_depth; i++) {
+> 				//for (i = 0; i < batch; i++) {
+> 					if (ibv_post_send(qp, &ctx->wr, &bad_wr)) {
+> 						fprintf(stderr, "Couldn't post send: qp index = %d qp scnt=%d total scnt %d\n",
+> 								index,ctx->scnt[index],totscnt);
+> 						perror("ibv_post_send error: ");
+> 						return 1;
+> 					} 
+> 					++totscnt;
+> 				}
+> 
+1066a1080,1081
+> 				++totscnt;
+> 
+1069d1083
+< 		    ++totscnt;
+1090a1105
+> 		  ne = 0;
+1092,1093c1107,1118
+< 	        ne = ibv_poll_cq(ctx->cq, 1, &wc);
+< 	      } while (ne == 0);
+---
+> 			ne += ibv_poll_cq(ctx->cq, 1, &wc);
+> 			//printf("ne = %d\n", ne);
+> 		  } while (ne < user_param->tx_depth);
+> 		  //} while (ne < batch);
+> 		  if (totccnt == 0) {
+> 			--totccnt;
+> 		  	totccnt += user_param->tx_depth;
+> 		  	//totccnt += batch;
+> 		  } else {
+> 		  	totccnt += user_param->tx_depth;
+> 		  	//totccnt += batch;
+> 		  }
+1111,1112c1136
+< 	      totccnt += 1;
+< 		  //printf("Sent [%d]\n", totccnt);
+---
+> 	      //totccnt += 1;
+1537c1561,1562
+< 	tcompleted = malloc(user_param.iters * user_param.numofqps * sizeof *tcompleted);
+---
+> 	tcompleted = malloc(user_param.iters * user_param.numofqps * sizeof(*tcompleted));
+> 	memset(tcompleted, 0, user_param.iters * sizeof(*tcompleted));
