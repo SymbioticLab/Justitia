@@ -1229,8 +1229,16 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 		//// Update split chunk size
 		uint32_t split_chunk_size = sb ? __atomic_load_n(&sb->active_chunk_size, __ATOMIC_RELAXED) : SPLIT_CHUNK_SIZE;
 		//printf("split_chunk_size = %" PRIu32 " \n", split_chunk_size);
+		int is_two_sided = 0;
+		if (wr->opcode == IBV_WR_RDMA_WRITE_WITH_IMM ||
+			wr->opcode == IBV_WR_SEND ||
+			wr->opcode == IBV_WR_SEND_WITH_IMM) {
+			is_two_sided = 1;
+		} 
 
-		if (wr->sg_list->length > split_chunk_size)
+		//if (wr->sg_list->length > split_chunk_size)
+		if (wr->sg_list->length > split_chunk_size ||
+			(is_two_sided && wr->sg_list->length > qp->prev_chunk_size))
 		{
 
 			//printf("[[[NEED TO SPLIT]]] [%d]\n", ++GLOBAL_CNT);
@@ -1255,9 +1263,10 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 			//////wr->send_flags = wr->send_flags & (~(IBV_SEND_SIGNALED));
 			//printf("IBV_SEND_SIGNALED: %d\n", IBV_SEND_SIGNALED);
 
-			if (wr->opcode == IBV_WR_RDMA_WRITE_WITH_IMM ||
-				wr->opcode == IBV_WR_SEND ||
-				wr->opcode == IBV_WR_SEND_WITH_IMM) { 				//// two-sided op
+			//if (wr->opcode == IBV_WR_RDMA_WRITE_WITH_IMM ||
+			//	wr->opcode == IBV_WR_SEND ||
+			//	wr->opcode == IBV_WR_SEND_WITH_IMM) { 				//// two-sided op
+			if (is_two_sided) {
 				//printf("[[[Splitting two-sided op]]]\n");
 				//printf("ORIG QP local QPN: %#06x\n", ibqp->qp_num);
 				//printf("SPLIT QP local QPN: %#06x\n", qp->split_qp->qp_num);
@@ -1445,6 +1454,7 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 					wr->send_flags = wr->send_flags & (~(IBV_SEND_SIGNALED));
 				}
 
+				// NOTE: if num_chunks_to_send = 0 here (which is possible), we will not post any WRs in the following loop.
 				while (num_chunks_to_send > 0) {
 
 					//printf("DEBUG POST SEND: posting rest SRs to split_qp. num_chunks_to_send = %d\n", num_chunks_to_send);
@@ -1486,30 +1496,9 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 				// Drawbacks of this is that you need to provide a big array of wc structs to pass in.
 				//printf("DEBUG POST_SEND: orig_num_chunks_to_send = %d\n", orig_num_chunks_to_send);	
 
-				if (SPLIT_USE_SELECTIVE_SIGNALING) {
-					//// selective signalling to poll the wc of the last wr
-					if (SPLIT_USE_EVENT) {
-						ret = ibv_get_cq_event(qp->split_comp_channel, &ev_cq, &ev_ctx);
-						if (ret) {
-							fprintf(stderr, "Failed to get CQ event.\n");
-							return ret;
-						}
-
-						ibv_ack_cq_events(ev_cq, 1);
-
-						ret = ibv_req_notify_cq(ev_cq, 0);
-						if (ret) {
-							fprintf(stderr, "Couldn't request CQ notification\n");
-							return ret;
-						}
-					}
-					do {
-						ne = mlx4_poll_ibv_cq(qp->split_cq, 1, &wc);
-						//printf("ne = %d\n", ne);
-					} while (ne == 0);
-				} else {
-					int total_npolled = 0;
-					while (total_npolled < orig_num_chunks_to_send) {
+				if (orig_num_chunks_to_send > 0) {		//// only if we indeed sent out some chunks
+					if (SPLIT_USE_SELECTIVE_SIGNALING) {
+						//// selective signalling to poll the wc of the last wr
 						if (SPLIT_USE_EVENT) {
 							ret = ibv_get_cq_event(qp->split_comp_channel, &ev_cq, &ev_ctx);
 							if (ret) {
@@ -1525,14 +1514,37 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 								return ret;
 							}
 						}
-
 						do {
-							//ne += mlx4_poll_ibv_cq(qp->split_cq, num_wrs_to_split_qp, &wc);
 							ne = mlx4_poll_ibv_cq(qp->split_cq, 1, &wc);
 							//printf("ne = %d\n", ne);
-							total_npolled += ne;
-							//printf("total_npolled = %d\n", total_npolled);
-						} while (ne != 0);
+						} while (ne == 0);
+					} else {
+						int total_npolled = 0;
+						while (total_npolled < orig_num_chunks_to_send) {
+							if (SPLIT_USE_EVENT) {
+								ret = ibv_get_cq_event(qp->split_comp_channel, &ev_cq, &ev_ctx);
+								if (ret) {
+									fprintf(stderr, "Failed to get CQ event.\n");
+									return ret;
+								}
+
+								ibv_ack_cq_events(ev_cq, 1);
+
+								ret = ibv_req_notify_cq(ev_cq, 0);
+								if (ret) {
+									fprintf(stderr, "Couldn't request CQ notification\n");
+									return ret;
+								}
+							}
+
+							do {
+								//ne += mlx4_poll_ibv_cq(qp->split_cq, num_wrs_to_split_qp, &wc);
+								ne = mlx4_poll_ibv_cq(qp->split_cq, 1, &wc);
+								//printf("ne = %d\n", ne);
+								total_npolled += ne;
+								//printf("total_npolled = %d\n", total_npolled);
+							} while (ne != 0);
+						}
 					}
 				}
 				
@@ -2976,6 +2988,7 @@ int __mlx4_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr,
 			wr->sg_list->length++;
 		}
 		////
+
 		if (unlikely(!(qp->create_flags & IBV_EXP_QP_CREATE_IGNORE_RQ_OVERFLOW) &&
 			wq_overflow(&qp->rq, nreq, qp))) {
 			ret = ENOMEM;
@@ -3021,6 +3034,7 @@ int __mlx4_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr,
 		qp->rq.wrid[ind] = wr->wr_id;
 
 		ind = (ind + 1) & (qp->rq.wqe_cnt - 1);
+
 		//// revert the early modification
 		if (wr->sg_list->length == SPLIT_CHUNK_SIZE) {
 			wr->sg_list->length--;

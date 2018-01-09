@@ -57,7 +57,7 @@
 #define SPLIT_QP_NUM_DIFF		1				//// DC if MANUAL_SPLIT is off
 #define SPLIT_USE_EVENT			1				//// event-triggered polling for splitting
 #define SPLIT_USE_LINKED_LIST	0				//// post using a linked list or not (for one-sided verbs) (for testing purposes)
-#define SPLIT_USE_NO_BATCH		1				//// 1 -> post 1 poll 1 at one-sided verbs; for testing purpose; DC if SPLIT_USE_LINKED_LIST is 1
+#define SPLIT_USE_NO_BATCH		1				//// 1 -> post 1 poll 1 at one-sided verbs; DC if SPLIT_USE_LINKED_LIST is 1
 #define SPLIT_USE_SELECTIVE_SIGNALING	0		//// use selective signaling (only last chunk signaled) or not when sending split chunks 
 #define SPLIT_MAX_SEND_WR 		5000
 #define SPLIT_MAX_RECV_WR 		5000
