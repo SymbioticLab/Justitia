@@ -191,15 +191,15 @@ void monitor_latency(void *arg) {
 
         if (__atomic_load_n(&cb.sb->num_active_big_flows, __ATOMIC_RELAXED)) {
             if (__atomic_load_n(&cb.sb->num_active_small_flows, __ATOMIC_RELAXED)) {
-                printf(">>>set chunk size to 2048B\n");
-                __atomic_store_n(&cb.sb->active_chunk_size, 2048, __ATOMIC_RELAXED);
-                if (tail_99_ns > base_tail_99 * 2 || tail_999_ns > base_tail_999 * 2) {
-                // if (lat_ns > base_tail_99) {
+                // printf(">>>set chunk size to 2048B\n");
+                __atomic_store_n(&cb.sb->active_chunk_size, 64000, __ATOMIC_RELAXED);
+                // if (tail_99_ns > base_tail_99 * 2 || tail_999_ns > base_tail_999 * 2) {
+                if (lat_ns > base_tail_99) {
                     /* Multiplicative Decrease */
                     temp = __atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED) / 2;
                     __atomic_store_n(&cb.virtual_link_cap, temp, __ATOMIC_RELAXED);
-                    printf(">>>set chunk size to 1024B\n");
-                    __atomic_store_n(&cb.sb->active_chunk_size, 1024, __ATOMIC_RELAXED);
+                    // printf(">>>set chunk size to 1024B\n");
+                    // __atomic_store_n(&cb.sb->active_chunk_size, 1024, __ATOMIC_RELAXED);
                 } else if (__atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED) < LINE_RATE_MB) {
                     /* Additive Increase */
                     __atomic_fetch_add(&cb.virtual_link_cap, 1, __ATOMIC_RELAXED);
