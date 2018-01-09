@@ -51,8 +51,8 @@
 
 ////
 #include <inttypes.h>
-#define SPLIT_CHUNK_SIZE		1000000			//// Default Split Chunk Size; HAS TO BE equal to the intial value that Pacer sets
-//#define SPLIT_CHUNK_SIZE		1048576			//// Default Split Chunk Size; HAS TO BE equal to the intial value that Pacer sets
+#define SPLIT_CHUNK_SIZE		1000000			//// Default Split Chunk Size; Need to be equal or less than the initial chunk size that pacer sets.
+//#define SPLIT_CHUNK_SIZE		1048576			//// Default Split Chunk Size; Need to be equal or less than the initial chunk size that pacer sets.
 #define MANUAL_SPLIT_QPN_DIFF 	0				//// manually set (guess) split qpn/psn or general approcah
 #define SPLIT_QP_NUM_DIFF		1				//// DC if MANUAL_SPLIT is off
 #define SPLIT_USE_EVENT			1				//// event-triggered polling for splitting
