@@ -619,6 +619,9 @@ struct ibv_qp_init_attr {
 	int			sq_sig_all;
 	/* Below is needed for backwards compatabile */
 	struct ibv_xrc_domain  *xrc_domain;
+	//// User can set. In a memset-0 case should be elephant by dafault
+	int isSmall;
+	////
 };
 
 enum ibv_qp_init_attr_mask {
