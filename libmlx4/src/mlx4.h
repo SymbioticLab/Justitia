@@ -692,6 +692,7 @@ struct mlx4_qp {
 	struct rr_buffer	rr_buf;
 	int 				split_qp_exchange_done;
 	uint32_t			prev_chunk_size;		// used in 2-sided chunk size varying
+	int					isSmall;
 	////
 };
 

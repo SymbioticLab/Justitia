@@ -1198,18 +1198,22 @@ out:
 int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 		     struct ibv_send_wr **bad_wr)
 {
+
+	struct mlx4_qp *qp = to_mqp(ibqp);
+
 	/* isolation */
 	if (unlikely(start_flag)) {	
 		start_flag = 0;
 		if (flow) {
-			if (wr->sg_list->length <= MAX_SMALL) {
+			//if (wr->sg_list->length <= MAX_SMALL) {
+			if (qp->isSmall) {
 				isSmall = 1;
-				// printf("DEBUG POST SEND: INDEED increment SMALL flow counter\n");
+				printf("DEBUG POST SEND: INDEED increment SMALL flow counter\n");
 				__atomic_fetch_add(&sb->num_active_small_flows, 1, __ATOMIC_RELAXED);
 				// printf("DEBUG POST SEND: Now num_active_small_flows = %" PRIu16 "\n", __atomic_load_n(&sb->num_active_small_flows, __ATOMIC_RELAXED));
 			} else {
 				isSmall = 0;
-				// printf("DEBUG POST SEND: INDEED increment BIG flow counter\n");
+				printf("DEBUG POST SEND: INDEED increment BIG flow counter\n");
 				__atomic_fetch_add(&sb->num_active_big_flows, 1, __ATOMIC_RELAXED);
 				// printf("DEBUG POST SEND: Now num_active_big_flows = %" PRIu16 "\n", __atomic_load_n(&sb->num_active_big_flows, __ATOMIC_RELAXED));
 			}
@@ -1217,7 +1221,6 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 	}
 	/* end */
 
-	struct mlx4_qp *qp = to_mqp(ibqp);
 	int nreq;
 	int ret = 0;
 	mlx4_lock(&qp->sq.lock);

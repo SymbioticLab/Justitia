@@ -1165,7 +1165,10 @@ struct ibv_qp *mlx4_create_qp(struct ibv_pd *pd, struct ibv_qp_init_attr *attr)
 		} else {
 			mqp->split_qp_exchange_done = 0;
 		}
+		//// set prev chunk size for 2-sided splitting
 		mqp->prev_chunk_size = SPLIT_CHUNK_SIZE;
+		//// set whether user has set the qp to send mice flows
+		mqp->isSmall = (attr->isSmall == 0) ? 0 : 1;
 	} else {
 		fprintf(stderr, "Error creating Split QP\n");
 		return qp;
