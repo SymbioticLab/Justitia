@@ -2997,9 +2997,12 @@ int __mlx4_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr,
 	//// Buffer all recv requests if qp is at INIT state.
 	//// Split qp shall never post RRs at its own INIT state
 	if (ibqp->state == IBV_QPS_INIT) {
-		printf("i don't think so but just to double check...\n");
+		//printf("i don't think so but just to double check...\n");
+		//printf("split_qp_exchange_done = %d\n", qp->split_qp_exchange_done);
+		//fflush(stdout);
 		struct mlx4_qp *qp = to_mqp(ibqp);
-		if (!qp->split_qp_exchange_done) {
+		//if (!qp->split_qp_exchange_done) {
+		if (qp->split_qp_exchange_done == 0) {	// 1 or -1(case where qpn is set manually) can bypass
 			if (rr_buffer_enqueue(&qp->rr_buf, wr)) {
 				ret = 1;
 				fprintf(stderr, "Error adding wr to RR_buffer\n");
@@ -3015,7 +3018,7 @@ int __mlx4_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr,
 
 	for (nreq = 0; wr; ++nreq, wr = wr->next) {
 		//// for the case that will possibly cause LOCAL_LENGTH_ERR in the first chunk of 2-sided splitting, increase the length by 1 byte
-		if (wr->sg_list->length == SPLIT_CHUNK_SIZE) {
+		if (wr->sg_list != NULL && wr->sg_list->length == SPLIT_CHUNK_SIZE) {		// NOTE the NULL check for WIMM
 			wr->sg_list->length++;
 		}
 		////
@@ -3067,7 +3070,7 @@ int __mlx4_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr,
 		ind = (ind + 1) & (qp->rq.wqe_cnt - 1);
 
 		//// revert the early modification
-		if (wr->sg_list->length == SPLIT_CHUNK_SIZE) {
+		if (wr->sg_list != NULL && wr->sg_list->length == SPLIT_CHUNK_SIZE) {		// NOTE the NULL check for WIMM
 			wr->sg_list->length--;
 		}
 		////

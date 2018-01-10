@@ -1160,7 +1160,11 @@ struct ibv_qp *mlx4_create_qp(struct ibv_pd *pd, struct ibv_qp_init_attr *attr)
 		to_mpd(pd)->split_fc_mr = mqp->split_fc_mr;
 		//// initalize recv request buffer
 		rr_buffer_init(&mqp->rr_buf, RR_BUFFER_INIT_CAP);
-		mqp->split_qp_exchange_done = 0;
+		if (MANUAL_SPLIT_QPN_DIFF) {
+			mqp->split_qp_exchange_done = -1;
+		} else {
+			mqp->split_qp_exchange_done = 0;
+		}
 		mqp->prev_chunk_size = SPLIT_CHUNK_SIZE;
 	} else {
 		fprintf(stderr, "Error creating Split QP\n");
@@ -1273,6 +1277,7 @@ int __mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 int rr_buffer_post_and_clear(struct rr_buffer *rr_buf, struct ibv_qp *qp) {
 	int i;
 	struct ibv_recv_wr *rwr, *bad_rwr;
+	printf("DEBUG: entring rr_buffer_post_and_clear\n");
 	for (i = 0; i < rr_buf->size; i++) {
 		rwr = rr_buf->slot[i];
 		if (__mlx4_post_recv(qp, rwr, &bad_rwr)) {
@@ -1343,6 +1348,7 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 				goto err;
 			}
 			printf("<<<<MODIFY SPLIT QP to INIT>>>>\n");
+			fflush(stdout);
 		} else if (qp->state == IBV_QPS_RTR && mqp->split_qp->state == IBV_QPS_INIT) {
 			////attr->dest_qp_num -= SPLIT_QP_NUM_DIFF;
 			//attr->dest_qp_num -= 1;	// for old benchmark
@@ -1353,6 +1359,14 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 			split_attr.dest_qp_num -= SPLIT_QP_NUM_DIFF;
 			split_attr.rq_psn = 10083;
 			//printf("DEBUG MODIFY QP: now attr->dest_qp_num is %06x\n", attr->dest_qp_num);
+
+			if (__mlx4_modify_qp(mqp->split_qp, &split_attr, split_mask)) {
+				fprintf(stderr, "Failed to modify SPLIT QP to RTR State\n");
+				ret = 1;
+				goto err;
+			}
+			printf("<<<<MODIFY SPLIT QP to RTR>>>>\n");
+			fflush(stdout);
 			//// pre-post a RR for later use
 			//printf("DEBUG MODIFY QP: post a RR to split_qp\n");
 			struct ibv_sge sge;
@@ -1377,13 +1391,6 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 				ret = 1;
 				goto err;
 			}
-
-			if (__mlx4_modify_qp(mqp->split_qp, &split_attr, split_mask)) {
-				fprintf(stderr, "Failed to modify SPLIT QP to RTR State\n");
-				ret = 1;
-				goto err;
-			}
-			printf("<<<<MODIFY SPLIT QP to RTR>>>>\n");
 			// Modify split qp to RTS
 			split_attr.qp_state	    = IBV_QPS_RTS;
 			split_attr.sq_psn	    = 10083;
@@ -1406,6 +1413,7 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 			printf("<<<<MODIFY SPLIT QP to RTS>>>>\n");
 
 			printf("<<<<Request SPLIT CQ evnt notification\n");
+			fflush(stdout);
 			if (SPLIT_USE_EVENT) {
 				ret = ibv_req_notify_cq(mqp->split_cq, 0); 
 				if (ret) {
@@ -1421,6 +1429,7 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 		if (qp->state == IBV_QPS_RESET && attr->qp_state == IBV_QPS_INIT) {
 			//// USER QP RESET->INIT transition.
 			printf("<<<<USER QP: RESET -> INIT.>>>>\n");
+			fflush(stdout);
 			//// Caching user qp's qp_attr.
 			mqp->user_qp_attr_init = (struct ibv_qp_attr *)malloc(sizeof(struct ibv_qp_attr));
 			memcpy(mqp->user_qp_attr_init, attr, sizeof(struct ibv_qp_attr));
@@ -1433,6 +1442,7 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 		} else if (qp->state == IBV_QPS_INIT && attr->qp_state == IBV_QPS_RTR) {
 			//// USER QP INIT -> RTR transition.
 			printf("<<<<USER QP: INIT -> RTR.>>>>\n");
+			fflush(stdout);
 			//// Caching user qp's qp_attr.
 			mqp->user_qp_attr_rtr = (struct ibv_qp_attr *)malloc(sizeof(struct ibv_qp_attr));
 			memcpy(mqp->user_qp_attr_rtr, attr, sizeof(struct ibv_qp_attr));
@@ -1552,6 +1562,7 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 						remote_split_sq_psn = mqp->split_fc_msg[1].msg.split_qp_exchange.sq_psn; 
 						printf("<<<<Received remote qpn: %06x\n", remote_split_qpn);
 						printf("<<<<Received remote sq_psn: %06x\n", remote_split_sq_psn);
+						fflush(stdout);
 					} else {
 						ret = 1;
 						fprintf(stderr, "Impossible opcode when polling intial exchange messages\n");
