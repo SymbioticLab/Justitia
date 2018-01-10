@@ -49,7 +49,7 @@ static void contact_pacer() {
 
 static void set_inactive_on_exit() {
     if (flow) {
-        if (__atomic_load_n(&flow->small, __ATOMIC_RELAXED)) {
+        if (isSmall) {
             __atomic_fetch_sub(&sb->num_active_small_flows, 1, __ATOMIC_RELAXED);
         } else {
             __atomic_fetch_sub(&sb->num_active_big_flows, 1, __ATOMIC_RELAXED);

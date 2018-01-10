@@ -25,7 +25,6 @@
 struct flow_info {
     uint8_t pending;
     uint8_t active;
-    uint8_t small;
 };
 
 struct shared_block {
@@ -38,5 +37,6 @@ struct shared_block {
 extern struct flow_info *flow;  /* declaration; initialization inside verbs.c */
 extern struct shared_block *sb; /* declaration; initialization inside verbs.c */
 extern int start_flag;          /* Initialized in verbs.c */
+extern int isSmall;             /* declaration; initialization inside qp.c */
 
 #endif

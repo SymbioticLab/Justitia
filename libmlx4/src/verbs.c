@@ -1183,7 +1183,6 @@ struct ibv_qp *mlx4_create_qp(struct ibv_pd *pd, struct ibv_qp_init_attr *attr)
 		contact_pacer();
 		flow = &sb->flows[slot];
 		printf("@@@At slot %d.\n", slot);
-		flow->small = 1;		/* Initialize small to be 1 so that any flow control message is recognized as mouse when start_flag = 0) */
 	}
 	/* end */
 

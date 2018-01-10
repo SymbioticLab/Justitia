@@ -131,7 +131,9 @@ void monitor_latency(void *arg) {
     // }
 
     /* monitor loop */
-    while (1) {
+    uint32_t min_virtual_link_cap;
+    while (1)
+    {
         start_cycle = get_cycles();
         if(ibv_post_send(ctx->qp, &wr, &bad_wr)) {
             perror("ibv_post_send");
@@ -191,15 +193,13 @@ void monitor_latency(void *arg) {
 
         uint16_t num_active_big_flows = __atomic_load_n(&cb.sb->num_active_big_flows, __ATOMIC_RELAXED);
         uint16_t num_active_small_flows = __atomic_load_n(&cb.sb->num_active_small_flows, __ATOMIC_RELAXED);
-        //if (__atomic_load_n(&cb.sb->num_active_big_flows, __ATOMIC_RELAXED)) {
         if (num_active_big_flows) {
-            //if (__atomic_load_n(&cb.sb->num_active_small_flows, __ATOMIC_RELAXED)) {
             if (num_active_small_flows) {
-                uint32_t min_virtual_link_cap = round((double) num_active_big_flows / (num_active_big_flows + num_active_small_flows) * LINE_RATE_MB);
+                min_virtual_link_cap = round((double) num_active_big_flows / (num_active_big_flows + num_active_small_flows) * LINE_RATE_MB);
                 //printf(">>>set chunk size to 2048B\n");
                 __atomic_store_n(&cb.sb->active_chunk_size, 2048, __ATOMIC_RELAXED);
-                if (tail_99_ns > base_tail_99 * 2 || tail_999_ns > base_tail_999 * 2) {
-                // if (lat_ns > base_tail_99) {
+                // if (tail_99_ns > base_tail_99 * 2 || tail_999_ns > base_tail_999 * 2) {
+                if (lat_ns > base_tail_99) {
                     /* Multiplicative Decrease */
                     temp = __atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED) / 2;
                     if (ELEPHANT_HAS_LOWER_BOUND && temp < min_virtual_link_cap) {
@@ -208,7 +208,7 @@ void monitor_latency(void *arg) {
                         __atomic_store_n(&cb.virtual_link_cap, temp, __ATOMIC_RELAXED);
                     }
                     //printf(">>>set chunk size to 1024B\n");
-                    __atomic_store_n(&cb.sb->active_chunk_size, 1024, __ATOMIC_RELAXED);
+                    // __atomic_store_n(&cb.sb->active_chunk_size, 1024, __ATOMIC_RELAXED);
                 } else if (__atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED) < LINE_RATE_MB) {
                     /* Additive Increase */
                     __atomic_fetch_add(&cb.virtual_link_cap, 1, __ATOMIC_RELAXED);
