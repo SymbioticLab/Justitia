@@ -113,6 +113,18 @@ static struct pingpong_context *alloc_monitor_qp() {
     }
 
     {
+        struct ibv_qp_init_attr init_attr;
+	    memset(&init_attr, 0, sizeof(struct ibv_qp_init_attr));
+	    init_attr.send_cq = ctx->cq;
+	    init_attr.recv_cq = ctx->cq;
+	    init_attr.cap.max_send_wr  = 1;
+	    init_attr.cap.max_recv_wr  = 1;
+	    init_attr.cap.max_send_sge = 1;
+	    init_attr.cap.max_recv_sge = 1;
+	    init_attr.cap.max_inline_data = 100;	// probably not going to use inline there
+	    init_attr.qp_type = IBV_QPT_RC;
+        init_attr.isSmall = 1;
+        /*
         struct ibv_exp_qp_init_attr attr = {
             .send_cq = ctx->cq,
             .recv_cq = ctx->cq,
@@ -124,9 +136,12 @@ static struct pingpong_context *alloc_monitor_qp() {
             },
             .qp_type = IBV_QPT_RC,
             .pd = ctx->pd,
-            .comp_mask = IBV_EXP_QP_INIT_ATTR_PD
+            .comp_mask = IBV_EXP_QP_INIT_ATTR_PD,
+            .isSmall = 1
         };
         ctx->qp = ibv_exp_create_qp(ctx->context, &attr);
+        */
+        ctx->qp = ibv_create_qp(ctx->pd, &init_attr);
         if (!ctx->qp)  {
             fprintf(stderr, "Couldn't create QP\n");
             goto clean_cq;

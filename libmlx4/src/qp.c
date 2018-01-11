@@ -1120,6 +1120,7 @@ int __mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 		/* isolation */
 		if (!isSmall && flow) {
 			__atomic_fetch_add(&flow->pending, 1, __ATOMIC_RELAXED);
+			//printf("pending: %" PRIu8 "\n", flow->pending);
 			while (__atomic_load_n(&flow->pending, __ATOMIC_RELAXED))
 				cpu_relax();
 		}

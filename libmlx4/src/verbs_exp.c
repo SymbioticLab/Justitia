@@ -316,7 +316,7 @@ static void update_qp_bf_data(struct mlx4_res_domain *res_domain,
 struct ibv_qp *mlx4_exp_create_qp(struct ibv_context *context, struct ibv_exp_qp_init_attr *attr)
 				  //struct ibv_exp_qp_init_attr *attr, struct ibv_qp *split_qp, struct ibv_cq *split_cq)
 {
-	//printf("DEBUG mlx4_exp_create_qp: Indeed enter here.\n");
+	//printf("DEBUG mlx4_exp_create_qp: Indeed enter here. isSmall = %d\n", attr->isSmall);
 
 	struct mlx4_qp		 *qp;
 	int			  ret;
@@ -603,6 +603,11 @@ struct ibv_qp *mlx4_exp_create_qp(struct ibv_context *context, struct ibv_exp_qp
 	qp->model_flags = thread_safe ? MLX4_QP_MODEL_FLAG_THREAD_SAFE : 0;
 	mlx4_update_post_send_one(qp);
 	qp->pattern = MLX4_QP_PATTERN;
+		
+	//// set whether user has set the qp to send mice flows, could also delete the line from the normal create_qp verb
+	//printf("SETING isSmall here: attr->isSmall = %d\n", attr->isSmall);
+	qp->isSmall = (attr->isSmall == 0) ? 0 : 1;
+	//printf("SET qp->isSmall = %d\n", qp->isSmall);
 
 	return &qp->verbs_qp.qp;
 
