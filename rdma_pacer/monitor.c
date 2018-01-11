@@ -7,6 +7,8 @@
 #include <inttypes.h>
 #include <math.h>
 
+#define WINDOW_SIZE 1000
+
 int comp (const void * left, const void * right) {
     const double * a = left;
     const double * b = right;
@@ -18,25 +20,19 @@ int comp (const void * left, const void * right) {
 void monitor_latency(void *arg) {
     printf(">>>starting monitor_latency...\n");
 
-    // struct p2_meta_data p2;
     CMH_type *cmh_ns = NULL;
-    // CMH_type *cmh_us;
-    struct pingpong_context *ctx = NULL;
-    struct ibv_send_wr wr, *bad_wr = NULL;
-    struct ibv_sge sge;
-    struct ibv_wc wc;
     cycles_t start_cycle, end_cycle;
     uint32_t median_ns, tail_99_ns, tail_999_ns;
     uint32_t lat_ns; // in nanosecond
-    // uint32_t median_us, tail_99_us, tail_999_us;
-    // uint32_t lat_us; // in microsecond
     uint32_t base_tail_99, base_tail_999;
-    // double lat_td; // for t-digest
-    // TDigest *digest = NULL;
     int no_cpu_freq_warn = 1;
     double cpu_mhz;
     uint64_t seq = 0;
 
+    struct pingpong_context *ctx = NULL;
+    struct ibv_send_wr wr, *bad_wr = NULL;
+    struct ibv_sge sge;
+    struct ibv_wc wc;
     const char *servername = ((struct monitor_param *)arg)->addr;
     int isclient = ((struct monitor_param *)arg)->isclient;
     int num_comp;
@@ -113,22 +109,12 @@ void monitor_latency(void *arg) {
     free(tposted);
     free(tcompleted);
 
-    // init_p2_meta_data(&p2);
     cmh_ns = CMH_Init(32768, 16, 30, 1);
-    // cmh_us = CMH_Init(32768, 16, 10, 1);
     if (!cmh_ns) {
         printf(">>>Failed to allocate hierarchical count-min sketches: cmh_ns\n");
-        return;
+        exit(1);
     }
     printf(">>>The size of count-min sketches cmh_ns is %d Bytes\n", CMH_Size(cmh_ns));
-    // if (!cmh_us) {
-    //     printf("Failed to allocate hierarchical count-min sketches: cmh_us\n");
-    // }
-    // printf(">>>The size of count-min sketches cmh_us is %d Bytes\n", CMH_Size(cmh_us));
-    // digest = TDigest_create();
-    // if (!digest) {
-    //     return;
-    // }
 
     /* monitor loop */
     uint32_t min_virtual_link_cap;
@@ -152,9 +138,6 @@ void monitor_latency(void *arg) {
         end_cycle = get_cycles();
 
         if ((end_cycle - start_cycle) * 1000 / cpu_mhz <= (1u << 30)) {
-            // tail = query_tail_p2(lat_ns, &p2);
-            // printf("@@@latency = %u\n", lat_ns);
-            // printf("@@@tail = %u\n", tail);
             lat_ns = round((end_cycle - start_cycle) * 1000 / cpu_mhz);
             if (CMH_Update(cmh_ns, lat_ns, 1)) {
                 printf("The old CMH is full... Destroying the old CMH... Creating a new CMH...\n");
@@ -162,32 +145,18 @@ void monitor_latency(void *arg) {
                 cmh_ns = CMH_Init(32768, 16, 30, 1);
             }
 
-            // lat_us = round((end_cycle - start_cycle) / cpu_mhz);
-            // if (CMH_Update(cmh_us, lat_us, 1)) {
-            //     printf("The old CMH is full... Destroying the old CMH... Creating a new CMH...\n");
-            //     CMH_Destroy(cmh_us);
-            //     cmh_us = CMH_Init(32768, 16, 10, 1);
-            // }
-
             // fprintf(stderr, "DEBUG1\n");
             median_ns = CMH_Quantile(cmh_ns, 0.5);
             tail_99_ns = CMH_Quantile(cmh_ns, 0.99);
             tail_999_ns = CMH_Quantile(cmh_ns, 0.999);
             
-            // median_us = CMH_Quantile(cmh_us, 0.5);
-            // tail_99_us = CMH_Quantile(cmh_us, 0.99);
-            // tail_999_us = CMH_Quantile(cmh_us, 0.999);
-
             //printf(">>>measured latency is %" PRIu32 "ns\n", lat_ns);
             //printf(">>>measured median is %" PRIu32 "ns\n", median_ns);
             //printf(">>>measured 99 percentile is %" PRIu32 "ns\n", tail_99_ns);
             //printf(">>>measured 99.9 percentile is %" PRIu32 "ns\n", tail_999_ns);
-            //printf(">>>measured latency is %" PRIu32 "us\n", lat_us);
-            //printf(">>>measured median is %" PRIu32 "us\n", median_us);
-            //printf(">>>measured 99 percentile is %" PRIu32 "us\n", tail_99_us);
-            //printf(">>>measured 99.9 percentile is %" PRIu32 "us\n", tail_999_us);
         } else {
             fprintf(stderr, "!!!measured latency is greater than the set maximum 2^30ns\n");
+            continue;
         }
           
 
