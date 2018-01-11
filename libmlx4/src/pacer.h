@@ -20,7 +20,6 @@
 #define SHARED_MEM_NAME "/rdma-fairness"
 #define SOCK_PATH "/users/yuetan/rdma_socket"
 #define MSG_LEN 8
-#define MAX_FLOWS 512
 
 struct flow_info {
     uint8_t pending;
@@ -37,6 +36,5 @@ struct shared_block {
 extern struct flow_info *flow;  /* declaration; initialization inside verbs.c */
 extern struct shared_block *sb; /* declaration; initialization inside verbs.c */
 extern int start_flag;          /* Initialized in verbs.c */
-extern int isSmall;             /* declaration; initialization inside qp.c */
 
 #endif

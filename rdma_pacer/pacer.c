@@ -5,6 +5,7 @@
 #define DEBUG 0
 
 struct control_block cb;
+chunk_size_table = {4096, , 1048576};
 
 /* utility fuctions */
 static void error (char * msg) {
@@ -99,7 +100,18 @@ static inline void fetch_token() {
  */
 static void generate_tokens() {
     cycles_t start_cycle;
+    cycles_t end_cycle;
     double cpu_mhz = get_cpu_mhz(1);
+    struct timespec wait_time;
+    wait_time.tv_sec = 0;
+    wait_time.tv_nsec = 45000;
+    start_cycle = get_cycles();
+    nanosleep(&wait_time, NULL);
+    end_cycle = get_cycles();
+    printf("nanosleep call takes %.2f us\n", (end_cycle - start_cycle)/cpu_mhz);
+    start_cycle = get_cycles();
+    end_cycle = get_cycles();
+    printf("time elapsed between two get_cycles call is %.2f us\n", (end_cycle - start_cycle)/cpu_mhz);
     /* infinite loop: generate tokens at a rate calculated 
      * from virtual_link_cap and active chunk size 
      */
