@@ -2948,11 +2948,6 @@ int __mlx4_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr,
 	ind = qp->rq.head & (qp->rq.wqe_cnt - 1);
 
 	for (nreq = 0; wr; ++nreq, wr = wr->next) {
-		//// for the case that will possibly cause LOCAL_LENGTH_ERR in the first chunk of 2-sided splitting, increase the length by 1 byte
-		if (wr->sg_list != NULL && wr->sg_list->length == SPLIT_CHUNK_SIZE) {		// NOTE the NULL check for WIMM
-			wr->sg_list->length++;
-		}
-		////
 
 		if (unlikely(!(qp->create_flags & IBV_EXP_QP_CREATE_IGNORE_RQ_OVERFLOW) &&
 			wq_overflow(&qp->rq, nreq, qp))) {
@@ -3000,11 +2995,6 @@ int __mlx4_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr,
 
 		ind = (ind + 1) & (qp->rq.wqe_cnt - 1);
 
-		//// revert the early modification
-		if (wr->sg_list != NULL && wr->sg_list->length == SPLIT_CHUNK_SIZE) {		// NOTE the NULL check for WIMM
-			wr->sg_list->length--;
-		}
-		////
 	}
 
 out:
