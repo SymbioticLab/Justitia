@@ -1638,35 +1638,32 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 					int ne = 0;
 					struct ibv_cq *ev_cq;
 					void *ev_ctx;
-					if (!SPLIT_USE_NO_BATCH) {
-						//// without using linked list
-						for (i = 0; i < num_wrs_to_split_qp; i++) {
-							swr.wr_id = i + 1;
-							swr.opcode = wr->opcode;
-							swr.sg_list = &sge;
-							swr.num_sge = 1;
-							//swr.send_flags = (i == num_wrs_to_split_qp - 1 || !SPLIT_USE_SELECTIVE_SIGNALING) ? IBV_SEND_SIGNALED : 0; // last one is signaled for synchronization
-							swr.send_flags = (i == num_wrs_to_split_qp - 1 || !SPLIT_USE_SELECTIVE_SIGNALING) ? 
-												(orig_send_flags | IBV_SEND_SIGNALED) : (orig_send_flags & (~(IBV_SEND_SIGNALED)));
-							swr.wr.rdma.remote_addr = wr->wr.rdma.remote_addr + split_chunk_size * i;
-							swr.wr.rdma.rkey = wr->wr.rdma.rkey;
-							swr.next = NULL;
 
-							sge.length = split_chunk_size;
-							sge.addr = wr->sg_list->addr + split_chunk_size * i;
-							sge.lkey = wr->sg_list->lkey;
+					for (i = 0; i < num_wrs_to_split_qp; i++) {
+						swr.wr_id = i + 1;
+						swr.opcode = wr->opcode;
+						swr.sg_list = &sge;
+						swr.num_sge = 1;
+						//swr.send_flags = (i == num_wrs_to_split_qp - 1 || !SPLIT_USE_SELECTIVE_SIGNALING) ? IBV_SEND_SIGNALED : 0; // last one is signaled for synchronization
+						swr.send_flags = (i == num_wrs_to_split_qp - 1 || (i + 1) % SPLIT_ONE_SIDED_BATCH_SIZE == 0) ? 
+											(orig_send_flags | IBV_SEND_SIGNALED) : (orig_send_flags & (~(IBV_SEND_SIGNALED)));
+						swr.wr.rdma.remote_addr = wr->wr.rdma.remote_addr + split_chunk_size * i;
+						swr.wr.rdma.rkey = wr->wr.rdma.rkey;
+						swr.next = NULL;
 
-							// those WRs are handled by the split qp
-							ret = __mlx4_post_send(qp->split_qp, &swr, bad_wr);
-							if (ret != 0) {
-								errno = ret;
-								fprintf(stderr, "error posting one-sided send requests to split qp, errno = %d\n", errno);
-								goto out;
-							}
+						sge.length = split_chunk_size;
+						sge.addr = wr->sg_list->addr + split_chunk_size * i;
+						sge.lkey = wr->sg_list->lkey;
+
+						// those WRs are handled by the split qp
+						ret = __mlx4_post_send(qp->split_qp, &swr, bad_wr);
+						if (ret != 0) {
+							errno = ret;
+							fprintf(stderr, "error posting one-sided send requests to split qp, errno = %d\n", errno);
+							goto out;
 						}
 
-						//// poll the wc of send requests for split chunks
-						if (SPLIT_USE_SELECTIVE_SIGNALING) {
+						if (swr.send_flags == (orig_send_flags | IBV_SEND_SIGNALED)) {
 							if (SPLIT_USE_EVENT) {
 								ret = ibv_get_cq_event(qp->split_comp_channel, &ev_cq, &ev_ctx);
 								if (ret) {
@@ -1686,78 +1683,8 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 							do {
 								ne = mlx4_poll_ibv_cq(qp->split_cq, 1, &wc);
 								//printf("ne = %d\n", ne);
-							} while (ne == 0);
-						} else {
-							int total_npolled = 0;
-							while (total_npolled < num_wrs_to_split_qp) {
-								if (SPLIT_USE_EVENT) {
-									ret = ibv_get_cq_event(qp->split_comp_channel, &ev_cq, &ev_ctx);
-									if (ret) {
-										fprintf(stderr, "Failed to get CQ event.\n");
-										return ret;
-									}
-
-									ibv_ack_cq_events(ev_cq, 1);
-
-									ret = ibv_req_notify_cq(ev_cq, 0);
-									if (ret) {
-										fprintf(stderr, "Couldn't request CQ notification\n");
-										return ret;
-									}
-								}
-
-								do {
-									//ne += mlx4_poll_ibv_cq(qp->split_cq, num_wrs_to_split_qp, &wc);
-									ne = mlx4_poll_ibv_cq(qp->split_cq, 1, &wc);
-									//printf("ne = %d\n", ne);
-									total_npolled += ne;
-								} while (ne != 0);
-							}
+							} while (ne == 0);	
 						}
-					
-					} else {	// No Batch
-						for (i = 0; i < num_wrs_to_split_qp; i++) {
-							swr.wr_id = i + 1;
-							swr.opcode = wr->opcode;
-							swr.sg_list = &sge;
-							swr.num_sge = 1;
-							swr.send_flags = (i == num_wrs_to_split_qp - 1 || !SPLIT_USE_SELECTIVE_SIGNALING) ? 
-												(orig_send_flags | IBV_SEND_SIGNALED) : (orig_send_flags & (~(IBV_SEND_SIGNALED)));
-							swr.wr.rdma.remote_addr = wr->wr.rdma.remote_addr + split_chunk_size * i;
-							swr.wr.rdma.rkey = wr->wr.rdma.rkey;
-							swr.next = NULL;
-
-							sge.length = split_chunk_size;
-							sge.addr = wr->sg_list->addr + split_chunk_size * i;
-							sge.lkey = wr->sg_list->lkey;
-
-							ret = __mlx4_post_send(qp->split_qp, &swr, bad_wr);
-							if (ret != 0) {
-								errno = ret;
-								fprintf(stderr, "error posting one-sided send requests to split qp, errno = %d\n", errno);
-								goto out;
-							}
-
-							if (SPLIT_USE_EVENT) {
-								ret = ibv_get_cq_event(qp->split_comp_channel, &ev_cq, &ev_ctx);
-								if (ret) {
-									fprintf(stderr, "Failed to get CQ event.\n");
-									return ret;
-								}
-
-								ibv_ack_cq_events(ev_cq, 1);
-
-								ret = ibv_req_notify_cq(ev_cq, 0);
-								if (ret) {
-									fprintf(stderr, "Couldn't request CQ notification\n");
-									return ret;
-								}
-							}
-							do {
-								ne = mlx4_poll_ibv_cq(qp->split_cq, 1, &wc);
-							} while (ne == 0);
-						}
-
 					}
 
 
