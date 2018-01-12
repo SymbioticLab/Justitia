@@ -79,7 +79,6 @@ void monitor_latency(void *arg) {
 
     /* monitor loop */
     uint32_t min_virtual_link_cap;
-    uint32_t active_chunk_size;
     uint16_t num_active_big_flows;
     uint16_t num_active_small_flows;
     while (1) {
@@ -112,7 +111,6 @@ void monitor_latency(void *arg) {
                 min_virtual_link_cap = round((double) num_active_big_flows / (num_active_big_flows + num_active_small_flows) * LINE_RATE_MB);
                 temp = __atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED);
                 if (sum_lat / WINDOW_SIZE > BASE) {
-                    printf("BAD AVG LATENCY %.2f us\n", sum_lat / WINDOW_SIZE);
                     /* Multiplicative Decrease */
                     temp >>= 1;
                     if (ELEPHANT_HAS_LOWER_BOUND && temp < min_virtual_link_cap) {
@@ -123,14 +121,10 @@ void monitor_latency(void *arg) {
                     }
                 } else if (__atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED) < LINE_RATE_MB) {
                     /* Additive Increase */
-                    temp += 1;
                     __atomic_fetch_add(&cb.virtual_link_cap, 1, __ATOMIC_RELAXED);
                 }
-                if (active_chunk_size != chunk_size_table[temp / 1000])
-                    __atomic_store_n(&cb.sb->active_chunk_size, chunk_size_table[temp / 1000], __ATOMIC_RELAXED);
             } else if (__atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED) != LINE_RATE_MB) {
                 __atomic_store_n(&cb.virtual_link_cap, LINE_RATE_MB, __ATOMIC_RELAXED);
-                __atomic_store_n(&cb.sb->active_chunk_size, DEFAULT_CHUNK_SIZE, __ATOMIC_RELAXED);
             }
             //printf(">>>> virtual link cap: %" PRIu32 "\n", __atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED));
         }

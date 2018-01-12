@@ -3,10 +3,11 @@
 // O(1) queue implementation
 
 typedef struct {
-    int deletions;
+    int first;
+    int last;
     int size;
     int max_size;
-    int *array;
+    double *array;
 } Queue;
 
 Queue *queue_init(int size);

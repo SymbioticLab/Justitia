@@ -5,7 +5,7 @@
 #define DEBUG 0
 
 struct control_block cb;
-chunk_size_table = {4096, , 1048576};
+uint32_t chunk_size_table[] = {4096, 8192, 16384, 32768, 65536, 1048576, 1048576};
 
 /* utility fuctions */
 static void error (char * msg) {
@@ -104,7 +104,7 @@ static void generate_tokens() {
     double cpu_mhz = get_cpu_mhz(1);
     struct timespec wait_time;
     wait_time.tv_sec = 0;
-    wait_time.tv_nsec = 45000;
+    wait_time.tv_nsec = 45000; /* nanosleep overhead > 55 */
     start_cycle = get_cycles();
     nanosleep(&wait_time, NULL);
     end_cycle = get_cycles();
@@ -115,16 +115,17 @@ static void generate_tokens() {
     /* infinite loop: generate tokens at a rate calculated 
      * from virtual_link_cap and active chunk size 
      */
+    uint32_t temp, chunk_size;
+    start_cycle = 0;
     while (1) {
         if (__atomic_load_n(&cb.sb->num_active_big_flows, __ATOMIC_RELAXED)) {
-            start_cycle = get_cycles();
-            __atomic_fetch_add(&cb.tokens, 1, __ATOMIC_RELAXED);
-            while ((get_cycles() - start_cycle) < 
-            (cpu_mhz * __atomic_load_n(&cb.sb->active_chunk_size, __ATOMIC_RELAXED)) /
-            __atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED)) {
-                cpu_relax();
-            }
+            temp = __atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED);
+            chunk_size = chunk_size_table[temp / 1000];
+            __atomic_store_n(&cb.sb->active_chunk_size, chunk_size, __ATOMIC_RELAXED);
+            __atomic_fetch_add(&cb.tokens, 10, __ATOMIC_RELAXED);
+            wait_time.tv_nsec = 10 * chunk_size / temp * 1000;
         }
+        nanosleep(&wait_time, NULL);
     }
 }
 
@@ -178,12 +179,12 @@ int main (int argc, char** argv) {
     cb.next_slot = 0;
     cb.sb->active_chunk_size = DEFAULT_CHUNK_SIZE;
     cb.sb->num_active_big_flows = 0;
-    cb.sb->num_active_small_flows = -1; /* cancel out pacer's monitor flow */
+    cb.sb->num_active_small_flows = 0; /* cancel out pacer's monitor flow */
     for (i = 0; i < MAX_FLOWS; i++) {
         cb.sb->flows[i].pending = 0;
         cb.sb->flows[i].active = 0;
     }
-    
+
     /* start thread handling incoming flows */
     printf("starting thread for flow handling...\n");
     if(pthread_create(&th1, NULL, (void * (*)(void *))&flow_handler, NULL)){
