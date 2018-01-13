@@ -1111,22 +1111,19 @@ struct ibv_qp *__mlx4_create_qp(struct ibv_pd *pd, struct ibv_qp_init_attr *attr
 struct ibv_qp *mlx4_create_qp(struct ibv_pd *pd, struct ibv_qp_init_attr *attr)
 {
 	//// create custom cq used for two-sided rdma message splitting
-	// assume user created send_cq
-	//printf("DEBUG mlx4_create_qp: creating split_cq\n");
-	//struct mlx4_cq *send_cq = to_mcq(attr->send_cq);
-	////struct ibv_comp_channel *channel = send_cq->comp_channel;
-	////struct ibv_cq *split_cq = create_cq(pd->context, 1, channel, 0, NULL);
-	struct ibv_comp_channel *channel = ibv_create_comp_channel(pd->context);
-	////struct ibv_cq *split_cq = create_cq(pd->context, 1, channel, 0, NULL);
-	struct ibv_cq *split_cq = mlx4_create_cq(pd->context, SPLIT_MAX_CQE, channel, 0);
+	//struct ibv_comp_channel *channel = ibv_create_comp_channel(pd->context);
+	struct ibv_comp_channel *send_channel = ibv_create_comp_channel(pd->context);
+	struct ibv_comp_channel *recv_channel = ibv_create_comp_channel(pd->context);
+	struct ibv_cq *split_send_cq = mlx4_create_cq(pd->context, SPLIT_MAX_CQE, send_channel, 0);
+	struct ibv_cq *split_recv_cq = mlx4_create_cq(pd->context, SPLIT_MAX_CQE, recv_channel, 0);
 	//// arm split_cq for completion events
-	mlx4_arm_cq(split_cq, 0);
+	//mlx4_arm_cq(split_cq, 0);
 
 	/// create a custom qp for our own use 
 	struct ibv_qp_init_attr split_init_attr;
 	memset(&split_init_attr, 0, sizeof(struct ibv_qp_init_attr));
-	split_init_attr.send_cq = split_cq;
-	split_init_attr.recv_cq = split_cq;
+	split_init_attr.send_cq = split_send_cq;
+	split_init_attr.recv_cq = split_recv_cq;
 	split_init_attr.cap.max_send_wr  = SPLIT_MAX_SEND_WR;
 	split_init_attr.cap.max_recv_wr  = SPLIT_MAX_RECV_WR;
 	split_init_attr.cap.max_send_sge = 1;
@@ -1145,8 +1142,10 @@ struct ibv_qp *mlx4_create_qp(struct ibv_pd *pd, struct ibv_qp_init_attr *attr)
 	if (qp) {
 		struct mlx4_qp *mqp = to_mqp(qp);
 		mqp->split_qp = split_qp;
-		mqp->split_cq = split_cq;
-		mqp->split_comp_channel = channel;
+		mqp->split_send_cq = split_send_cq;
+		mqp->split_recv_cq = split_recv_cq;
+		mqp->split_comp_send_channel = send_channel;
+		mqp->split_comp_recv_channel = recv_channel;
 		//// register mr for two-sided splitting header message
 		//// register size * 2 since in split qpn exchange we need mr for send & recv at the same time
 		mqp->split_fc_mr = mlx4_reg_mr(pd, &mqp->split_fc_msg, 2 * sizeof(struct Split_FC_message), IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_WRITE);
@@ -1385,6 +1384,19 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 				ret = 1;
 				goto err;
 			}
+			//// prepost a few more
+			/*
+			int i;
+			for (i = 0; i < 100; i++) {
+				if (mlx4_post_recv(mqp->split_qp, &wr, &bad_wr)) {
+					fprintf(stderr, "Failed to post the initial RR to split qp.\n");
+					ret = 1;
+					goto err;
+				}
+			}
+			*/
+			////
+
 			// Modify split qp to RTS
 			split_attr.qp_state	    = IBV_QPS_RTS;
 			split_attr.sq_psn	    = 10083;
@@ -1409,7 +1421,12 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 			printf("<<<<Request SPLIT CQ evnt notification\n");
 			fflush(stdout);
 			if (SPLIT_USE_EVENT) {
-				ret = ibv_req_notify_cq(mqp->split_cq, 0); 
+				ret = ibv_req_notify_cq(mqp->split_send_cq, 0); 
+				if (ret) {
+					fprintf(stderr, "Couldn't request CQ notification\n");
+					goto err;
+				}
+				ret = ibv_req_notify_cq(mqp->split_recv_cq, 0); 
 				if (ret) {
 					fprintf(stderr, "Couldn't request CQ notification\n");
 					goto err;
@@ -1668,7 +1685,12 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 
 			printf("<<<<Request SPLIT CQ evnt notification\n");
 			if (SPLIT_USE_EVENT) {
-				ret = ibv_req_notify_cq(mqp->split_cq, 0);
+				ret = ibv_req_notify_cq(mqp->split_send_cq, 0); 
+				if (ret) {
+					fprintf(stderr, "Couldn't request CQ notification\n");
+					goto err;
+				}
+				ret = ibv_req_notify_cq(mqp->split_recv_cq, 0); 
 				if (ret) {
 					fprintf(stderr, "Couldn't request CQ notification\n");
 					goto err;

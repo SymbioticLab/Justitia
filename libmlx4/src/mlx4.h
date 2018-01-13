@@ -681,8 +681,12 @@ struct mlx4_qp {
 	uint8_t				qp_cap_cache;
 	//// added for spliting
 	struct ibv_qp 		*split_qp;
-	struct ibv_cq		*split_cq;
-	struct ibv_comp_channel *split_comp_channel;
+	//struct ibv_cq		*split_cq;
+	struct ibv_cq		*split_send_cq;
+	struct ibv_cq		*split_recv_cq;
+	//struct ibv_comp_channel *split_comp_channel;
+	struct ibv_comp_channel *split_comp_send_channel;
+	struct ibv_comp_channel *split_comp_recv_channel;
 	uint32_t			split_dest_qpn;
 	struct Split_FC_message split_fc_msg[2];
 	struct ibv_mr		*split_fc_mr;
