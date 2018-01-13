@@ -1274,7 +1274,7 @@ int rr_buffer_post_and_clear(struct rr_buffer *rr_buf, struct ibv_qp *qp) {
 	printf("DEBUG: entring rr_buffer_post_and_clear\n");
 	for (i = 0; i < rr_buf->size; i++) {
 		rwr = rr_buf->slot[i];
-		if (__mlx4_post_recv(qp, rwr, &bad_rwr)) {
+		if (mlx4_post_recv(qp, rwr, &bad_rwr)) {
 			fprintf(stderr, "Failed to repost recv requests to user qp.\n");
 			return 1;
 		}
@@ -1380,7 +1380,7 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 			wr.sg_list = &sge;
 			wr.num_sge = 1;
 
-			if (__mlx4_post_recv(mqp->split_qp, &wr, &bad_wr)) {
+			if (mlx4_post_recv(mqp->split_qp, &wr, &bad_wr)) {
 				fprintf(stderr, "Failed to post the initial RR to split qp.\n");
 				ret = 1;
 				goto err;
@@ -1493,7 +1493,7 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 			rwr.sg_list = &rsge;
 			rwr.num_sge = 1;
 
-			ret = __mlx4_post_recv(qp, &rwr, &bad_rwr);
+			ret = mlx4_post_recv(qp, &rwr, &bad_rwr);
 			if (ret) {
 				fprintf(stderr, "Failed to post exchange RR to user qp.\n");
 				goto err;
@@ -1650,7 +1650,7 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 			wr.sg_list = &sge;
 			wr.num_sge = 1;
 
-			if (__mlx4_post_recv(mqp->split_qp, &wr, &bad_wr)) {
+			if (mlx4_post_recv(mqp->split_qp, &wr, &bad_wr)) {
 				fprintf(stderr, "Failed to post the initial RR to split qp.\n");
 				goto err;
 			}

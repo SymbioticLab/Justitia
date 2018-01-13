@@ -906,8 +906,6 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 		   struct ibv_send_wr **bad_wr) __MLX4_ALGN_FUNC__;
 int orig_mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 		   struct ibv_send_wr **bad_wr) __MLX4_ALGN_FUNC__;
-int __mlx4_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr,
-		   struct ibv_recv_wr **bad_wr) __MLX4_ALGN_FUNC__;
 int mlx4_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr,
 		   struct ibv_recv_wr **bad_wr) __MLX4_ALGN_FUNC__;
 void mlx4_calc_sq_wqe_size(struct ibv_qp_cap *cap, enum ibv_qp_type type,

@@ -1604,11 +1604,11 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 				rwr.sg_list = &rsge;
 				rwr.num_sge = 1;
 
-				ret2 = __mlx4_post_recv(qp->split_qp, &rwr, &bad_rwr);
+				ret2 = mlx4_post_recv(qp->split_qp, &rwr, &bad_rwr);
 				if (ret2 != 0)
 				{
 					errno = ret2;
-					fprintf(stderr, "Failed to call __mlx4_post_recv, errno = %d\n", errno);
+					fprintf(stderr, "Failed to call mlx4_post_recv, errno = %d\n", errno);
 				}
 
 				//// Restore original qp before return
@@ -2205,7 +2205,7 @@ int orig_mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 					rwr.sg_list = &rsge;
 					rwr.num_sge = 1;
 
-					ret2 = __mlx4_post_recv(qp->split_qp, &rwr, &bad_rwr);
+					ret2 = mlx4_post_recv(qp->split_qp, &rwr, &bad_rwr);
 					if (ret2 != 0) {
 						errno = ret2;
 						printf("REALLY BAD!!, errno = %d\n", errno);
@@ -2878,10 +2878,10 @@ int rr_buffer_enqueue(struct rr_buffer *rr_buf, struct ibv_recv_wr* wr) {
 }
 ////
 
-int __mlx4_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr,
+int mlx4_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr,
 		   struct ibv_recv_wr **bad_wr)
 {
-	//printf("DEBUG ENTER __MLX4_POST_RECV: wr->num_sge: %d\n", wr->num_sge);
+	//printf("DEBUG ENTER MLX4_POST_RECV: wr->num_sge: %d\n", wr->num_sge);
 	//// test qp state
 
 	/*
@@ -3008,19 +3008,9 @@ out:
 	
 	mlx4_unlock(&qp->rq.lock);
 	
-	//printf("DEBUG LEAVING __MLX4_POST_RECV\n");
+	//printf("DEBUG LEAVING MLX4_POST_RECV\n");
 	return ret;
 }
-
-int mlx4_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr,
-		   struct ibv_recv_wr **bad_wr)
-{
-	int ret = 0;
-	ret = __mlx4_post_recv(ibqp, wr, bad_wr);
-	////ret = __mlx4_post_recv(qp->split_qp, wr, bad_wr);	
-	return ret;
-}
-////
 
 int num_inline_segs(int data, enum ibv_qp_type type)
 {
