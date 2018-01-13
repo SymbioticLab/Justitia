@@ -1394,8 +1394,12 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 				if (qp->split_fc_msg[0].type == ACK) {
 					printf("INDEED received ACK from receiver.\n");
 					fflush(stdout);
+				} else if (qp->split_fc_msg[0].type == INFO) {
+					printf("NOT ACK BUT INFO!\n");
+					fflush(stdout);
+					return -1;
 				} else {
-					printf("NOT ACK!\n");
+					printf("NOT ACK BUT something else!\n");
 					fflush(stdout);
 					return -1;
 				}
