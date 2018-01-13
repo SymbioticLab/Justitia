@@ -63,7 +63,7 @@ int isSmall = 1; /* initialized to 1 for the purpose of control message */
 #endif
 
 ////
-//int GLOBAL_CNT = 0;
+int GLOBAL_CNT = 0;
 //int start_flag = 1;
 ////
 
@@ -1232,18 +1232,25 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 		//// splitting logic
 		//// Update split chunk size
 		uint32_t split_chunk_size = sb ? __atomic_load_n(&sb->active_chunk_size, __ATOMIC_RELAXED) : SPLIT_CHUNK_SIZE;
-		//printf("split_chunk_size = %" PRIu32 " \n", split_chunk_size);
+		//if (++GLOBAL_CNT % 100 == 0) {
+		//	printf("DEBUG: POST SEND: split_chunk_size = %" PRIu32 " [%d]\n", split_chunk_size, GLOBAL_CNT);
+		//	fflush(stdout);
+		//}
+
 		int is_two_sided = 0;
 		if (wr->opcode == IBV_WR_RDMA_WRITE_WITH_IMM ||
 			wr->opcode == IBV_WR_SEND ||
 			wr->opcode == IBV_WR_SEND_WITH_IMM) {
 			is_two_sided = 1;
-		} 
+		}
+
+		//// Now in two-sided case, the receiver will alywas try to get a split INFO message after receiving the first chunk (unless message is really small)
+		//// In other words, sender alywas send an extra INFO message (again unless msg is really small -- less than MIN_SPLIT_CHUNK_SIZE)
+		//// In the info message, we specify chunk_size and num_split_chunks (0 means no splitting)
 
 		//if (wr->sg_list->length > split_chunk_size)
 		if (wr->sg_list->length > split_chunk_size ||
-			(is_two_sided && wr->sg_list->length > qp->prev_chunk_size))
-		{
+			(is_two_sided && wr->sg_list->length >= MIN_SPLIT_CHUNK_SIZE)) {
 
 			//printf("[[[NEED TO SPLIT]]] [%d]\n", ++GLOBAL_CNT);
 
@@ -1271,46 +1278,45 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 			//	wr->opcode == IBV_WR_SEND ||
 			//	wr->opcode == IBV_WR_SEND_WITH_IMM) { 				//// two-sided op
 			if (is_two_sided) {
+
 				//printf("[[[Splitting two-sided op]]]\n");
 				//printf("ORIG QP local QPN: %#06x\n", ibqp->qp_num);
 				//printf("SPLIT QP local QPN: %#06x\n", qp->split_qp->qp_num);
 
-				//// In two-sided case, the very first chunk will be sent using the previous set chunk size
-				//// so that the remote side can still recognize a split message.
-				//// After the first chunk, a flow control message containing the updated chunk size and corresponding num_chunks_to_send will be sent to the receiver
-				//// num_chunks_to_send here is the remainning chunks left to send to the receiver (based on the updated chunk size)
 
-				//// calculate num of chunks to split based on the updated chunk size
-				num_chunks_to_send = ceil_helper((float)(orig_sge_length - qp->prev_chunk_size) / (float)split_chunk_size);
+				//// num_split_chunks here is the remainning chunks left to send to the receiver (not including the first one that has already been sent)
+				num_chunks_to_send = ceil_helper((double)orig_sge_length / (double)split_chunk_size) - 1;
+				if (num_chunks_to_send < 0) {
+					printf("IMPOSSIBLE that chunks_to_split is < 0 since here orig_sge_length must be > 0\n");
+					return -1;
+				}
 				orig_num_chunks_to_send = num_chunks_to_send;
 
-				// extra dummy byte + use previous split chunk size
-				wr->sg_list->length = qp->prev_chunk_size;
-				wr->sg_list->length++;
-
 				// Two-sided spliting
-				// <1> if message to send > CHUNK_SIZE, send first chunk with extra dummy byte using user's qp
-				//printf("SENDER <1> if message to send > CHUNK_SIZE, send first chunk with extra dummy byte using user's qp\n");
+				// <1> send the first chunk of message using user's qp
+				//printf("SENDER <1> send the first chunk of message using user's qp\n");
 				//printf("first chunk message length = %" PRIu32 "\n", wr->sg_list->length);
+
+				//// It is possible that the message is smaller than split_chunk_size. 
+				//// In such case, we send out the original message.
+				if (wr->sg_list->length > split_chunk_size) {
+					wr->sg_list->length = split_chunk_size;
+				}
+
 				ret = __mlx4_post_send(ibqp, wr, bad_wr);
 				if (ret != 0) {
 					errno = ret;
 					goto out;
 				}
 
-				wr->sg_list->length--;
-				wr->sg_list->length = split_chunk_size;
-
-				// <2> post a SR to split_qp to send num_chunks_to_send as well as the current(updated)_chunk_size to the receiver and poll its wc
-				// will first implement WRITE_IMM
-				//printf("SENDER <2> post a SR to split_qp to send num_chunks_to_send to the receiver and poll its wc\n");
+				// <2> post a SR to split_qp to send num_split_chunks as well as the current(updated)_chunk_size to the receiver and poll its wc
+				//printf("SENDER <2> post a SR to split_qp to send num_split_chunks and current(updated)_chunk_size to the receiver and poll its wc\n");
 
 				qp->split_fc_msg[0].type = INFO;
 				qp->split_fc_msg[0].msg.split_chunk_info.num_split_chunks = num_chunks_to_send;
 				qp->split_fc_msg[0].msg.split_chunk_info.current_chunk_size = split_chunk_size;
 				//printf("DEBUG POST SEND: qp->split_fc_msg.msg.split_chunk_info.num_split_chunks: %d\n", qp->split_fc_msg[0].msg.split_chunk_info.num_split_chunks);
 				//printf("DEBUG POST SEND: qp->split_fc_msg.msg.split_chunk_info.current_chunk_size: %d\n", qp->split_fc_msg[0].msg.split_chunk_info.current_chunk_size);
-				//num_chunks_to_send--;		// no longer needed
 
 				struct ibv_sge ssge;
 				struct ibv_send_wr swr;
@@ -1466,15 +1472,9 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 					//printf("sg_addr:%" PRIu64 "\n", wr->sg_list->addr);
 					//printf("rkey:%" PRIu32 "\n", wr->wr.rdma.rkey);
 
-					if (num_chunks_to_send == orig_num_chunks_to_send) {
-						current_length -= qp->prev_chunk_size;
-						wr->wr.rdma.remote_addr += qp->prev_chunk_size;
-						wr->sg_list->addr += qp->prev_chunk_size;
-					} else {
-						current_length -= split_chunk_size;
-						wr->wr.rdma.remote_addr += split_chunk_size;
-						wr->sg_list->addr += split_chunk_size;
-					}
+					current_length -= split_chunk_size;
+					wr->wr.rdma.remote_addr += split_chunk_size;		// DC for SEND
+					wr->sg_list->addr += split_chunk_size;
 
 					if (num_chunks_to_send == 1) {
 						wr->sg_list->length = current_length;
@@ -1610,10 +1610,6 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 					errno = ret2;
 					fprintf(stderr, "Failed to call __mlx4_post_recv, errno = %d\n", errno);
 				}
-
-				//// update previous chunk size
-				qp->prev_chunk_size = split_chunk_size;	
-				////
 
 				//// Restore original qp before return
 				wr->wr.rdma.remote_addr = orig_raddr;

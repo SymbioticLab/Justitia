@@ -52,6 +52,7 @@
 ////
 #include <inttypes.h>
 #define SPLIT_CHUNK_SIZE		1000000			//// Default Split Chunk Size; Need to be equal or less than the initial chunk size that pacer sets.
+#define MIN_SPLIT_CHUNK_SIZE    2048			//// A minimun chunk size that everybody knows and assumes.
 //#define SPLIT_CHUNK_SIZE		1048576			//// Default Split Chunk Size; Need to be equal or less than the initial chunk size that pacer sets.
 #define MANUAL_SPLIT_QPN_DIFF 	1				//// manually set (guess) split qpn/psn or general approcah
 #define SPLIT_QP_NUM_DIFF		1				//// DC if MANUAL_SPLIT is off
@@ -59,10 +60,10 @@
 #define SPLIT_USE_LINKED_LIST	0				//// post using a linked list or not (for one-sided verbs) (for testing purposes)
 //#define SPLIT_USE_NO_BATCH		0				//// 1 -> post 1 poll 1 at one-sided verbs; DC if SPLIT_USE_LINKED_LIST is 1; 0 -> use batch 
 #define SPLIT_USE_NO_BATCH_2SIDED		1		//// 1 -> post 1 poll 1 at two-sided verbs; 
-#define SPLIT_ONE_SIDED_BATCH_SIZE		64		//// batch rate in one-sided verbs. 1 means no batch
+#define SPLIT_ONE_SIDED_BATCH_SIZE		1		//// batch rate in one-sided verbs. 1 means no batch
 #define SPLIT_USE_SELECTIVE_SIGNALING	0		//// use selective signaling (only last chunk signaled) or not when sending split chunks 
-#define SPLIT_MAX_SEND_WR 		5000
-#define SPLIT_MAX_RECV_WR 		5000
+#define SPLIT_MAX_SEND_WR 		8000
+#define SPLIT_MAX_RECV_WR 		8000
 #define SPLIT_MAX_CQE			10000
 #define RR_BUFFER_INIT_CAP		1000
 ////
@@ -560,8 +561,7 @@ struct mlx4_cq {
 	int				creation_flags;
 	struct mlx4_qp			*last_qp;
 	uint32_t			model_flags; /* use mlx4_cq_model_flags */
-	uint32_t 		split_chunk_size;
-	////
+	//uint32_t 		split_chunk_size;
 };
 
 struct mlx4_srq {
@@ -692,7 +692,7 @@ struct mlx4_qp {
 	int 				user_qp_mask_rtr;
 	struct rr_buffer	rr_buf;
 	int 				split_qp_exchange_done;
-	uint32_t			prev_chunk_size;		// used in 2-sided chunk size varying
+	//uint32_t			prev_chunk_size;		// used in 2-sided chunk size varying
 	int					isSmall;
 	////
 };

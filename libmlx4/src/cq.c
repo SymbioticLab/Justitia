@@ -734,9 +734,9 @@ static int mlx4_poll_one(struct mlx4_cq *cq,
 	} else {
 		wc->byte_len = ntohl(cqe->byte_cnt);
 		//printf("DEBUG: mlx4_poll_one: wc->byte_len: %u\n", wc->byte_len);
-		////
-		if (wc->byte_len > cq->split_chunk_size) {
-			//printf("DEBUG: mlx4_poll_one: large message detected.\n");
+		//// Instead of checking the chunk size, always assume it is going to be split, and get the message from Split QP unless the msg is too small
+		//if (wc->byte_len > cq->split_chunk_size) {
+		if (wc->byte_len >= MIN_SPLIT_CHUNK_SIZE) {
 			//// get receive request corresponding to this wc
 			if (scat != NULL) {
 				*scat = (struct mlx4_wqe_data_seg *)mlx4_get_recv_wqe(*cur_qp, wqe_index);
@@ -1038,7 +1038,6 @@ int mlx4_poll_cq(struct ibv_cq *ibcq, int ne, struct ibv_exp_wc *wc,
 		struct ibv_exp_wc split_wc;
 		uint32_t num_chunks_to_recv;
 		uint32_t split_chunk_size;
-		uint32_t prev_chunk_size;
 
 		int ne2;
 		struct ibv_cq *ev_cq;
@@ -1068,8 +1067,8 @@ int mlx4_poll_cq(struct ibv_cq *ibcq, int ne, struct ibv_exp_wc *wc,
 
 		num_chunks_to_recv = qp->split_fc_msg[0].msg.split_chunk_info.num_split_chunks;
 		split_chunk_size = qp->split_fc_msg[0].msg.split_chunk_info.current_chunk_size;
-		prev_chunk_size = cq->split_chunk_size;	
-		cq->split_chunk_size = split_chunk_size;	
+		//cq->split_chunk_size = split_chunk_size;	
+
 		//printf("DEBUG: mlx4_poll_cq: updated chunk size = %" PRIu32 "\n", split_chunk_size);
 		//printf("DEBUG: mlx4_poll_cq: num_chunks_to_recv = %" PRIu32 "\n", num_chunks_to_recv);
 
@@ -1103,11 +1102,7 @@ int mlx4_poll_cq(struct ibv_cq *ibcq, int ne, struct ibv_exp_wc *wc,
 
 		// NOTE: num_chunks_to_recv can be 0. In such case, no RR is posted.
 		for (i = 0; i < num_chunks_to_recv; i++) {
-			if (i == 0) {
-				rsge.addr += prev_chunk_size;
-			} else {
-				rsge.addr += split_chunk_size;
-			}
+			rsge.addr += split_chunk_size;		// relevant for SEND, DC for WIMM
 
 			//__mlx4_post_recv(qp->split_qp, &rwr, &bad_rwr);
 			ret = __mlx4_post_recv(qp->split_qp, &rwr, &bad_rwr);
@@ -1190,7 +1185,8 @@ int mlx4_poll_cq(struct ibv_cq *ibcq, int ne, struct ibv_exp_wc *wc,
 
 		// <6> poll from split_qp, and keep counting successful wc until all chunks are polled
 		//printf("RECEIVER <6> poll from split_qp, and keep counting successful wc until all chunks are polled\n");
-		total_bytes_recvd = split_chunk_size + 1;
+		//total_bytes_recvd = split_chunk_size + 1;
+		total_bytes_recvd += wc->byte_len;
 
 		////
 		if (num_chunks_to_recv > 0) {	// check if there is a need to poll

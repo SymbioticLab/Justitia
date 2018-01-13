@@ -803,9 +803,6 @@ static struct ibv_cq *create_cq(struct ibv_context *context,
 
 	cq->pattern = MLX4_CQ_PATTERN;
 
-	//// initialize prev_chunk_size
-	cq->split_chunk_size = SPLIT_CHUNK_SIZE;
-	////
 	return &cq->ibv_cq;
 
 err_db:
@@ -1162,8 +1159,6 @@ struct ibv_qp *mlx4_create_qp(struct ibv_pd *pd, struct ibv_qp_init_attr *attr)
 		} else {
 			mqp->split_qp_exchange_done = 0;
 		}
-		//// set prev chunk size for 2-sided splitting
-		mqp->prev_chunk_size = SPLIT_CHUNK_SIZE;
 		//// set whether user has set the qp to send mice flows
 		mqp->isSmall = (attr->isSmall == 0) ? 0 : 1;
 	} else {
