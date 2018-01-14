@@ -1373,7 +1373,7 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 				printf("SENDER <3> poll from split_cq for receiver's ACK\n");
 				fflush(stdout);
 				if (SPLIT_USE_EVENT) {
-					ret = ibv_get_cq_event(qp->split_comp_recv_channel, &ev_cq, &ev_ctx);
+					ret = ibv_get_cq_event(qp->split_comp_channel2, &ev_cq, &ev_ctx);
 					if (ret) {
 						fprintf(stderr, "Failed to get CQ event.\n");
 						return ret;
@@ -1388,13 +1388,13 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 					}
 				}
 				do {
-					ne = mlx4_poll_ibv_cq(qp->split_recv_cq, 1, &wc);
+					ne = mlx4_poll_ibv_cq(qp->split_cq2, 1, &wc);
 				} while (ne == 0);
 				// check if the message is ACK: (for debug)
-				if (qp->split_fc_msg[0].type == ACK) {
+				if (qp->split_fc_msg[2].type == ACK) {
 					printf("INDEED received ACK from receiver.\n");
 					fflush(stdout);
-				} else if (qp->split_fc_msg[0].type == INFO) {
+				} else if (qp->split_fc_msg[2].type == INFO) {
 					printf("NOT ACK BUT INFO!\n");
 					fflush(stdout);
 					return -1;
@@ -1609,7 +1609,7 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 				struct ibv_recv_wr rwr;
 				struct ibv_recv_wr *bad_rwr;
 				memset(&rsge, 0, sizeof(rsge));
-				rsge.addr = (uintptr_t)&qp->split_fc_msg[0];
+				rsge.addr = (uintptr_t)&qp->split_fc_msg[2];
 				rsge.length = sizeof(struct Split_FC_message);
 				rsge.lkey = qp->split_fc_mr->lkey;
 				//printf("DDDDD: rsge.addr = %" PRIu64 "\n", rsge.addr);
@@ -1622,9 +1622,8 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 				rwr.sg_list = &rsge;
 				rwr.num_sge = 1;
 
-				ret2 = mlx4_post_recv(qp->split_qp, &rwr, &bad_rwr);
-				if (ret2 != 0)
-				{
+				ret2 = mlx4_post_recv(qp->split_qp2, &rwr, &bad_rwr);
+				if (ret2 != 0) {
 					errno = ret2;
 					fprintf(stderr, "Failed to call mlx4_post_recv, errno = %d\n", errno);
 				}
@@ -2210,7 +2209,7 @@ int orig_mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 					struct ibv_recv_wr rwr;
 					struct ibv_recv_wr *bad_rwr;
 					memset(&rsge, 0, sizeof(rsge));
-					rsge.addr = (uintptr_t)&qp->split_fc_msg[0];
+					rsge.addr = (uintptr_t)&qp->split_fc_msg[2];
 					rsge.length = sizeof(struct Split_FC_message);
 					rsge.lkey = qp->split_fc_mr->lkey;
 					//printf("DDDDD: rsge.addr = %" PRIu64 "\n", rsge.addr);

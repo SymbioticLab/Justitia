@@ -1067,6 +1067,7 @@ int mlx4_poll_cq(struct ibv_cq *ibcq, int ne, struct ibv_exp_wc *wc,
 		} else {
 			printf("NOT INFO!\n");
 			fflush(stdout);
+			return -1;
 		}
 
 		num_chunks_to_recv = qp->split_fc_msg[0].msg.split_chunk_info.num_split_chunks;
@@ -1143,13 +1144,13 @@ int mlx4_poll_cq(struct ibv_cq *ibcq, int ne, struct ibv_exp_wc *wc,
 		printf("RECEIVER <5> send ACK back to sender using split_qp, and poll its wc\n");
 		fflush(stdout);
 		//printf("DEBUG5: mlx4_poll_cq: split_fc_msg.msg.num_split_chunks = %d\n", qp->split_fc_msg[0].msg.num_split_chunks);
-		qp->split_fc_msg[1].type = ACK;
+		qp->split_fc_msg[3].type = ACK;
 		struct ibv_sge ssge;
 		struct ibv_send_wr swr;
 		struct ibv_send_wr *bad_swr;
 
 		memset(&ssge, 0, sizeof(ssge));
-		ssge.addr	  = (uintptr_t)&qp->split_fc_msg[1];
+		ssge.addr	  = (uintptr_t)&qp->split_fc_msg[3];
 		ssge.length = sizeof(struct Split_FC_message);
 		ssge.lkey	  = qp->split_fc_mr->lkey;
 
@@ -1165,15 +1166,16 @@ int mlx4_poll_cq(struct ibv_cq *ibcq, int ne, struct ibv_exp_wc *wc,
 		swr.send_flags = IBV_SEND_SIGNALED;
 
 		//__mlx4_post_send(qp->split_qp, &swr, &bad_swr);
-		ret = __mlx4_post_send(qp->split_qp, &swr, &bad_swr);
+		ret = __mlx4_post_send(qp->split_qp2, &swr, &bad_swr);
 		if (ret != 0) {
 			errno = ret;
 			fprintf(stderr, "mlx4_post_recv REALLY BAD!!, errno = %d\n", errno);
 		}
-		//printf("ACK msg posted\n");
+		printf("ACK msg posted\n");
+		fflush(stdout);
 
 		if (SPLIT_USE_EVENT) {
-			if (ibv_get_cq_event(qp->split_comp_send_channel, &ev_cq, &ev_ctx)) {
+			if (ibv_get_cq_event(qp->split_comp_channel2, &ev_cq, &ev_ctx)) {
 				fprintf(stderr, "Failed to get CQ event.\n");
 				return CQ_POLL_ERR;
 			}
@@ -1186,7 +1188,7 @@ int mlx4_poll_cq(struct ibv_cq *ibcq, int ne, struct ibv_exp_wc *wc,
 			}
 		}
 		do {
-			ne2 = __mlx4_poll_cq(qp->split_send_cq, 1, &split_wc, wc_size, is_exp);
+			ne2 = __mlx4_poll_cq(qp->split_cq2, 1, &split_wc, wc_size, is_exp);
 		} while (ne2 == 0);
 
 		// <6> poll from split_qp, and keep counting successful wc until all chunks are polled
