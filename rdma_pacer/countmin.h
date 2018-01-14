@@ -6,8 +6,6 @@
 #define max(x,y)	((x) > (y) ? (x) : (y))
 
 typedef struct CMH_type{
-    long long count;
-    int max; // maximum observation ever seen
     int U; // size of the universe in bits
     int gran; // granularity: eg 1, 4 or 8 bits
     int levels; // function of U and gran
@@ -15,17 +13,14 @@ typedef struct CMH_type{
     int depth;
     int width;
     int ** counts;
+    int count;
+    int windowSize;
+    Queue *items;
     unsigned int **hasha, * *hashb;
 } CMH_type;
 
 extern CMH_type * CMH_Init(int, int, int, int);
-// extern CMH_type * CMH_Copy(CMH_type *);
 extern void CMH_Destroy(CMH_type *);
 extern int CMH_Size(CMH_type *);
-
 extern int CMH_Update(CMH_type *, unsigned int, int);
-
-// extern int CMH_Rangesum(CMH_type *, int, int);
-// extern int CMH_FindRange(CMH_type * cmh, long long);
-// extern int CMH_AltFindRange(CMH_type * cmh, long long);
 extern int CMH_Quantile(CMH_type *cmh, double);
