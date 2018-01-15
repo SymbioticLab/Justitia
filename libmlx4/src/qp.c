@@ -1240,10 +1240,14 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 		fflush(stdout);
 
 		int is_two_sided = 0;
+		int is_wimm = 0;
 		if (wr->opcode == IBV_WR_RDMA_WRITE_WITH_IMM ||
 			wr->opcode == IBV_WR_SEND ||
 			wr->opcode == IBV_WR_SEND_WITH_IMM) {
 			is_two_sided = 1;
+		}
+		if (wr->opcode == IBV_WR_RDMA_WRITE_WITH_IMM) {
+			is_wimm = 1;
 		}
 
 		//// Now in two-sided case, the receiver will alywas try to get a split INFO message after receiving the first chunk (unless message is really small)
@@ -1252,6 +1256,7 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 
 		//if (wr->sg_list->length > split_chunk_size)
 		if (wr->sg_list->length > split_chunk_size ||
+			//(!is_wimm && (is_two_sided && wr->sg_list->length >= MIN_SPLIT_CHUNK_SIZE))) {
 			(is_two_sided && wr->sg_list->length >= MIN_SPLIT_CHUNK_SIZE)) {
 
 			//printf("[[[NEED TO SPLIT]]] [%d]\n", ++GLOBAL_CNT);
@@ -1280,17 +1285,241 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 			//	wr->opcode == IBV_WR_SEND ||
 			//	wr->opcode == IBV_WR_SEND_WITH_IMM) { 				//// two-sided op
 
-			//if (wr->opcode == IBV_WR_SEND_WITH_IMM) {	// WIMM hack
-			//	WIMM
-			//} 
-			if (is_two_sided) {
+			if (is_wimm) {	// WIMM hack
+				//// num_chunks_to_send is the total chunks to send for the entire data. (including the chunk via user qp)
+				num_chunks_to_send = ceil_helper((double)orig_sge_length / (double)split_chunk_size);
+				uint32_t first_chunk_length = wr->sg_list->length % split_chunk_size;	
+				if (first_chunk_length == 0) {
+					first_chunk_length = split_chunk_size;
+				}
+				printf("num_chunks_to_send = %d, first_chunk_length = %d\n", num_chunks_to_send, first_chunk_length);
+				fflush(stdout);
+
+				if (num_chunks_to_send == 0) {
+					printf("WRONG num_chunks_to_send\n");
+					return -1;
+				}
+
+				struct ibv_sge sge;
+				struct ibv_send_wr swr;
+				struct ibv_send_wr *bad_swr;
+				memset(&swr, 0, sizeof(swr));
+				memset(&sge, 0, sizeof(sge));
+				swr.wr.rdma.remote_addr = wr->wr.rdma.remote_addr;	
+				//printf("ORIG remote addr = %lu\n", wr->wr.rdma.remote_addr);
+				sge.addr = wr->sg_list->addr;
+				//printf("ORIG sge addr = %lu\n", wr->sg_list->addr);
+				sge.length = first_chunk_length;
+				sge.lkey = wr->sg_list->lkey;
+
+				//// (N-2) chunks send using WRITE
+				int i = 0;
+				if (num_chunks_to_send > 2) {
+
+					for (i = 0; i < num_chunks_to_send - 2; i++) {
+						swr.wr_id = i + 1;
+						swr.opcode = IBV_WR_RDMA_WRITE;
+						swr.sg_list = &sge;
+						swr.num_sge = 1;
+						swr.send_flags = (i == num_chunks_to_send - 3) ? 
+											(orig_send_flags | IBV_SEND_SIGNALED) : (orig_send_flags & (~(IBV_SEND_SIGNALED)));
+						//// No batch for now
+						swr.send_flags = (orig_send_flags | IBV_SEND_SIGNALED);
+						if (i == 0) {
+							swr.wr.rdma.remote_addr = wr->wr.rdma.remote_addr;	
+						} else if (i == 1) {
+							swr.wr.rdma.remote_addr += first_chunk_length;	
+						} else {
+							swr.wr.rdma.remote_addr += split_chunk_size;
+						}
+						swr.wr.rdma.rkey = wr->wr.rdma.rkey;
+						swr.next = NULL;
+
+
+						sge.length = (i == 0) ? first_chunk_length : split_chunk_size;
+						if (i == 0) {
+							sge.addr = wr->sg_list->addr;
+						} else if (i == 1) {
+							sge.addr += first_chunk_length;
+						} else {
+							sge.addr += split_chunk_size;
+						}
+						sge.lkey = wr->sg_list->lkey;
+
+						// those WRs are handled by the split qp
+						ret = __mlx4_post_send(qp->split_qp, &swr, &bad_swr);
+						if (ret != 0) {
+							errno = ret;
+							fprintf(stderr, "error posting SRs (WRITE) to split qp, errno = %d\n", errno);
+							goto out;
+						}
+
+						struct ibv_wc wc;
+						struct ibv_cq *ev_cq;
+						void *ev_ctx;
+						int ne = 0;
+						if (swr.send_flags == (orig_send_flags | IBV_SEND_SIGNALED)) {
+							if (SPLIT_USE_EVENT) {
+								ret = ibv_get_cq_event(qp->split_comp_send_channel, &ev_cq, &ev_ctx);
+								if (ret) {
+									fprintf(stderr, "Failed to get CQ event.\n");
+									return ret;
+								}
+
+								ibv_ack_cq_events(ev_cq, 1);
+
+								ret = ibv_req_notify_cq(ev_cq, 0);
+								if (ret) {
+									fprintf(stderr, "Couldn't request CQ notification\n");
+									return ret;
+								}
+							}
+							do {
+								ne = mlx4_poll_ibv_cq(qp->split_send_cq, 1, &wc);
+								//printf("ne = %d\n", ne);
+							} while (ne == 0);	
+						}
+						//printf("Send chunks using WRITE, length = %d; sge.addr = %lu; remote_addr = %lu\n", sge.length, sge.addr, swr.wr.rdma.remote_addr);
+						//fflush(stdout);
+					}
+				}
+
+				//// (N-1)th chunk sends using WIMM
+				//// if N == 1, still sends out an empty chunk using WIMM
+				if (num_chunks_to_send >= 1) {
+					swr.wr_id = i + 1;
+					swr.opcode = IBV_WR_RDMA_WRITE_WITH_IMM;
+					swr.sg_list = &sge;
+					swr.num_sge = 1;
+					swr.send_flags = (orig_send_flags | IBV_SEND_SIGNALED);
+					if (i == 0) {
+						swr.wr.rdma.remote_addr = wr->wr.rdma.remote_addr;	
+					} else if (i == 1) {
+						swr.wr.rdma.remote_addr += first_chunk_length;	
+					} else {
+						swr.wr.rdma.remote_addr += split_chunk_size;
+					}
+					swr.wr.rdma.rkey = wr->wr.rdma.rkey;
+					swr.next = NULL;
+
+					if (i == 0) {
+						sge.addr = wr->sg_list->addr;
+					} else if (i == 1) {
+						sge.addr += first_chunk_length;
+					} else {
+						sge.addr += split_chunk_size;
+					}
+					sge.lkey = wr->sg_list->lkey;	
+					if (num_chunks_to_send == 1) {
+						swr.num_sge = 0;
+						swr.sg_list = NULL;
+						sge.length = 0;
+					} else {
+						sge.length = (i == 0) ? first_chunk_length : split_chunk_size;
+
+						++i;
+
+					}
+
+
+					ret = __mlx4_post_send(qp->split_qp, &swr, bad_wr);
+					if (ret != 0) {
+						errno = ret;
+						fprintf(stderr, "error posting SRs (WRITE) to split qp, errno = %d\n", errno);
+						goto out;
+					}
+
+					struct ibv_wc wc;
+					struct ibv_cq *ev_cq;
+					void *ev_ctx;
+					int ne = 0;
+					if (SPLIT_USE_EVENT) {
+						ret = ibv_get_cq_event(qp->split_comp_send_channel, &ev_cq, &ev_ctx);
+						if (ret) {
+							fprintf(stderr, "Failed to get CQ event.\n");
+							return ret;
+						}
+
+						ibv_ack_cq_events(ev_cq, 1);
+
+						ret = ibv_req_notify_cq(ev_cq, 0);
+						if (ret) {
+							fprintf(stderr, "Couldn't request CQ notification\n");
+							return ret;
+						}
+					}
+					do {
+						ne = mlx4_poll_ibv_cq(qp->split_send_cq, 1, &wc);
+						//printf("ne = %d\n", ne);
+					} while (ne == 0);
+				} else {
+					printf("Shouldn't be the case\n");
+					fflush(stdout);
+					return -1;
+				}
+
+				//printf("Finished sending %d th chunk via split qp using WIMM; length = %d; sge.addr = %lu; remote_addr = %lu\n", num_chunks_to_send - 1, sge.length, sge.addr, swr.wr.rdma.remote_addr);
+				//fflush(stdout);
+
+				//// N th chunk sends using WIMM via USER QP
+				//current_length = wr->sg_list->length - split_chunks_size * i;
+				
+				swr.wr_id = wr->wr_id;
+				swr.opcode = wr->opcode;
+				swr.sg_list = &sge;
+				swr.num_sge = 1;
+				swr.send_flags = orig_send_flags;
+				if (i == 0) {
+					swr.wr.rdma.remote_addr = wr->wr.rdma.remote_addr;	
+				} else if (i == 1) {
+					swr.wr.rdma.remote_addr += first_chunk_length;	
+				} else {
+					swr.wr.rdma.remote_addr += split_chunk_size;
+				}
+				swr.wr.rdma.rkey = wr->wr.rdma.rkey;
+				swr.next = NULL;
+
+				//sge.length = current_length;
+				sge.length = (i == 0) ? first_chunk_length : split_chunk_size;
+				if (i == 0) {
+					sge.addr = wr->sg_list->addr;
+				} else if (i == 1) {
+					sge.addr += first_chunk_length;
+				} else {
+					sge.addr += split_chunk_size;
+				}
+				sge.lkey = wr->sg_list->lkey;
+
+				//ret = __mlx4_post_send(ibqp, &swr, bad_wr);
+				wr->wr.rdma.remote_addr = swr.wr.rdma.remote_addr;
+				wr->sg_list->addr = sge.addr;
+				wr->sg_list->length = sge.length;
+				ret = __mlx4_post_send(ibqp, wr, bad_wr);
+				if (ret != 0) {
+					errno = ret;
+					//printf("DEBUG POST SEND REALLY BAD!!, errno = %d\n", errno);
+					goto out;
+				}
+
+				printf("USER last chunk sent; length = %d; sge.addr = %lu; remote_addr = %lu\n", sge.length, sge.addr, swr.wr.rdma.remote_addr);
+				fflush(stdout);
+
+				wr->wr.rdma.remote_addr = orig_raddr;
+				wr->sg_list->addr = orig_sge_addr;
+				wr->sg_list->length = orig_sge_length;
+				wr->send_flags = orig_send_flags;
+
+				mlx4_unlock(&qp->sq.lock);
+				return ret;
+
+			} else if (is_two_sided) {
 
 				//printf("[[[Splitting two-sided op]]]\n");
 				//printf("ORIG QP local QPN: %#06x\n", ibqp->qp_num);
 				//printf("SPLIT QP local QPN: %#06x\n", qp->split_qp->qp_num);
 
 
-				//// num_split_chunks here is the remainning chunks left to send to the receiver (not including the first one that has already been sent)
+				//// num_chunks_to_send here is the remainning chunks left to send to the receiver (not including the first one that has already been sent)
 				num_chunks_to_send = ceil_helper((double)orig_sge_length / (double)split_chunk_size) - 1;
 				if (num_chunks_to_send < 0) {
 					printf("IMPOSSIBLE that chunks_to_split is < 0 since here orig_sge_length must be > 0\n");
@@ -1298,7 +1527,6 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 				}
 				orig_num_chunks_to_send = num_chunks_to_send;
 
-				// Two-sided spliting
 				// <1> send the first chunk of message using user's qp
 				printf("SENDER <1> send the first chunk of message using user's qp\n");
 				fflush(stdout);
