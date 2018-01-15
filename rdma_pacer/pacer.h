@@ -23,8 +23,8 @@
 #define DEFAULT_CHUNK_SIZE 1000000 /* bytes */
 #define MSG_LEN 8
 #define SOCK_PATH "/users/yuetan/rdma_socket"
-
 #define ELEPHANT_HAS_LOWER_BOUND 1  /* whether elephant has a minimum virtual link cap set by AIMD */
+#define TABLE_SIZE 7
 
 struct flow_info {
     uint8_t pending;
@@ -47,3 +47,4 @@ struct control_block {
 };
 
 extern struct control_block cb;            /* declaration */
+extern uint32_t chunk_size_table[TABLE_SIZE];

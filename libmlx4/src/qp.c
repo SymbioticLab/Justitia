@@ -50,7 +50,7 @@
 #include "qp_pacer.h"
 #include <inttypes.h>
 #define MAX_SMALL 1024
-int isSmall = 1; /* initialized to 1 for the purpose of control message */
+int isSmall = 1;
 /* end */
 
 #ifndef htobe64
@@ -1118,9 +1118,8 @@ int __mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 
 	for (nreq = 0; wr; ++nreq, wr = wr->next) {
 		/* isolation */
-		if (!isSmall && flow) {
+		if (!qp->isSmall && flow) {
 			__atomic_fetch_add(&flow->pending, 1, __ATOMIC_RELAXED);
-			//printf("pending: %" PRIu8 "\n", flow->pending);
 			while (__atomic_load_n(&flow->pending, __ATOMIC_RELAXED))
 				cpu_relax();
 		}
@@ -1211,12 +1210,10 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 				isSmall = 1;
 				printf("DEBUG POST SEND: INDEED increment SMALL flow counter\n");
 				__atomic_fetch_add(&sb->num_active_small_flows, 1, __ATOMIC_RELAXED);
-				// printf("DEBUG POST SEND: Now num_active_small_flows = %" PRIu16 "\n", __atomic_load_n(&sb->num_active_small_flows, __ATOMIC_RELAXED));
 			} else {
 				isSmall = 0;
 				printf("DEBUG POST SEND: INDEED increment BIG flow counter\n");
 				__atomic_fetch_add(&sb->num_active_big_flows, 1, __ATOMIC_RELAXED);
-				// printf("DEBUG POST SEND: Now num_active_big_flows = %" PRIu16 "\n", __atomic_load_n(&sb->num_active_big_flows, __ATOMIC_RELAXED));
 			}
 		}
 	}
