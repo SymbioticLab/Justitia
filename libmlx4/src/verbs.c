@@ -597,10 +597,7 @@ struct ibv_mr *mlx4_reg_mr(struct ibv_pd *pd, void *addr,
 
 	in.pd = pd;
 	in.addr = addr;
-	//// Increase length by 1 to handle the LENGTH_ERR when 2-sided verbs first start to split
-	in.length = length + 1;
-	//in.length = length;
-	////
+	in.length = length;
 	in.exp_access = access;
 	in.comp_mask = 0;
 
@@ -806,9 +803,6 @@ static struct ibv_cq *create_cq(struct ibv_context *context,
 
 	cq->pattern = MLX4_CQ_PATTERN;
 
-	//// initialize prev_chunk_size
-	cq->split_chunk_size = SPLIT_CHUNK_SIZE;
-	////
 	return &cq->ibv_cq;
 
 err_db:
@@ -1117,31 +1111,38 @@ struct ibv_qp *__mlx4_create_qp(struct ibv_pd *pd, struct ibv_qp_init_attr *attr
 struct ibv_qp *mlx4_create_qp(struct ibv_pd *pd, struct ibv_qp_init_attr *attr)
 {
 	//// create custom cq used for two-sided rdma message splitting
-	// assume user created send_cq
-	//printf("DEBUG mlx4_create_qp: creating split_cq\n");
-	//struct mlx4_cq *send_cq = to_mcq(attr->send_cq);
-	////struct ibv_comp_channel *channel = send_cq->comp_channel;
-	////struct ibv_cq *split_cq = create_cq(pd->context, 1, channel, 0, NULL);
-	struct ibv_comp_channel *channel = ibv_create_comp_channel(pd->context);
-	////struct ibv_cq *split_cq = create_cq(pd->context, 1, channel, 0, NULL);
-	struct ibv_cq *split_cq = mlx4_create_cq(pd->context, SPLIT_MAX_CQE, channel, 0);
+	//struct ibv_comp_channel *channel = ibv_create_comp_channel(pd->context);
+	struct ibv_comp_channel *send_channel = ibv_create_comp_channel(pd->context);
+	struct ibv_comp_channel *recv_channel = ibv_create_comp_channel(pd->context);
+	struct ibv_comp_channel *channel2 = ibv_create_comp_channel(pd->context);
+	struct ibv_cq *split_send_cq = mlx4_create_cq(pd->context, SPLIT_MAX_CQE, send_channel, 0);
+	struct ibv_cq *split_recv_cq = mlx4_create_cq(pd->context, SPLIT_MAX_CQE, recv_channel, 0);
+	struct ibv_cq *split_cq2 = mlx4_create_cq(pd->context, SPLIT_MAX_CQE, channel2, 0);
 	//// arm split_cq for completion events
-	mlx4_arm_cq(split_cq, 0);
+	//mlx4_arm_cq(split_cq, 0);
 
 	/// create a custom qp for our own use 
-	struct ibv_qp_init_attr split_init_attr;
+	struct ibv_qp_init_attr split_init_attr, split_init_attr2;
 	memset(&split_init_attr, 0, sizeof(struct ibv_qp_init_attr));
-	split_init_attr.send_cq = split_cq;
-	split_init_attr.recv_cq = split_cq;
+	split_init_attr.send_cq = split_send_cq;
+	split_init_attr.recv_cq = split_recv_cq;
 	split_init_attr.cap.max_send_wr  = SPLIT_MAX_SEND_WR;
 	split_init_attr.cap.max_recv_wr  = SPLIT_MAX_RECV_WR;
 	split_init_attr.cap.max_send_sge = 1;
 	split_init_attr.cap.max_recv_sge = 1;
 	split_init_attr.cap.max_inline_data = 100;	// probably not going to use inline there
 	split_init_attr.qp_type = IBV_QPT_RC;
+	split_init_attr.isSmall = 1;
+	memcpy(&split_init_attr2, &split_init_attr, sizeof(struct ibv_qp_init_attr));
+	split_init_attr2.send_cq = split_cq2;
+	split_init_attr2.recv_cq = split_cq2;
 
 	struct ibv_qp 		*qp;
 	struct ibv_qp 		*split_qp;
+	struct ibv_qp 		*split_qp2;
+	split_qp2 = __mlx4_create_qp(pd, &split_init_attr2);
+	printf("DEBUG mlx4_create_qp: split_qp->qpn = %06x\n", split_qp2->qp_num);
+
 	split_qp = __mlx4_create_qp(pd, &split_init_attr);
 	printf("DEBUG mlx4_create_qp: split_qp->qpn = %06x\n", split_qp->qp_num);
 	//// Now create the user's qp
@@ -1151,11 +1152,16 @@ struct ibv_qp *mlx4_create_qp(struct ibv_pd *pd, struct ibv_qp_init_attr *attr)
 	if (qp) {
 		struct mlx4_qp *mqp = to_mqp(qp);
 		mqp->split_qp = split_qp;
-		mqp->split_cq = split_cq;
-		mqp->split_comp_channel = channel;
+		mqp->split_qp2 = split_qp2;
+		mqp->split_cq2 = split_cq2;
+		mqp->split_send_cq = split_send_cq;
+		mqp->split_recv_cq = split_recv_cq;
+		mqp->split_comp_send_channel = send_channel;
+		mqp->split_comp_recv_channel = recv_channel;
+		mqp->split_comp_channel2 = channel2;
 		//// register mr for two-sided splitting header message
 		//// register size * 2 since in split qpn exchange we need mr for send & recv at the same time
-		mqp->split_fc_mr = mlx4_reg_mr(pd, &mqp->split_fc_msg, 2 * sizeof(struct Split_FC_message), IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_WRITE);
+		mqp->split_fc_mr = mlx4_reg_mr(pd, &mqp->split_fc_msg, 4 * sizeof(struct Split_FC_message), IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_WRITE);
 		//// add in pd for later deletion
 		to_mpd(pd)->split_fc_mr = mqp->split_fc_mr;
 		//// initalize recv request buffer
@@ -1165,8 +1171,6 @@ struct ibv_qp *mlx4_create_qp(struct ibv_pd *pd, struct ibv_qp_init_attr *attr)
 		} else {
 			mqp->split_qp_exchange_done = 0;
 		}
-		//// set prev chunk size for 2-sided splitting
-		mqp->prev_chunk_size = SPLIT_CHUNK_SIZE;
 		//// set whether user has set the qp to send mice flows
 		mqp->isSmall = (attr->isSmall == 0) ? 0 : 1;
 	} else {
@@ -1282,7 +1286,7 @@ int rr_buffer_post_and_clear(struct rr_buffer *rr_buf, struct ibv_qp *qp) {
 	printf("DEBUG: entring rr_buffer_post_and_clear\n");
 	for (i = 0; i < rr_buf->size; i++) {
 		rwr = rr_buf->slot[i];
-		if (__mlx4_post_recv(qp, rwr, &bad_rwr)) {
+		if (mlx4_post_recv(qp, rwr, &bad_rwr)) {
 			fprintf(stderr, "Failed to repost recv requests to user qp.\n");
 			return 1;
 		}
@@ -1316,6 +1320,7 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 			return ret;
 		//// do same for custom_qp
 		update_port_data(mqp->split_qp, attr->port_num);
+		update_port_data(mqp->split_qp2, attr->port_num);
 		////
 	}
 
@@ -1325,6 +1330,7 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 		mlx4_qp_init_sq_ownership(to_mqp(qp));
 		//// do same for custom_qp
 		mlx4_qp_init_sq_ownership(to_mqp(mqp->split_qp));
+		mlx4_qp_init_sq_ownership(to_mqp(mqp->split_qp2));
 		////
 	}
 
@@ -1349,20 +1355,33 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 				ret = 1;
 				goto err;
 			}
+			if (__mlx4_modify_qp(mqp->split_qp2, attr, attr_mask)) {
+				fprintf(stderr, "Failed to modify SPLIT QP to INIT State\n");
+				ret = 1;
+				goto err;
+			}
 			printf("<<<<MODIFY SPLIT QP to INIT>>>>\n");
 			fflush(stdout);
 		} else if (qp->state == IBV_QPS_RTR && mqp->split_qp->state == IBV_QPS_INIT) {
-			////attr->dest_qp_num -= SPLIT_QP_NUM_DIFF;
 			//attr->dest_qp_num -= 1;	// for old benchmark
 			//attr->dest_qp_num -= 2; // for new benchmark
-			struct ibv_qp_attr split_attr;
+			struct ibv_qp_attr split_attr, split_attr2;
 			memcpy(&split_attr, attr, sizeof(struct ibv_qp_attr));
+			memcpy(&split_attr2, attr, sizeof(struct ibv_qp_attr));
 			int split_mask = attr_mask;
 			split_attr.dest_qp_num -= SPLIT_QP_NUM_DIFF;
 			split_attr.rq_psn = 10083;
 			//printf("DEBUG MODIFY QP: now attr->dest_qp_num is %06x\n", attr->dest_qp_num);
 
 			if (__mlx4_modify_qp(mqp->split_qp, &split_attr, split_mask)) {
+				fprintf(stderr, "Failed to modify SPLIT QP to RTR State\n");
+				ret = 1;
+				goto err;
+			}
+
+			split_attr2.dest_qp_num -= 2 * SPLIT_QP_NUM_DIFF;
+			split_attr2.rq_psn = 20083;
+			if (__mlx4_modify_qp(mqp->split_qp2, &split_attr2, split_mask)) {
 				fprintf(stderr, "Failed to modify SPLIT QP to RTR State\n");
 				ret = 1;
 				goto err;
@@ -1378,9 +1397,6 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 			sge.addr = (uintptr_t)&mqp->split_fc_msg[0];
 			sge.length = sizeof(struct Split_FC_message);
 			sge.lkey = mqp->split_fc_mr->lkey;
-			//printf("DDDDD0: sge.addr = %" PRIu64 "\n", sge.addr);
-			//printf("DDDDD0: sge.length = %d \n", sge.length);
-			//printf("DDDDD0: sge.lkey = %" PRIu32 "\n", sge.lkey);
 
 			memset(&wr, 0, sizeof(wr));
 			wr.wr_id = 0;
@@ -1388,11 +1404,19 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 			wr.sg_list = &sge;
 			wr.num_sge = 1;
 
-			if (__mlx4_post_recv(mqp->split_qp, &wr, &bad_wr)) {
+			if (mlx4_post_recv(mqp->split_qp, &wr, &bad_wr)) {
 				fprintf(stderr, "Failed to post the initial RR to split qp.\n");
 				ret = 1;
 				goto err;
 			}
+
+			sge.addr = (uintptr_t)&mqp->split_fc_msg[2];
+			if (mlx4_post_recv(mqp->split_qp2, &wr, &bad_wr)) {
+				fprintf(stderr, "Failed to post the initial RR to split qp.\n");
+				ret = 1;
+				goto err;
+			}
+
 			// Modify split qp to RTS
 			split_attr.qp_state	    = IBV_QPS_RTS;
 			split_attr.sq_psn	    = 10083;
@@ -1412,12 +1436,34 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 				ret = 1;
 				goto err;
 			}
+
+			split_attr2.qp_state	    = IBV_QPS_RTS;
+			split_attr2.sq_psn	    = 20083;
+			split_attr2.timeout	    = 14;
+			split_attr2.retry_cnt	= 7;
+			split_attr2.rnr_retry	= 7;
+			split_attr2.max_rd_atomic  = 1;
+			if (__mlx4_modify_qp(mqp->split_qp2, &split_attr2, rts_mask)) {
+				fprintf(stderr, "Failed to modify SPLIT QP to RTS State\n");
+				ret = 1;
+				goto err;
+			}
 			printf("<<<<MODIFY SPLIT QP to RTS>>>>\n");
 
 			printf("<<<<Request SPLIT CQ evnt notification\n");
 			fflush(stdout);
 			if (SPLIT_USE_EVENT) {
-				ret = ibv_req_notify_cq(mqp->split_cq, 0); 
+				ret = ibv_req_notify_cq(mqp->split_send_cq, 0); 
+				if (ret) {
+					fprintf(stderr, "Couldn't request CQ notification\n");
+					goto err;
+				}
+				ret = ibv_req_notify_cq(mqp->split_recv_cq, 0); 
+				if (ret) {
+					fprintf(stderr, "Couldn't request CQ notification\n");
+					goto err;
+				}
+				ret = ibv_req_notify_cq(mqp->split_cq2, 0); 
 				if (ret) {
 					fprintf(stderr, "Couldn't request CQ notification\n");
 					goto err;
@@ -1501,7 +1547,7 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 			rwr.sg_list = &rsge;
 			rwr.num_sge = 1;
 
-			ret = __mlx4_post_recv(qp, &rwr, &bad_rwr);
+			ret = mlx4_post_recv(qp, &rwr, &bad_rwr);
 			if (ret) {
 				fprintf(stderr, "Failed to post exchange RR to user qp.\n");
 				goto err;
@@ -1658,7 +1704,7 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 			wr.sg_list = &sge;
 			wr.num_sge = 1;
 
-			if (__mlx4_post_recv(mqp->split_qp, &wr, &bad_wr)) {
+			if (mlx4_post_recv(mqp->split_qp, &wr, &bad_wr)) {
 				fprintf(stderr, "Failed to post the initial RR to split qp.\n");
 				goto err;
 			}
@@ -1676,7 +1722,12 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 
 			printf("<<<<Request SPLIT CQ evnt notification\n");
 			if (SPLIT_USE_EVENT) {
-				ret = ibv_req_notify_cq(mqp->split_cq, 0);
+				ret = ibv_req_notify_cq(mqp->split_send_cq, 0); 
+				if (ret) {
+					fprintf(stderr, "Couldn't request CQ notification\n");
+					goto err;
+				}
+				ret = ibv_req_notify_cq(mqp->split_recv_cq, 0); 
 				if (ret) {
 					fprintf(stderr, "Couldn't request CQ notification\n");
 					goto err;
@@ -1711,6 +1762,17 @@ check:
 		if (qp->qp_type == IBV_QPT_RC) {
 			//// do same for custom_qp
 			qp = mqp->split_qp;
+			if (qp->recv_cq)
+				mlx4_cq_clean(to_mcq(qp->recv_cq), qp->qp_num,
+						qp->srq ? to_msrq(qp->srq) : NULL);
+			if (qp->send_cq && qp->send_cq != qp->recv_cq)
+				mlx4_cq_clean(to_mcq(qp->send_cq), qp->qp_num, NULL);
+
+			mlx4_init_qp_indices(to_mqp(qp));
+			if (to_mqp(qp)->rq.wqe_cnt)
+				*to_mqp(qp)->db = 0;
+
+			qp = mqp->split_qp2;
 			if (qp->recv_cq)
 				mlx4_cq_clean(to_mcq(qp->recv_cq), qp->qp_num,
 						qp->srq ? to_msrq(qp->srq) : NULL);
