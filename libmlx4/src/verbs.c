@@ -1172,7 +1172,7 @@ struct ibv_qp *mlx4_create_qp(struct ibv_pd *pd, struct ibv_qp_init_attr *attr)
 			mqp->split_qp_exchange_done = 0;
 		}
 		//// set whether user has set the qp to send mice flows
-		mqp->isSmall = (attr->isSmall == 0) ? 0 : 1;
+		mqp->isSmall = attr->isSmall;
 	} else {
 		fprintf(stderr, "Error creating Split QP\n");
 		return qp;

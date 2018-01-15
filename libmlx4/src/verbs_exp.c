@@ -606,7 +606,7 @@ struct ibv_qp *mlx4_exp_create_qp(struct ibv_context *context, struct ibv_exp_qp
 		
 	//// set whether user has set the qp to send mice flows, could also delete the line from the normal create_qp verb
 	//printf("SETING isSmall here: attr->isSmall = %d\n", attr->isSmall);
-	qp->isSmall = (attr->isSmall == 0) ? 0 : 1;
+	qp->isSmall = attr->isSmall;
 	//printf("SET qp->isSmall = %d\n", qp->isSmall);
 
 	return &qp->verbs_qp.qp;

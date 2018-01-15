@@ -4,6 +4,7 @@
 #include "pacer.h"
 
 unsigned int slot;
+extern int never_active;
 
 static void contact_pacer() {
     /* prepare unix domain socket */
@@ -49,10 +50,12 @@ static void contact_pacer() {
 
 static void set_inactive_on_exit() {
     if (flow) {
-        if (isSmall) {
-            __atomic_fetch_sub(&sb->num_active_small_flows, 1, __ATOMIC_RELAXED);
-        } else {
-            __atomic_fetch_sub(&sb->num_active_big_flows, 1, __ATOMIC_RELAXED);
+        if (!never_active) {
+            if (isSmall) {
+                __atomic_fetch_sub(&sb->num_active_small_flows, 1, __ATOMIC_RELAXED);
+            } else {
+                __atomic_fetch_sub(&sb->num_active_big_flows, 1, __ATOMIC_RELAXED);
+            }
         }
         __atomic_store_n(&flow->pending, 0, __ATOMIC_RELAXED);
         __atomic_store_n(&flow->active, 0, __ATOMIC_RELAXED);

@@ -49,8 +49,8 @@
 /* isolation */
 #include "qp_pacer.h"
 #include <inttypes.h>
-#define MAX_SMALL 1024
-int isSmall = 1;
+int isSmall = 1; /* 0: elephant flow, 1: mouse flow */
+int never_active = 1;
 /* end */
 
 #ifndef htobe64
@@ -1118,7 +1118,7 @@ int __mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 
 	for (nreq = 0; wr; ++nreq, wr = wr->next) {
 		/* isolation */
-		if (!qp->isSmall && flow) {
+		if (isSmall == 0 && flow) {
 			__atomic_fetch_add(&flow->pending, 1, __ATOMIC_RELAXED);
 			while (__atomic_load_n(&flow->pending, __ATOMIC_RELAXED))
 				cpu_relax();
@@ -1206,12 +1206,14 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 		start_flag = 0;
 		if (flow) {
 			//if (wr->sg_list->length <= MAX_SMALL) {
-			if (qp->isSmall) {
+			if (qp->isSmall == 1) {
 				isSmall = 1;
+				never_active = 0;
 				printf("DEBUG POST SEND: INDEED increment SMALL flow counter\n");
 				__atomic_fetch_add(&sb->num_active_small_flows, 1, __ATOMIC_RELAXED);
-			} else {
+			} else if (qp->isSmall == 0) {
 				isSmall = 0;
+				never_active = 0;
 				printf("DEBUG POST SEND: INDEED increment BIG flow counter\n");
 				__atomic_fetch_add(&sb->num_active_big_flows, 1, __ATOMIC_RELAXED);
 			}
@@ -1233,7 +1235,7 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 		//	printf("DEBUG: POST SEND: split_chunk_size = %" PRIu32 " [%d]\n", split_chunk_size, GLOBAL_CNT);
 		//	fflush(stdout);
 		//}
-		printf("DEBUG: POST SEND: split_chunk_size = %" PRIu32 "; msg size = %d [%d]\n", split_chunk_size, wr->sg_list->length, ++GLOBAL_CNT);
+		//printf("DEBUG: POST SEND: split_chunk_size = %" PRIu32 "; msg size = %d [%d]\n", split_chunk_size, wr->sg_list->length, ++GLOBAL_CNT);
 		fflush(stdout);
 
 		int is_two_sided = 0;
