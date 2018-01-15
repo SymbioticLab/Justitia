@@ -8,7 +8,7 @@ APPS    := pacer
 
 all: ${APPS}
 
-pacer: pingpong_utils.o pingpong.o get_clock.o queue.o monitor.o pacer.o
+pacer: pingpong_utils.o pingpong.o get_clock.o queue.o massdal.o prng.o countmin.o monitor.o pacer.o
 	${LD} -o $@ $^ ${LDLIBS}
 
 clean:
