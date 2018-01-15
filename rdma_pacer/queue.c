@@ -8,34 +8,35 @@ jmp_buf queue_error;
 #define QUEUE_FULL_ERROR 1
 #define QUEUE_EMPTY_ERROR 2
 
-Queue *queue_init(int size) {
-    Queue *q = malloc(sizeof(Queue));
-    q->array = malloc(sizeof(double) * size);
-    q->max_size = size;
-    q->first = 0;
-    q->last = 0;
-    q->size = 0;
+Queue *queue_init(int size)
+{
+    Queue *q = calloc(1, sizeof(Queue));
+    q->array = calloc(size + 1, sizeof(int));
+    q->read = 0;
+    q->write = 0;
+    q->size = size + 1;
     return q;
 }
 
-void queue_push(Queue *q, double a) {
-    if (q->size >= q->max_size)
+void queue_push(Queue *q, int a)
+{
+    if (q->read == (q->write + 1) % q->size)
         longjmp(queue_error, QUEUE_FULL_ERROR);
-    q->array[q->last] = a;
-    q->size++;
-    q->last = (q->last + 1) % q->max_size;
+    q->array[q->write] = a;
+    q->write = (q->write + 1) % q->size;
 }
 
-double queue_pop(Queue *q) {
-    if (q->size == 0)
+int queue_pop(Queue *q)
+{
+    if (q->read == q->write)
         longjmp(queue_error, QUEUE_EMPTY_ERROR);
-    double tmp = q->array[q->first];
-    q->first = (q->first + 1) % q->max_size;
-    q->size--;
+    int tmp = q->array[q->read];
+    q->read = (q->read + 1) % q->size;
     return tmp;
 }
 
-void queue_free(Queue *q) {
+void queue_free(Queue *q)
+{
     free(q->array);
     free(q);
 }
