@@ -121,6 +121,7 @@ void CMH_Destroy(CMH_type *cmh)
     free(cmh->counts);
     free(cmh->hasha);
     free(cmh->hashb);
+    queue_free(cmh->items);
     free(cmh);
     cmh = NULL;
 }

@@ -15,11 +15,12 @@
 #define GRAN 4
 #define WINDOW_SIZE 10000
 
+CMH_type *cmh = NULL;
+
 void monitor_latency(void *arg)
 {
     printf(">>>starting monitor_latency...\n");
 
-    CMH_type *cmh;
     double median, tail_99;
 
     int lat; // in nanoseconds
@@ -143,6 +144,7 @@ void monitor_latency(void *arg)
             //printf(">>>> virtual link cap: %" PRIu32 "\n", __atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED));
         }
     }
+    printf("Out of while loop. exiting...\n");
     CMH_Destroy(cmh);
     exit(1);
 }

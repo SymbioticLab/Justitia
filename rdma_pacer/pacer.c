@@ -2,8 +2,12 @@
 #include "monitor.h"
 #include "get_clock.h"
 #include <immintrin.h> /* For _mm_pause */
-#define DEBUG 0
+#include "countmin.h"
 
+#define DEFAULT_CHUNK_SIZE 1000000
+#define MAX_TOKEN 5
+
+extern CMH_type *cmh;
 struct control_block cb;
 uint32_t chunk_size_table[] = {4096, 8192, 16384, 32768, 65536, 1048576, 1048576};
 
@@ -31,7 +35,9 @@ static inline void cpu_relax()
 
 static void termination_handler(int sig)
 {
+    printf("signal handler called\n");
     remove("/dev/shm/rdma-fairness");
+    CMH_Destroy(cmh);
     _exit(0);
 }
 
@@ -112,22 +118,13 @@ static void generate_tokens()
 {
     cycles_t start_cycle;
     cycles_t end_cycle;
-    double cpu_mhz = get_cpu_mhz(1);
-    struct timespec wait_time;
-    wait_time.tv_sec = 0;
-    wait_time.tv_nsec = 45000; /* nanosleep overhead > 55 */
-    start_cycle = get_cycles();
-    nanosleep(&wait_time, NULL);
-    end_cycle = get_cycles();
-    printf("nanosleep call takes %.2f us\n", (end_cycle - start_cycle) / cpu_mhz);
-    start_cycle = get_cycles();
-    end_cycle = get_cycles();
-    printf("time elapsed between two get_cycles call is %.2f us\n", (end_cycle - start_cycle) / cpu_mhz);
+    int cpu_mhz = get_cpu_mhz(1);
+    // struct timespec wait_time;
+   
     /* infinite loop: generate tokens at a rate calculated 
      * from virtual_link_cap and active chunk size 
      */
     uint32_t temp, chunk_size;
-    start_cycle = 0;
     while (1)
     {
         if (__atomic_load_n(&cb.sb->num_active_big_flows, __ATOMIC_RELAXED))
@@ -135,10 +132,16 @@ static void generate_tokens()
             temp = __atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED);
             chunk_size = chunk_size_table[temp / 1000];
             __atomic_store_n(&cb.sb->active_chunk_size, chunk_size, __ATOMIC_RELAXED);
-            __atomic_fetch_add(&cb.tokens, 10, __ATOMIC_RELAXED);
-            wait_time.tv_nsec = 10 * chunk_size / temp * 1000;
+            // __atomic_fetch_add(&cb.tokens, 10, __ATOMIC_RELAXED);
+            // wait_time.tv_nsec = 10 * chunk_size / temp * 1000;
+            if (__atomic_load_n(&cb.tokens, __ATOMIC_RELAXED) < MAX_TOKEN) {
+                start_cycle = get_cycles();
+                __atomic_fetch_add(&cb.tokens, 1, __ATOMIC_RELAXED);
+                while (get_cycles() - start_cycle < cpu_mhz * chunk_size / temp)
+                    cpu_relax();
+            }
         }
-        nanosleep(&wait_time, NULL);
+        // nanosleep(&wait_time, NULL);
     }
 }
 
