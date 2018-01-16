@@ -133,7 +133,7 @@ static void generate_tokens()
             // temp = 4999; // for testing
             temp = __atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED);
             num_big = __atomic_load_n(&cb.sb->num_active_big_flows, __ATOMIC_RELAXED);
-            chunk_size = chunk_size_table[temp/num_big/1000];
+            chunk_size = (num_big ? chunk_size_table[temp / num_big / 1000] : chunk_size_table[temp/1000]);
             __atomic_store_n(&cb.sb->active_chunk_size, chunk_size, __ATOMIC_RELAXED);
             // __atomic_fetch_add(&cb.tokens, 10, __ATOMIC_RELAXED);
             // wait_time.tv_nsec = 10 * chunk_size / temp * 1000;
