@@ -1119,7 +1119,7 @@ int __mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 	for (nreq = 0; wr; ++nreq, wr = wr->next) {
 		/* isolation */
 		if (isSmall == 0 && flow) {
-			__atomic_fetch_add(&flow->pending, 1, __ATOMIC_RELAXED);
+			__atomic_store_n(&flow->pending, 1, __ATOMIC_RELAXED);
 			while (__atomic_load_n(&flow->pending, __ATOMIC_RELAXED))
 				cpu_relax();
 		}

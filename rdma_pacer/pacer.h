@@ -18,7 +18,7 @@
 #include <signal.h>
 
 #define SHARED_MEM_NAME "/rdma-fairness"
-#define MAX_FLOWS 512
+#define MAX_FLOWS 100
 #define LINE_RATE_MB 6750 /* MBps */
 #define MSG_LEN 8
 #define SOCK_PATH "/users/yuetan/rdma_socket"
