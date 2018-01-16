@@ -10,7 +10,7 @@
 extern CMH_type *cmh;
 struct control_block cb;
 //uint32_t chunk_size_table[] = {4096, 8192, 16384, 32768, 65536, 1048576, 1048576};
-uint32_t chunk_size_table[] = {8192, 8192, 500000, 500000, 500000, 1000000, 1000000};
+uint32_t chunk_size_table[] = {8192, 8192, 100000, 100000, 500000, 1000000, 1000000};
 /* utility fuctions */
 static void error(char *msg)
 {
