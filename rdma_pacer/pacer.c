@@ -9,8 +9,8 @@
 
 extern CMH_type *cmh;
 struct control_block cb;
-uint32_t chunk_size_table[] = {4096, 8192, 16384, 32768, 65536, 1048576, 1048576};
-
+//uint32_t chunk_size_table[] = {4096, 8192, 16384, 32768, 65536, 1048576, 1048576};
+uint32_t chunk_size_table[] = {8192, 8192, 500000, 500000, 500000, 1000000, 1000000};
 /* utility fuctions */
 static void error(char *msg)
 {
@@ -125,13 +125,15 @@ static void generate_tokens()
      * from virtual_link_cap and active chunk size 
      */
     uint32_t temp, chunk_size;
+    uint16_t num_big;
     while (1)
     {
         if (__atomic_load_n(&cb.sb->num_active_big_flows, __ATOMIC_RELAXED))
         {
             // temp = 4999; // for testing
             temp = __atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED);
-            chunk_size = chunk_size_table[temp/1000];
+            num_big = __atomic_load_n(&cb.sb->num_active_big_flows, __ATOMIC_RELAXED);
+            chunk_size = chunk_size_table[temp/num_big/1000];
             __atomic_store_n(&cb.sb->active_chunk_size, chunk_size, __ATOMIC_RELAXED);
             // __atomic_fetch_add(&cb.tokens, 10, __ATOMIC_RELAXED);
             // wait_time.tv_nsec = 10 * chunk_size / temp * 1000;
