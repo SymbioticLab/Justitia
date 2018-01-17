@@ -111,6 +111,8 @@ void monitor_latency(void *arg)
         wr.wr_id = seq;
         num_active_big_flows = __atomic_load_n(&cb.sb->num_active_big_flows, __ATOMIC_RELAXED);
         num_active_small_flows = __atomic_load_n(&cb.sb->num_active_small_flows, __ATOMIC_RELAXED);
+        printf("num_active_big_flows = %d\n", num_active_big_flows);
+        printf("num_active_small_flows = %d\n", num_active_small_flows);
         if (num_active_big_flows)
         {
             if (num_active_small_flows)
@@ -141,7 +143,7 @@ void monitor_latency(void *arg)
             {
                 __atomic_store_n(&cb.virtual_link_cap, LINE_RATE_MB, __ATOMIC_RELAXED);
             }
-            //printf(">>>> virtual link cap: %" PRIu32 "\n", __atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED));
+            printf(">>>> virtual link cap: %" PRIu32 "\n", __atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED));
         }
     }
     printf("Out of while loop. exiting...\n");
