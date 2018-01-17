@@ -1258,11 +1258,14 @@ int mlx5_post_srq_recv(struct ibv_srq *ibsrq,
 		       struct ibv_recv_wr **bad_wr) __MLX5_ALGN_F__;
 
 struct ibv_qp *mlx5_create_qp(struct ibv_pd *pd, struct ibv_qp_init_attr *attr);
+struct ibv_qp *__mlx5_create_qp(struct ibv_pd *pd, struct ibv_qp_init_attr *attr);
 int mlx5_query_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 		  int attr_mask,
 		  struct ibv_qp_init_attr *init_attr);
 int mlx5_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 		   int attr_mask);
+int __mlx5_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
+		   int attr_mask)
 int mlx5_destroy_qp(struct ibv_qp *qp);
 void mlx5_init_qp_indices(struct mlx5_qp *qp);
 void mlx5_init_rwq_indices(struct mlx5_rwq *rwq);

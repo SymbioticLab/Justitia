@@ -2334,7 +2334,8 @@ struct ibv_qp *mlx5_exp_create_qp(struct ibv_context *context,
 	return create_qp(context, attrx, 1);
 }
 
-struct ibv_qp *mlx5_create_qp(struct ibv_pd *pd,
+//// Original mlx5_create_qp is here
+struct ibv_qp *__mlx5_create_qp(struct ibv_pd *pd,
 			      struct ibv_qp_init_attr *attr)
 {
 	struct ibv_exp_qp_init_attr attrx;
@@ -2348,6 +2349,90 @@ struct ibv_qp *mlx5_create_qp(struct ibv_pd *pd,
 	qp = create_qp(pd->context, &attrx, 0);
 	if (qp)
 		memcpy(attr, &attrx, copy_sz);
+
+	return qp;
+}
+
+struct ibv_qp *mlx5_create_qp(struct ibv_pd *pd,
+			      struct ibv_qp_init_attr *attr)
+{
+	//// create custom cq used for two-sided rdma message splitting
+	struct ibv_comp_channel *send_channel = ibv_create_comp_channel(pd->context);
+	struct ibv_comp_channel *recv_channel = ibv_create_comp_channel(pd->context);
+	struct ibv_comp_channel *channel2 = ibv_create_comp_channel(pd->context);
+	struct ibv_cq *split_send_cq = mlx5_create_cq(pd->context, SPLIT_MAX_CQE, send_channel, 0);
+	struct ibv_cq *split_recv_cq = mlx5_create_cq(pd->context, SPLIT_MAX_CQE, recv_channel, 0);
+	struct ibv_cq *split_cq2 = mlx5_create_cq(pd->context, SPLIT_MAX_CQE, channel2, 0);
+
+	/// create a custom qp for our own use 
+	struct ibv_qp_init_attr split_init_attr, split_init_attr2;
+	memset(&split_init_attr, 0, sizeof(struct ibv_qp_init_attr));
+	split_init_attr.send_cq = split_send_cq;
+	split_init_attr.recv_cq = split_recv_cq;
+	split_init_attr.cap.max_send_wr  = SPLIT_MAX_SEND_WR;
+	split_init_attr.cap.max_recv_wr  = SPLIT_MAX_RECV_WR;
+	split_init_attr.cap.max_send_sge = 1;
+	split_init_attr.cap.max_recv_sge = 1;
+	split_init_attr.cap.max_inline_data = 100;	// probably not going to use inline there
+	split_init_attr.qp_type = IBV_QPT_RC;
+	split_init_attr.isSmall = 1;
+	memcpy(&split_init_attr2, &split_init_attr, sizeof(struct ibv_qp_init_attr));
+	split_init_attr2.send_cq = split_cq2;
+	split_init_attr2.recv_cq = split_cq2;
+
+	struct ibv_qp 		*qp;
+	struct ibv_qp 		*split_qp;
+	struct ibv_qp 		*split_qp2;
+	split_qp2 = __mlx5_create_qp(pd, &split_init_attr2);
+	printf("DEBUG mlx5_create_qp: split_qp->qpn = %06x\n", split_qp2->qp_num);
+
+	split_qp = __mlx5_create_qp(pd, &split_init_attr);
+	printf("DEBUG mlx5_create_qp: split_qp->qpn = %06x\n", split_qp->qp_num);
+	//// Now create the user's qp
+	qp = __mlx5_create_qp(pd, attr);
+	printf("DEBUG mlx5_create_qp: orig_qp->qpn = %06x\n", qp->qp_num);
+	//// store split_qp & split_cq inside the user's qp
+	if (qp) {
+		struct mlx5_qp *mqp = to_mqp(qp);
+		mqp->split_qp = split_qp;
+		mqp->split_qp2 = split_qp2;
+		mqp->split_cq2 = split_cq2;
+		mqp->split_send_cq = split_send_cq;
+		mqp->split_recv_cq = split_recv_cq;
+		mqp->split_comp_send_channel = send_channel;
+		mqp->split_comp_recv_channel = recv_channel;
+		mqp->split_comp_channel2 = channel2;
+		//// register mr for two-sided splitting header message
+		//// register size * 2 since in split qpn exchange we need mr for send & recv at the same time
+		mqp->split_fc_mr = mlx5_reg_mr(pd, &mqp->split_fc_msg, 4 * sizeof(struct Split_FC_message), IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_WRITE);
+		//// add in pd for later deletion
+		to_mpd(pd)->split_fc_mr = mqp->split_fc_mr;
+		if (MANUAL_SPLIT_QPN_DIFF) {
+			mqp->split_qp_exchange_done = -1;
+		} else {
+			mqp->split_qp_exchange_done = 0;
+		}
+		//// set whether user has set the qp to send mice flows
+		mqp->isSmall = attr->isSmall;
+	} else {
+		fprintf(stderr, "Error creating Split QP\n");
+		return qp;
+	}
+	////
+
+	/* isolation */
+	int fd_shm;
+	if ((fd_shm = shm_open(SHARED_MEM_NAME, O_RDWR, 0600)) == -1){
+		printf("@@@Pacer's shared memory is not found. Pacer won't be used.\n");
+	} else {
+		atexit(set_inactive_on_exit);
+		sb = mmap(NULL, sizeof(struct shared_block), PROT_WRITE | PROT_READ,
+			MAP_SHARED, fd_shm, 0);
+		contact_pacer();
+		flow = &sb->flows[slot];
+		printf("@@@At slot %d.\n", slot);
+	}
+	/* end */
 
 	return qp;
 }
@@ -2902,7 +2987,8 @@ static int update_port_data(struct ibv_qp *qp, uint8_t port_num)
 	return 0;
 }
 
-int mlx5_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
+//// Original mlx5_modify_qp
+int __mlx5_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 		   int attr_mask)
 {
 	struct mlx5_qp *mqp = to_mqp(qp);
@@ -2961,6 +3047,239 @@ int mlx5_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 
 	return ret;
 }
+
+//// Modify to change the qp state of the custom qp
+//// Only include Manual method (guess) for exchange split qpn
+int __mlx5_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
+		   int attr_mask)
+{
+	struct mlx5_qp *mqp = to_mqp(qp);
+	struct mlx5_context *ctx = to_mctx(qp->context);
+	struct ibv_modify_qp cmd;
+	volatile uint32_t *db;
+	int ret;
+	//// do the same state transition for custom qp.
+	struct mlx4_qp *mqp = to_mqp(qp);
+	////
+
+	if (mqp->flags & MLX5_QP_FLAGS_USE_UNDERLAY) {
+		if (attr_mask & ~(IBV_QP_STATE | IBV_QP_CUR_STATE))
+			return EINVAL;
+
+		/* Underlay QP is UD over infiniband */
+		if (ctx->exp_device_cap_flags & IBV_EXP_DEVICE_RX_CSUM_IP_PKT)
+			mqp->gen_data.model_flags |= MLX5_QP_MODEL_RX_CSUM_IP_OK_IP_NON_TCP_UDP;
+	}
+
+	if (attr_mask & IBV_QP_PORT) {
+		ret = update_port_data(qp, attr->port_num);
+		if (ret)
+			return ret;
+		//// do same for custom_qp
+		update_port_data(mqp->split_qp, attr->port_num);
+		update_port_data(mqp->split_qp2, attr->port_num);
+		////
+	}
+
+	if (to_mqp(qp)->rx_qp)
+		return -ENOSYS;
+
+	//// Ignore QPs that are not RC for now
+	if (qp->qp_type != IBV_QPT_RC) {
+		ret = ibv_cmd_modify_qp(qp, attr, attr_mask, &cmd, sizeof cmd);
+		goto check;
+	}
+
+	//// modify original user's qp state
+	ret = ibv_cmd_modify_qp(qp, attr, attr_mask, &cmd, sizeof(cmd));
+
+	//// if manually set the qpn difference for split qp
+	// Essentially we are looking at the user QP's INIT -> RTR transition when hacking dest_qp_num
+	// We also directly modify split qp to RTS instead of wait users modify their qp to RTS
+	// because some users might never do so.
+	if (qp->state == IBV_QPS_INIT) {
+		if (__mlx4_modify_qp(mqp->split_qp, attr, attr_mask)) {
+			fprintf(stderr, "Failed to modify SPLIT QP to INIT State\n");
+			ret = 1;
+			goto err;
+		}
+		if (__mlx4_modify_qp(mqp->split_qp2, attr, attr_mask)) {
+			fprintf(stderr, "Failed to modify SPLIT QP to INIT State\n");
+			ret = 1;
+			goto err;
+		}
+		printf("<<<<MODIFY SPLIT QP to INIT>>>>\n");
+		fflush(stdout);
+	} else if (qp->state == IBV_QPS_RTR && mqp->split_qp->state == IBV_QPS_INIT) {
+		//attr->dest_qp_num -= 1;	// for old benchmark
+		//attr->dest_qp_num -= 2; // for new benchmark
+		struct ibv_qp_attr split_attr, split_attr2;
+		memcpy(&split_attr, attr, sizeof(struct ibv_qp_attr));
+		memcpy(&split_attr2, attr, sizeof(struct ibv_qp_attr));
+		int split_mask = attr_mask;
+		split_attr.dest_qp_num -= SPLIT_QP_NUM_DIFF;
+		split_attr.rq_psn = 10083;
+		//printf("DEBUG MODIFY QP: now attr->dest_qp_num is %06x\n", attr->dest_qp_num);
+
+		if (__mlx4_modify_qp(mqp->split_qp, &split_attr, split_mask)) {
+			fprintf(stderr, "Failed to modify SPLIT QP to RTR State\n");
+			ret = 1;
+			goto err;
+		}
+
+		split_attr2.dest_qp_num -= 2 * SPLIT_QP_NUM_DIFF;
+		split_attr2.rq_psn = 20083;
+		if (__mlx4_modify_qp(mqp->split_qp2, &split_attr2, split_mask)) {
+			fprintf(stderr, "Failed to modify SPLIT QP to RTR State\n");
+			ret = 1;
+			goto err;
+		}
+		printf("<<<<MODIFY SPLIT QP to RTR>>>>\n");
+		fflush(stdout);
+		//// pre-post a RR for later use
+		//printf("DEBUG MODIFY QP: post a RR to split_qp\n");
+		struct ibv_sge sge;
+		struct ibv_recv_wr wr;
+		struct ibv_recv_wr *bad_wr;
+		memset(&sge, 0, sizeof(sge));
+		sge.addr = (uintptr_t)&mqp->split_fc_msg[0];
+		sge.length = sizeof(struct Split_FC_message);
+		sge.lkey = mqp->split_fc_mr->lkey;
+
+		memset(&wr, 0, sizeof(wr));
+		wr.wr_id = 0;
+		wr.next = NULL;
+		wr.sg_list = &sge;
+		wr.num_sge = 1;
+
+		if (mlx4_post_recv(mqp->split_qp, &wr, &bad_wr)) {
+			fprintf(stderr, "Failed to post the initial RR to split qp.\n");
+			ret = 1;
+			goto err;
+		}
+
+		sge.addr = (uintptr_t)&mqp->split_fc_msg[2];
+		if (mlx4_post_recv(mqp->split_qp2, &wr, &bad_wr)) {
+			fprintf(stderr, "Failed to post the initial RR to split qp.\n");
+			ret = 1;
+			goto err;
+		}
+
+		// Modify split qp to RTS
+		split_attr.qp_state	    = IBV_QPS_RTS;
+		split_attr.sq_psn	    = 10083;
+		split_attr.timeout	    = 14;
+		split_attr.retry_cnt	= 7;
+		split_attr.rnr_retry	= 7;
+		split_attr.max_rd_atomic  = 1;
+		int rts_mask = 	IBV_QP_STATE              |
+						IBV_QP_TIMEOUT            |
+						IBV_QP_RETRY_CNT          |
+						IBV_QP_RNR_RETRY          |
+						IBV_QP_SQ_PSN             |
+						IBV_QP_MAX_QP_RD_ATOMIC;
+
+		if (__mlx4_modify_qp(mqp->split_qp, &split_attr, rts_mask)) {
+			fprintf(stderr, "Failed to modify SPLIT QP to RTS State\n");
+			ret = 1;
+			goto err;
+		}
+
+		split_attr2.qp_state	    = IBV_QPS_RTS;
+		split_attr2.sq_psn	    = 20083;
+		split_attr2.timeout	    = 14;
+		split_attr2.retry_cnt	= 7;
+		split_attr2.rnr_retry	= 7;
+		split_attr2.max_rd_atomic  = 1;
+		if (__mlx4_modify_qp(mqp->split_qp2, &split_attr2, rts_mask)) {
+			fprintf(stderr, "Failed to modify SPLIT QP to RTS State\n");
+			ret = 1;
+			goto err;
+		}
+		printf("<<<<MODIFY SPLIT QP to RTS>>>>\n");
+
+		printf("<<<<Request SPLIT CQ evnt notification\n");
+		fflush(stdout);
+		if (SPLIT_USE_EVENT) {
+			ret = ibv_req_notify_cq(mqp->split_send_cq, 0); 
+			if (ret) {
+				fprintf(stderr, "Couldn't request CQ notification\n");
+				goto err;
+			}
+			ret = ibv_req_notify_cq(mqp->split_recv_cq, 0); 
+			if (ret) {
+				fprintf(stderr, "Couldn't request CQ notification\n");
+				goto err;
+			}
+			ret = ibv_req_notify_cq(mqp->split_cq2, 0); 
+			if (ret) {
+				fprintf(stderr, "Couldn't request CQ notification\n");
+				goto err;
+			}
+		}
+
+	}
+	//// Set start_flag to 1
+	start_flag = 1;
+
+check:
+	if (!ret		       &&
+	    (attr_mask & IBV_QP_STATE) &&
+	    attr->qp_state == IBV_QPS_RESET) {
+		if (qp->recv_cq) {
+			mlx5_cq_clean(to_mcq(qp->recv_cq), mqp->rsc.rsn,
+				      qp->srq ? to_msrq(qp->srq) : NULL);
+		}
+		if (qp->send_cq != qp->recv_cq && qp->send_cq)
+			mlx5_cq_clean(to_mcq(qp->send_cq), mqp->rsc.rsn, NULL);
+
+		mlx5_init_qp_indices(mqp);
+		db = mqp->gen_data.db;
+		db[MLX5_RCV_DBR] = 0;
+		db[MLX5_SND_DBR] = 0;
+
+		if (qp->qp_type == IBV_QPT_RC) {
+			//// do same for custom_qp
+			qp = mqp->split_qp;
+			if (qp->recv_cq)
+				mlx5_cq_clean(to_mcq(qp->recv_cq), qp->qp_num,
+						qp->srq ? to_msrq(qp->srq) : NULL);
+			if (qp->send_cq && qp->send_cq != qp->recv_cq)
+				mlx5_cq_clean(to_mcq(qp->send_cq), qp->qp_num, NULL);
+
+			mlx4_init_qp_indices(to_mqp(qp));
+			if (to_mqp(qp)->rq.wqe_cnt)
+				*to_mqp(qp)->db = 0;
+
+			qp = mqp->split_qp2;
+			if (qp->recv_cq)
+				mlx5_cq_clean(to_mcq(qp->recv_cq), qp->qp_num,
+						qp->srq ? to_msrq(qp->srq) : NULL);
+			if (qp->send_cq && qp->send_cq != qp->recv_cq)
+				mlx5_cq_clean(to_mcq(qp->send_cq), qp->qp_num, NULL);
+
+			mlx4_init_qp_indices(to_mqp(qp));
+			if (to_mqp(qp)->rq.wqe_cnt)
+				*to_mqp(qp)->db = 0;
+			////
+		}
+	}
+	if (!ret && (attr_mask & IBV_QP_STATE))
+		mlx5_update_post_send_one(mqp, qp->state, qp->qp_type);
+
+	if (!ret &&
+	    (attr_mask & IBV_QP_STATE) &&
+	    attr->qp_state == IBV_QPS_RTR &&
+	    (qp->qp_type == IBV_QPT_RAW_ETH || mqp->flags & MLX5_QP_FLAGS_USE_UNDERLAY)) {
+		mlx5_lock(&mqp->rq.lock);
+		mqp->gen_data.db[MLX5_RCV_DBR] = htonl(mqp->rq.head & 0xffff);
+		mlx5_unlock(&mqp->rq.lock);
+	}
+
+
+	return ret;
+}
+
 
 static inline int ipv6_addr_v4mapped(const struct in6_addr *a)
 {
