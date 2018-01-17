@@ -9,8 +9,8 @@
 
 extern CMH_type *cmh;
 struct control_block cb;
-uint32_t chunk_size_table[] = {4096, 8192, 16384, 32768, 65536, 1048576, 1048576};
-
+//uint32_t chunk_size_table[] = {4096, 8192, 16384, 32768, 65536, 1048576, 1048576};
+uint32_t chunk_size_table[] = {8192, 8192, 100000, 100000, 500000, 1000000, 1000000};
 /* utility fuctions */
 static void error(char *msg)
 {
@@ -116,29 +116,42 @@ static inline void fetch_token()
  */
 static void generate_tokens()
 {
-    cycles_t start_cycle;
-    cycles_t end_cycle;
+    cycles_t start_cycle = 0;
     int cpu_mhz = get_cpu_mhz(1);
+    int start_flag = 1;
     // struct timespec wait_time;
-   
+
     /* infinite loop: generate tokens at a rate calculated 
      * from virtual_link_cap and active chunk size 
      */
     uint32_t temp, chunk_size;
+    uint16_t num_big;
     while (1)
     {
         if (__atomic_load_n(&cb.sb->num_active_big_flows, __ATOMIC_RELAXED))
         {
+            // temp = 4999; // for testing
             temp = __atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED);
-            chunk_size = chunk_size_table[temp / 1000];
+            num_big = __atomic_load_n(&cb.sb->num_active_big_flows, __ATOMIC_RELAXED);
+            chunk_size = (num_big ? chunk_size_table[temp / num_big / 1000] : chunk_size_table[temp/1000]);
             __atomic_store_n(&cb.sb->active_chunk_size, chunk_size, __ATOMIC_RELAXED);
             // __atomic_fetch_add(&cb.tokens, 10, __ATOMIC_RELAXED);
             // wait_time.tv_nsec = 10 * chunk_size / temp * 1000;
-            if (__atomic_load_n(&cb.tokens, __ATOMIC_RELAXED) < MAX_TOKEN) {
-                start_cycle = get_cycles();
-                __atomic_fetch_add(&cb.tokens, 1, __ATOMIC_RELAXED);
-                while (get_cycles() - start_cycle < cpu_mhz * chunk_size / temp)
-                    cpu_relax();
+            if (__atomic_load_n(&cb.tokens, __ATOMIC_RELAXED) < MAX_TOKEN)
+            {
+                if (start_flag)
+                {
+                    start_flag = 0;
+                    start_cycle = get_cycles();
+                    __atomic_fetch_add(&cb.tokens, 1, __ATOMIC_RELAXED);
+                }
+                else
+                {
+                    while (get_cycles() - start_cycle < cpu_mhz * chunk_size / temp)
+                        cpu_relax();
+                    start_cycle = get_cycles();
+                    __atomic_fetch_add(&cb.tokens, 1, __ATOMIC_RELAXED);
+                }
             }
         }
         // nanosleep(&wait_time, NULL);
@@ -235,7 +248,7 @@ int main(int argc, char **argv)
             if (__atomic_load_n(&cb.sb->flows[i].pending, __ATOMIC_RELAXED))
             {
                 fetch_token();
-                __atomic_fetch_sub(&cb.sb->flows[i].pending, 1, __ATOMIC_RELAXED);
+                __atomic_store_n(&cb.sb->flows[i].pending, 0, __ATOMIC_RELAXED);
             }
         }
     }
