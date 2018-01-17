@@ -49,6 +49,25 @@
 #include "implicit_lkey.h"
 #include "wqe.h"
 
+////
+#include <inttypes.h>
+#define SPLIT_CHUNK_SIZE		1000000			//// Default Split Chunk Size; Need to be equal or less than the initial chunk size that pacer sets.
+#define MIN_SPLIT_CHUNK_SIZE    2048			//// A minimun chunk size that everybody knows and assumes.
+//#define SPLIT_CHUNK_SIZE		1048576			//// Default Split Chunk Size; Need to be equal or less than the initial chunk size that pacer sets.
+#define MANUAL_SPLIT_QPN_DIFF 	1				//// manually set (guess) split qpn/psn or general approcah
+#define SPLIT_QP_NUM_DIFF		1				//// DC if MANUAL_SPLIT is off
+#define SPLIT_USE_EVENT			1				//// event-triggered polling for splitting
+#define SPLIT_USE_LINKED_LIST	0				//// post using a linked list or not (for one-sided verbs) (for testing purposes)
+//#define SPLIT_USE_NO_BATCH		0				//// 1 -> post 1 poll 1 at one-sided verbs; DC if SPLIT_USE_LINKED_LIST is 1; 0 -> use batch 
+#define SPLIT_USE_NO_BATCH_2SIDED		1		//// 1 -> post 1 poll 1 at two-sided verbs; 
+#define SPLIT_ONE_SIDED_BATCH_SIZE		1		//// batch rate in one-sided verbs. 1 means no batch
+#define SPLIT_USE_SELECTIVE_SIGNALING	0		//// use selective signaling (only last chunk signaled) or not when sending split chunks 
+#define SPLIT_MAX_SEND_WR 		8000
+#define SPLIT_MAX_RECV_WR 		8000
+#define SPLIT_MAX_CQE			10000
+#define RR_BUFFER_INIT_CAP		1000
+////
+
 #ifdef __GNUC__
 #define likely(x)	__builtin_expect((x), 1)
 #define unlikely(x)	__builtin_expect((x), 0)
@@ -128,6 +147,13 @@
 #define PFX		"mlx5: "
 
 #define MLX5_MAX_PORTS_NUM	2
+
+//// enums for two-sided splitting
+enum FC_message_type {
+	ACK,
+	INFO,		// inform num_chunks_split
+	EXCHANGE	// exchange split qpn & psn
+};
 
 enum {
 	MLX5_MAX_CQ_FAMILY_VER		= 1,
@@ -320,6 +346,38 @@ enum {
 	MLX5_USER_CMDS_SUPP_UHW_CREATE_AH    = 1 << 1,
 };
 
+//// Flow Control message for RDMA message splitting
+struct Split_FC_message {
+	enum FC_message_type type;
+	union {
+		//uint32_t num_split_chunks;
+		struct {
+			uint32_t num_split_chunks;
+			uint32_t current_chunk_size;
+		} split_chunk_info;
+		struct {
+			uint32_t qp_num;
+			uint32_t sq_psn;
+		} split_qp_exchange;
+	} msg;
+};
+////
+
+//// Buffer holding Receive Requests posted at the user's qp at INIT state
+struct rr_buffer {
+	struct ibv_recv_wr **slot;	// head of the buffer
+	unsigned int size;			// number of wr_head pointers
+	unsigned int capacity;
+};
+
+int rr_buffer_init(struct rr_buffer *rr_buf, unsigned int cap);
+
+int rr_buffer_enqueue(struct rr_buffer *rr_buf, struct ibv_recv_wr* wr);
+
+int rr_buffer_post_and_clear(struct rr_buffer *rr_buf, struct ibv_qp *qp);
+
+////
+
 struct mlx5_resource {
 	enum mlx5_rsc_type	type;
 	uint32_t		rsn;
@@ -503,6 +561,9 @@ struct mlx5_pd {
 	struct mlx5_implicit_lkey       r_ilkey;
 	struct mlx5_implicit_lkey       w_ilkey;
 	struct mlx5_implicit_lkey      *remote_ilkey;
+	//// added for splitting cleanup
+	struct ibv_mr		*split_fc_mr;
+	////
 };
 
 enum {
@@ -837,6 +898,29 @@ struct mlx5_qp {
 	struct ibv_exp_peer_buf		       *peer_db_buf;
 	uint32_t				max_tso_header;
 	uint32_t                                flags; /* Use enum mlx5_qp_flags */
+	//// added for spliting
+	struct ibv_qp 		*split_qp;
+	struct ibv_qp 		*split_qp2;
+	//struct ibv_cq		*split_cq;
+	struct ibv_cq		*split_send_cq;
+	struct ibv_cq		*split_recv_cq;
+	struct ibv_cq		*split_cq2;
+	//struct ibv_comp_channel *split_comp_channel;
+	struct ibv_comp_channel *split_comp_send_channel;
+	struct ibv_comp_channel *split_comp_recv_channel;
+	struct ibv_comp_channel *split_comp_channel2;
+	uint32_t			split_dest_qpn;
+	struct Split_FC_message split_fc_msg[4];
+	struct ibv_mr		*split_fc_mr;
+	struct ibv_qp_attr	*user_qp_attr_init;
+	int 				user_qp_mask_init;
+	struct ibv_qp_attr	*user_qp_attr_rtr;
+	int 				user_qp_mask_rtr;
+	struct rr_buffer	rr_buf;
+	int 				split_qp_exchange_done;
+	//uint32_t			prev_chunk_size;		// used in 2-sided chunk size varying
+	int					isSmall;
+	////
 };
 
 struct mlx5_dct {
