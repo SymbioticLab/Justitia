@@ -47,8 +47,8 @@
 #include "wqe.h"
 
 /* isolation */
-#include "qp_pacer.h"
 #include <inttypes.h>
+#include "pacer.h"
 int isSmall = 1; /* 0: elephant flow, 1: mouse flow */
 int never_active = 1;
 /* end */
@@ -2130,13 +2130,12 @@ void mlx5_update_post_send_one(struct mlx5_qp *qp, enum ibv_qp_state qp_state, e
 
 
 //// Original __mlx5_post_send without lock
-//static inline int __mlx5_post_send(struct ibv_qp *ibqp, struct ibv_exp_send_wr *wr,
-//				   struct ibv_exp_send_wr **bad_wr, int is_exp_wr) __attribute__((always_inline));
-//static inline int __mlx5_post_send(struct ibv_qp *ibqp, struct ibv_exp_send_wr *wr,
+static inline int __mlx5_post_send(struct ibv_qp *ibqp, struct ibv_exp_send_wr *wr,
+				   struct ibv_exp_send_wr **bad_wr, int is_exp_wr) __attribute__((always_inline));
+static inline int __mlx5_post_send(struct ibv_qp *ibqp, struct ibv_exp_send_wr *wr,
+				   struct ibv_exp_send_wr **bad_wr, int is_exp_wr)
+//int __mlx5_post_send(struct ibv_qp *ibqp, struct ibv_exp_send_wr *wr,
 //				   struct ibv_exp_send_wr **bad_wr, int is_exp_wr)
-int __mlx5_post_send(struct ibv_qp *ibqp, struct ibv_exp_send_wr *wr,
-				   struct ibv_exp_send_wr **bad_wr)
-				   //struct ibv_exp_send_wr **bad_wr, int is_exp_wr)
 {
 	struct mlx5_qp *qp = to_mqp(ibqp);
 	void *uninitialized_var(seg);
@@ -2156,7 +2155,8 @@ int __mlx5_post_send(struct ibv_qp *ibqp, struct ibv_exp_send_wr *wr,
 		if (isSmall == 0 && flow) {
 			__atomic_store_n(&flow->pending, 1, __ATOMIC_RELAXED);
 			while (__atomic_load_n(&flow->pending, __ATOMIC_RELAXED))
-				cpu_relax();
+				//cpu_relax();
+				asm("nop");
 		}
 		/* end */
 		idx = qp->gen_data.scur_post & (qp->sq.wqe_cnt - 1);
@@ -2229,9 +2229,20 @@ post_send_no_db:
 	return err;
 }
 
+//// ceil helper
+int ceil_helper(float num_chunks) {
+    int inum_chunks = (int)num_chunks;
+    if (num_chunks == (float)inum_chunks) {
+        return inum_chunks;
+    }
+    return inum_chunks + 1;
+}
+////
+
 //// Modified __mlx5_post_send -- splitting logic sits here
-int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_exp_send_wr *wr,
-				   struct ibv_exp_send_wr **bad_wr)
+//// every verb going through here will not be exp
+int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
+				   struct ibv_send_wr **bad_wr)
 {
 	struct mlx5_qp *qp = to_mqp(ibqp);
 
@@ -2334,8 +2345,8 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_exp_send_wr *wr,
 				}
 
 				struct ibv_sge sge;
-				struct ibv_send_wr swr;
-				struct ibv_send_wr *bad_swr;
+				struct ibv_exp_send_wr swr;
+				struct ibv_exp_send_wr *bad_swr;
 				memset(&swr, 0, sizeof(swr));
 				memset(&sge, 0, sizeof(sge));
 				swr.wr.rdma.remote_addr = wr->wr.rdma.remote_addr;	
@@ -2351,13 +2362,13 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_exp_send_wr *wr,
 
 					for (i = 0; i < num_chunks_to_send - 2; i++) {
 						swr.wr_id = i + 1;
-						swr.opcode = IBV_WR_RDMA_WRITE;
+						swr.exp_opcode = IBV_WR_RDMA_WRITE;
 						swr.sg_list = &sge;
 						swr.num_sge = 1;
-						swr.send_flags = (i == num_chunks_to_send - 3) ? 
+						swr.exp_send_flags = (i == num_chunks_to_send - 3) ? 
 											(orig_send_flags | IBV_SEND_SIGNALED) : (orig_send_flags & (~(IBV_SEND_SIGNALED)));
 						//// No batch for now
-						swr.send_flags = (orig_send_flags | IBV_SEND_SIGNALED);
+						swr.exp_send_flags = (orig_send_flags | IBV_SEND_SIGNALED);
 						if (i == 0) {
 							swr.wr.rdma.remote_addr = wr->wr.rdma.remote_addr;	
 						} else if (i == 1) {
@@ -2380,7 +2391,7 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_exp_send_wr *wr,
 						sge.lkey = wr->sg_list->lkey;
 
 						// those WRs are handled by the split qp
-						ret = __mlx5_post_send(qp->split_qp, &swr, &bad_swr);
+						ret = __mlx5_post_send(qp->split_qp, &swr, &bad_swr, 0);
 						if (ret != 0) {
 							errno = ret;
 							fprintf(stderr, "error posting SRs (WRITE) to split qp, errno = %d\n", errno);
@@ -2391,7 +2402,7 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_exp_send_wr *wr,
 						struct ibv_cq *ev_cq;
 						void *ev_ctx;
 						int ne = 0;
-						if (swr.send_flags == (orig_send_flags | IBV_SEND_SIGNALED)) {
+						if (swr.exp_send_flags == (orig_send_flags | IBV_SEND_SIGNALED)) {
 							if (SPLIT_USE_EVENT) {
 								ret = ibv_get_cq_event(qp->split_comp_send_channel, &ev_cq, &ev_ctx);
 								if (ret) {
@@ -2421,10 +2432,10 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_exp_send_wr *wr,
 				//// if N == 1, still sends out an empty chunk using WIMM
 				if (num_chunks_to_send >= 1) {
 					swr.wr_id = i + 1;
-					swr.opcode = IBV_WR_RDMA_WRITE_WITH_IMM;
+					swr.exp_opcode = IBV_WR_RDMA_WRITE_WITH_IMM;
 					swr.sg_list = &sge;
 					swr.num_sge = 1;
-					swr.send_flags = (orig_send_flags | IBV_SEND_SIGNALED);
+					swr.exp_send_flags = (orig_send_flags | IBV_SEND_SIGNALED);
 					if (i == 0) {
 						swr.wr.rdma.remote_addr = wr->wr.rdma.remote_addr;	
 					} else if (i == 1) {
@@ -2455,7 +2466,7 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_exp_send_wr *wr,
 					}
 
 
-					ret = __mlx5_post_send(qp->split_qp, &swr, bad_wr);
+					ret = __mlx5_post_send(qp->split_qp, &swr, (struct ibv_exp_send_wr **)bad_wr, 0);
 					if (ret != 0) {
 						errno = ret;
 						fprintf(stderr, "error posting SRs (WRITE) to split qp, errno = %d\n", errno);
@@ -2498,10 +2509,10 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_exp_send_wr *wr,
 				//current_length = wr->sg_list->length - split_chunks_size * i;
 				
 				swr.wr_id = wr->wr_id;
-				swr.opcode = wr->opcode;
+				swr.exp_opcode = wr->opcode;
 				swr.sg_list = &sge;
 				swr.num_sge = 1;
-				swr.send_flags = orig_send_flags;
+				swr.exp_send_flags = orig_send_flags;
 				if (i == 0) {
 					swr.wr.rdma.remote_addr = wr->wr.rdma.remote_addr;	
 				} else if (i == 1) {
@@ -2527,7 +2538,7 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_exp_send_wr *wr,
 				wr->wr.rdma.remote_addr = swr.wr.rdma.remote_addr;
 				wr->sg_list->addr = sge.addr;
 				wr->sg_list->length = sge.length;
-				ret = __mlx5_post_send(ibqp, wr, bad_wr);
+				ret = __mlx5_post_send(ibqp, (struct ibv_exp_send_wr *)wr, (struct ibv_exp_send_wr **)bad_wr, 0);
 				if (ret != 0) {
 					errno = ret;
 					//printf("DEBUG POST SEND REALLY BAD!!, errno = %d\n", errno);
@@ -2572,7 +2583,7 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_exp_send_wr *wr,
 				printf("first chunk message length = %" PRIu32 "\n", wr->sg_list->length);
 				fflush(stdout);
 
-				ret = __mlx5_post_send(ibqp, wr, bad_wr);
+				ret = __mlx5_post_send(ibqp, (struct ibv_exp_send_wr *)wr, (struct ibv_exp_send_wr **)bad_wr, 0);
 				if (ret != 0) {
 					errno = ret;
 					goto out;
@@ -2589,8 +2600,8 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_exp_send_wr *wr,
 				fflush(stdout);
 
 				struct ibv_sge ssge;
-				struct ibv_send_wr swr;
-				struct ibv_send_wr *bad_swr;
+				struct ibv_exp_send_wr swr;
+				struct ibv_exp_send_wr *bad_swr;
 
 				memset(&ssge, 0, sizeof(ssge));
 				ssge.addr = (uintptr_t)&qp->split_fc_msg[1];
@@ -2601,11 +2612,11 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_exp_send_wr *wr,
 				swr.wr_id = 0;
 				swr.sg_list = &ssge;
 				swr.num_sge = 1;
-				swr.opcode = IBV_WR_SEND;
-				swr.send_flags = IBV_SEND_SIGNALED;
+				swr.exp_opcode = IBV_WR_SEND;
+				swr.exp_send_flags = IBV_SEND_SIGNALED;
 
 				int ret2;
-				ret2 = __mlx5_post_send(qp->split_qp, &swr, &bad_swr);
+				ret2 = __mlx5_post_send(qp->split_qp, &swr, &bad_swr, 0);
 				if (ret2 != 0) {
 					errno = ret2;
 					fprintf(stderr, "DEBUG POST SEND: REALLY BAD!!, errno = %d\n", errno);
@@ -2770,7 +2781,7 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_exp_send_wr *wr,
 					}
 
 					//__mlx4_post_send(qp->split_qp, wr, bad_wr);
-					ret = __mlx5_post_send(qp->split_qp, wr, bad_wr);
+					ret = __mlx5_post_send(qp->split_qp, (struct ibv_exp_send_wr *)wr, (struct ibv_exp_send_wr **)bad_wr, 0);
 					if (ret != 0) {
 						errno = ret;
 						fprintf(stderr, "DEBUG POST SEND REALLY BAD!!, errno = %d\n", errno);
@@ -2911,7 +2922,7 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_exp_send_wr *wr,
 
 				if (!SPLIT_USE_LINKED_LIST) {
 					int num_wrs_to_split_qp = num_chunks_to_send - 1;
-					struct ibv_send_wr swr;
+					struct ibv_exp_send_wr swr;
 					struct ibv_sge sge;
 					int i;
 					struct ibv_wc wc;
@@ -2921,11 +2932,11 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_exp_send_wr *wr,
 
 					for (i = 0; i < num_wrs_to_split_qp; i++) {
 						swr.wr_id = i + 1;
-						swr.opcode = wr->opcode;
+						swr.exp_opcode = wr->opcode;
 						swr.sg_list = &sge;
 						swr.num_sge = 1;
 						//swr.send_flags = (i == num_wrs_to_split_qp - 1 || !SPLIT_USE_SELECTIVE_SIGNALING) ? IBV_SEND_SIGNALED : 0; // last one is signaled for synchronization
-						swr.send_flags = (i == num_wrs_to_split_qp - 1 || (i + 1) % SPLIT_ONE_SIDED_BATCH_SIZE == 0) ? 
+						swr.exp_send_flags = (i == num_wrs_to_split_qp - 1 || (i + 1) % SPLIT_ONE_SIDED_BATCH_SIZE == 0) ? 
 											(orig_send_flags | IBV_SEND_SIGNALED) : (orig_send_flags & (~(IBV_SEND_SIGNALED)));
 						swr.wr.rdma.remote_addr = wr->wr.rdma.remote_addr + split_chunk_size * i;
 						swr.wr.rdma.rkey = wr->wr.rdma.rkey;
@@ -2936,14 +2947,14 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_exp_send_wr *wr,
 						sge.lkey = wr->sg_list->lkey;
 
 						// those WRs are handled by the split qp
-						ret = __mlx5_post_send(qp->split_qp, &swr, bad_wr);
+						ret = __mlx5_post_send(qp->split_qp, &swr, (struct ibv_exp_send_wr **)bad_wr, 0);
 						if (ret != 0) {
 							errno = ret;
 							fprintf(stderr, "error posting one-sided send requests to split qp, errno = %d\n", errno);
 							goto out;
 						}
 
-						if (swr.send_flags == (orig_send_flags | IBV_SEND_SIGNALED)) {
+						if (swr.exp_send_flags == (orig_send_flags | IBV_SEND_SIGNALED)) {
 							if (SPLIT_USE_EVENT) {
 								ret = ibv_get_cq_event(qp->split_comp_send_channel, &ev_cq, &ev_ctx);
 								if (ret) {
@@ -2972,10 +2983,10 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_exp_send_wr *wr,
 					current_length -= split_chunk_size * num_wrs_to_split_qp;
 
 					swr.wr_id = wr->wr_id;
-					swr.opcode = wr->opcode;
+					swr.exp_opcode = wr->opcode;
 					swr.sg_list = &sge;
 					swr.num_sge = 1;
-					swr.send_flags = orig_send_flags;
+					swr.exp_send_flags = orig_send_flags;
 					swr.wr.rdma.remote_addr = wr->wr.rdma.remote_addr + split_chunk_size * i;
 					swr.wr.rdma.rkey = wr->wr.rdma.rkey;
 					swr.next = NULL;
@@ -2986,7 +2997,7 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_exp_send_wr *wr,
 					//printf("sge->addr:%" PRIu64 "; send_flag: %d\n", sge[i].addr, new_wr[i].send_flags);
 					//printf("DDDDDDD:  i = %d; current_length = %d\n", i, current_length);
 
-					ret = __mlx5_post_send(ibqp, &swr, bad_wr);
+					ret = __mlx5_post_send(ibqp, &swr, (struct ibv_exp_send_wr **)bad_wr, 0);
 					if (ret != 0) {
 						errno = ret;
 						//printf("DEBUG POST SEND REALLY BAD!!, errno = %d\n", errno);
@@ -3035,7 +3046,7 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_exp_send_wr *wr,
 					}
 					current_wr->next = NULL;
 					// those WRs are handled by the split qp
-					ret = __mlx5_post_send(qp->split_qp, wr_head, bad_wr);
+					ret = __mlx5_post_send(qp->split_qp, (struct ibv_exp_send_wr *)wr_head, (struct ibv_exp_send_wr **)bad_wr, 0);
 					if (ret != 0) {
 						errno = ret;
 						fprintf(stderr, "error posting one-sided send requests to split qp, errno = %d\n", errno);
@@ -3114,7 +3125,7 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_exp_send_wr *wr,
 					//printf("sge->addr:%" PRIu64 "; send_flag: %d\n", sge[i].addr, new_wr[i].send_flags);
 					//printf("DDDDDDD:  i = %d; current_length = %d\n", i, current_length);
 
-					ret = __mlx5_post_send(ibqp, &new_wr[i], bad_wr);
+					ret = __mlx5_post_send(ibqp, (struct ibv_exp_send_wr *)&new_wr[i], (struct ibv_exp_send_wr **)bad_wr, 0);
 					if (ret != 0) {
 						errno = ret;
 						//printf("DEBUG POST SEND REALLY BAD!!, errno = %d\n", errno);
@@ -3133,7 +3144,7 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_exp_send_wr *wr,
 		}
 
 		//// if not splitting or other atomic verbs, act like normal
-		ret = __mlx5_post_send(ibqp, wr, bad_wr);
+		ret = __mlx5_post_send(ibqp, (struct ibv_exp_send_wr *)wr, (struct ibv_exp_send_wr **)bad_wr, 0);
 	}
 out:
 	mlx5_unlock(&qp->sq.lock);
@@ -3212,16 +3223,6 @@ int mlx5_exp_rollback_send(struct ibv_qp *ibqp,
 	return 0;
 }
 
-//// ceil helper
-int ceil_helper(float num_chunks) {
-    int inum_chunks = (int)num_chunks;
-    if (num_chunks == (float)inum_chunks) {
-        return inum_chunks;
-    }
-    return inum_chunks + 1;
-}
-////
-
 int mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 		   struct ibv_send_wr **bad_wr)
 {
@@ -3241,8 +3242,7 @@ int mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 	}
 #endif
 
-	return split_mlx5_post_send(ibqp, (struct ibv_exp_send_wr *)wr,
-				(struct ibv_exp_send_wr **)bad_wr);
+	return split_mlx5_post_send(ibqp, wr, bad_wr);
 }
 
 int mlx5_exp_post_send(struct ibv_qp *ibqp, struct ibv_exp_send_wr *wr,
