@@ -1184,7 +1184,28 @@ struct ibv_qp *mlx4_create_qp(struct ibv_pd *pd, struct ibv_qp_init_attr *attr)
 	if ((fd_shm = shm_open(SHARED_MEM_NAME, O_RDWR, 0600)) == -1){
 		printf("@@@Pacer's shared memory is not found. Pacer won't be used.\n");
 	} else {
-		atexit(set_inactive_on_exit);
+		if (!registered) {
+			registered = 1;
+			/* set up signal handler */
+		    struct sigaction new_action, old_action;
+		    new_action.sa_handler = termination_handler;
+		    sigemptyset(&new_action.sa_mask);
+		    new_action.sa_flags = 0;
+
+		    sigaction(SIGINT, NULL, &old_action);
+		    if (old_action.sa_handler != SIG_IGN)
+		        sigaction(SIGINT, &new_action, NULL);
+
+		    sigaction(SIGHUP, NULL, &old_action);
+		    if (old_action.sa_handler != SIG_IGN)
+		        sigaction(SIGHUP, &new_action, NULL);
+
+		    sigaction(SIGTERM, NULL, &old_action);
+		    if (old_action.sa_handler != SIG_IGN)
+		        sigaction(SIGTERM, &new_action, NULL);
+		    /* end */
+			atexit(set_inactive_on_exit);
+		}
 		sb = mmap(NULL, sizeof(struct shared_block), PROT_WRITE | PROT_READ,
 			MAP_SHARED, fd_shm, 0);
 		contact_pacer();
@@ -1192,6 +1213,7 @@ struct ibv_qp *mlx4_create_qp(struct ibv_pd *pd, struct ibv_qp_init_attr *attr)
 		printf("@@@At slot %d.\n", slot);
 	}
 	/* end */
+
 
 	return qp;
 
