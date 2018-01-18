@@ -1270,6 +1270,10 @@ int mlx5_destroy_qp(struct ibv_qp *qp);
 void mlx5_init_qp_indices(struct mlx5_qp *qp);
 void mlx5_init_rwq_indices(struct mlx5_rwq *rwq);
 void mlx5_update_post_send_one(struct mlx5_qp *qp, enum ibv_qp_state qp_state, enum ibv_qp_type	qp_type);
+int __mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
+			  struct ibv_send_wr **bad_wr) __MLX5_ALGN_F__;
+int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
+			  struct ibv_send_wr **bad_wr) __MLX5_ALGN_F__;
 int mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 			  struct ibv_send_wr **bad_wr) __MLX5_ALGN_F__;
 int mlx5_exp_post_send(struct ibv_qp *ibqp, struct ibv_exp_send_wr *wr,
