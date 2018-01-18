@@ -2,8 +2,10 @@
 #define VERBS_PACER_H
 
 #include "pacer.h"
+#include <signal.h>
 
 unsigned int slot;
+static int registered = 0;
 extern int never_active;
 
 static void contact_pacer() {
@@ -61,5 +63,11 @@ static void set_inactive_on_exit() {
         __atomic_store_n(&flow->active, 0, __ATOMIC_RELAXED);
         printf("libmlx4 exit\n");
     }
+}
+
+static void termination_handler(int sig)
+{
+    set_inactive_on_exit();
+    _exit(1);
 }
 #endif
