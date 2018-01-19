@@ -50,7 +50,6 @@
 #include "qp_pacer.h"
 #include <inttypes.h>
 int isSmall = 1; /* 0: elephant flow, 1: mouse flow */
-int never_active = 1;
 /* end */
 
 #ifndef htobe64
@@ -1208,12 +1207,12 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 			//if (wr->sg_list->length <= MAX_SMALL) {
 			if (qp->isSmall == 1) {
 				isSmall = 1;
-				never_active = 0;
+				num_active_small_flows++;
 				printf("DEBUG POST SEND: INDEED increment SMALL flow counter\n");
 				__atomic_fetch_add(&sb->num_active_small_flows, 1, __ATOMIC_RELAXED);
 			} else if (qp->isSmall == 0) {
 				isSmall = 0;
-				never_active = 0;
+				num_active_big_flows++;
 				printf("DEBUG POST SEND: INDEED increment BIG flow counter\n");
 				__atomic_fetch_add(&sb->num_active_big_flows, 1, __ATOMIC_RELAXED);
 			}
@@ -3170,6 +3169,15 @@ int mlx4_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr,
 	struct mlx4_inlr_rbuff *rbuffs;
 
 	mlx4_lock(&qp->rq.lock);
+
+	if (unlikely(start_recv)) {
+		start_recv = 0;
+		if (qp->isSmall) {
+			num_active_small_flows++;
+			__atomic_fetch_add(&sb->num_active_small_flows, 1, __ATOMIC_RELAXED);
+			printf("DEBUG POST RECV increment SMALL counter\n");
+		}
+	}
 
 	//// Buffer all recv requests if qp is at INIT state.
 	//// Split qp shall never post RRs at its own INIT state

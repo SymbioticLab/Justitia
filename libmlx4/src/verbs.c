@@ -63,6 +63,9 @@
 struct flow_info *flow = NULL;
 struct shared_block *sb = NULL;
 int start_flag = 0;
+int start_recv = 0;
+int num_active_small_flows = 0;
+int num_active_big_flows = 0;
 /* end */
 
 int __mlx4_query_device(uint64_t raw_fw_ver,
@@ -1329,6 +1332,9 @@ int rr_buffer_post_and_clear(struct rr_buffer *rr_buf, struct ibv_qp *qp) {
 int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 		    int attr_mask)
 {
+	start_flag = 0;
+	start_recv = 0;
+
 	struct ibv_modify_qp cmd;
 	int ret;
 	//// do the same state transition for custom qp.
@@ -1493,8 +1499,6 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 			}
 
 		}
-		//// Set start_flag to 1
-		start_flag = 1;
 	} else {	// a general solution for split qp qpn exchange
 		if (qp->state == IBV_QPS_RESET && attr->qp_state == IBV_QPS_INIT) {
 			//// USER QP RESET->INIT transition.
@@ -1663,7 +1667,6 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 				printf("<<<<Received remote qpn: %06x\n", remote_split_qpn);
 				printf("<<<<Received remote sq_psn: %06x\n", remote_split_sq_psn);
 			}
-
 			// Reset user QP and move to RTR
 			int reset_mask = IBV_QP_STATE;
 			struct ibv_qp_attr temp_reset_attr;
@@ -1755,9 +1758,6 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 					goto err;
 				}
 			}
-
-			//// Set start_flag to 1 after possible split qp info exchange
-			start_flag = 1;
 		} else {
 			//// modify original user's qp state. In this case, the user can move her qp to RTS
 			ret = ibv_cmd_modify_qp(qp, attr, attr_mask, &cmd, sizeof cmd);
@@ -1807,7 +1807,8 @@ check:
 			////
 		}
 	}
-
+	start_flag = 1;
+	start_recv = 1;
 err:
 	return ret;
 }

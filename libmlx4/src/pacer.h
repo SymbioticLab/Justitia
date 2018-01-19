@@ -34,9 +34,12 @@ struct shared_block {
     uint16_t num_active_small_flows;
 };
 
-extern struct flow_info *flow;  /* declaration; initialization inside verbs.c */
-extern struct shared_block *sb; /* declaration; initialization inside verbs.c */
-extern int start_flag;          /* Initialized in verbs.c */
-extern int isSmall;             /* initialized in qp.c */
+extern struct flow_info *flow;     /* declaration; initialization in verbs.c */
+extern struct shared_block *sb;    /* declaration; initialization in verbs.c */
+extern int start_flag;             /* Initialized in verbs.c */
+extern int start_recv;             /* initialized in qp.c */
+extern int isSmall;                /* initialized in qp.c */
+extern int num_active_small_flows; /* initialized in verbs.c */
+extern int num_active_big_flows;   /* initialized in verbs.c */
 
 #endif

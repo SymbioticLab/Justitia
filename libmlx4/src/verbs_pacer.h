@@ -6,7 +6,6 @@
 
 unsigned int slot;
 static int registered = 0;
-extern int never_active;
 
 static void contact_pacer() {
     /* prepare unix domain socket */
@@ -52,12 +51,12 @@ static void contact_pacer() {
 
 static void set_inactive_on_exit() {
     if (flow) {
-        if (!never_active) {
-            if (isSmall) {
-                __atomic_fetch_sub(&sb->num_active_small_flows, 1, __ATOMIC_RELAXED);
-            } else {
-                __atomic_fetch_sub(&sb->num_active_big_flows, 1, __ATOMIC_RELAXED);
-            }
+        if (isSmall) {
+            __atomic_fetch_sub(&sb->num_active_small_flows, num_active_small_flows, __ATOMIC_RELAXED);
+            printf("DEBUG decrement SMALL counter by %d\n", num_active_small_flows);
+        } else {
+            __atomic_fetch_sub(&sb->num_active_big_flows, num_active_big_flows, __ATOMIC_RELAXED);
+            printf("DEBUG decrement BIG counter by %d\n", num_active_big_flows);
         }
         __atomic_store_n(&flow->pending, 0, __ATOMIC_RELAXED);
         __atomic_store_n(&flow->active, 0, __ATOMIC_RELAXED);
