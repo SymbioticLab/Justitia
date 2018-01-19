@@ -1,0 +1,5 @@
+perftest (4.2-0.2.g4f56894.42120) stable; urgency=low
+
+  * Initial release For Ubuntu (Closes: #182805)
+
+ -- Gil Rockah <gilr@dev.mellanox.co.il>  Sun, 29 Mar 2015 10:58:00 +0200
