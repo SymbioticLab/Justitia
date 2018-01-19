@@ -60,6 +60,9 @@ AC_CHECK_LIB(ibverbs, ibv_get_device_list, [],
 AC_CHECK_LIB(ibverbs, ibv_register_driver_ext,
     AC_DEFINE(HAVE_IBV_EXT, 1, [adding verbs extension support]))
 
+AC_CHECK_LIB(rt, shm_open, [],
+    AC_MSG_ERROR([shm_open() not found. libibverbs requires librt.]))
+
 dnl Checks for header files.
 AC_CHECK_HEADER(infiniband/driver.h, [],
     AC_MSG_ERROR([<infiniband/driver.h> not found.  libmlx5 requires libibverbs.]))

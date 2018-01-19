@@ -2392,12 +2392,22 @@ struct ibv_qp *mlx5_create_qp(struct ibv_pd *pd,
 	struct ibv_qp 		*split_qp;
 	struct ibv_qp 		*split_qp2;
 	split_qp2 = __mlx5_create_qp(pd, &split_init_attr2);
+	if (split_qp2 == NULL) {
+		printf("Create split qp2 failed. %s\n", strerror(errno));
+	}
 	printf("DEBUG mlx5_create_qp: split_qp->qpn = %06x\n", split_qp2->qp_num);
 
 	split_qp = __mlx5_create_qp(pd, &split_init_attr);
+	if (split_qp == NULL) {
+		printf("Create split qp failed. %s\n", strerror(errno));
+	}
+
 	printf("DEBUG mlx5_create_qp: split_qp->qpn = %06x\n", split_qp->qp_num);
 	//// Now create the user's qp
 	qp = __mlx5_create_qp(pd, attr);
+	if (qp == NULL) {
+		printf("Create user qp failed. %s\n", strerror(errno));
+	}
 	printf("DEBUG mlx5_create_qp: orig_qp->qpn = %06x\n", qp->qp_num);
 	//// store split_qp & split_cq inside the user's qp
 	if (qp) {
@@ -2429,6 +2439,7 @@ struct ibv_qp *mlx5_create_qp(struct ibv_pd *pd,
 	////
 
 	/* isolation */
+	
 	int fd_shm;
 	if ((fd_shm = shm_open(SHARED_MEM_NAME, O_RDWR, 0600)) == -1){
 		printf("@@@Pacer's shared memory is not found. Pacer won't be used.\n");
