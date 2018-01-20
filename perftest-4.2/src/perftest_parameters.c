@@ -1908,7 +1908,7 @@ int parser(struct perftest_parameters *user_param,char *argv[], int argc)
 			#endif
 			{ 0 }
 		};
-		c = getopt_long(argc,argv,"w:y:p:d:i:m:s:n:t:u:S:x:c:q:I:o:M:r:Q:A:l:D:f:B:T:E:J:j:K:k:X:aFegzRvhbNVCHUOZP",long_options,NULL);
+		c = getopt_long(argc,argv,"w:y:p:d:i:m:s:n:t:u:S:x:c:q:I:o:M:r:Q:A:l:L:D:f:B:T:E:J:j:K:k:X:aFegzRvhbNVCHUOZP",long_options,NULL);
 
 		if (c == -1)
 			break;
