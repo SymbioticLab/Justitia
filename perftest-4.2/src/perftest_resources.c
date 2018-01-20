@@ -4223,11 +4223,11 @@ int run_iter_lat_write(struct pingpong_context *ctx,struct perftest_parameters *
 {
 	uint64_t                scnt = 0;
 	uint64_t                ccnt = 0;
-	uint64_t                rcnt = 0;
+	//uint64_t                rcnt = 0;
 	int                     ne;
 	int			err = 0;
-	int 			poll_buf_offset = 0;
-	volatile char           *poll_buf = NULL;
+	//int 			poll_buf_offset = 0;
+	//volatile char           *poll_buf = NULL;
 	volatile char           *post_buf = NULL;
 	#ifdef HAVE_VERBS_EXP
 	struct ibv_exp_send_wr  *bad_exp_wr = NULL;
@@ -4255,11 +4255,11 @@ int run_iter_lat_write(struct pingpong_context *ctx,struct perftest_parameters *
 	}
 	#endif
 
-	if((user_param->use_xrc || user_param->connection_type == DC))
-		poll_buf_offset = 1;
+	//if((user_param->use_xrc || user_param->connection_type == DC))
+	//	poll_buf_offset = 1;
 
 	post_buf = (char*)ctx->buf[0] + user_param->size - 1;
-	poll_buf = (char*)ctx->buf[0] + (user_param->num_of_qps + poll_buf_offset)*BUFF_SIZE(ctx->size, ctx->cycle_buffer) + user_param->size - 1;
+	//poll_buf = (char*)ctx->buf[0] + (user_param->num_of_qps + poll_buf_offset)*BUFF_SIZE(ctx->size, ctx->cycle_buffer) + user_param->size - 1;
 
 	/* Duration support in latency tests. */
 	if (user_param->test_type == DURATION) {
@@ -4274,13 +4274,13 @@ int run_iter_lat_write(struct pingpong_context *ctx,struct perftest_parameters *
 	}
 
 	/* Done with setup. Start the test. */
-	while (scnt < user_param->iters || ccnt < user_param->iters || rcnt < user_param->iters
+	while (scnt < user_param->iters || ccnt < user_param->iters /*|| rcnt < user_param->iters */
 			|| ((user_param->test_type == DURATION && user_param->state != END_STATE))) {
 
-		if ((rcnt < user_param->iters || user_param->test_type == DURATION) && !(scnt < 1 && user_param->machine == SERVER)) {
-			rcnt++;
-			while (*poll_buf != (char)rcnt && user_param->state != END_STATE);
-		}
+		//if ((rcnt < user_param->iters || user_param->test_type == DURATION) && !(scnt < 1 && user_param->machine == SERVER)) {
+		//	rcnt++;
+		//	while (*poll_buf != (char)rcnt && user_param->state != END_STATE);
+		//}
 
 		if (scnt < user_param->iters || user_param->test_type == DURATION) {
 

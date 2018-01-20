@@ -2998,10 +2998,14 @@ void print_report_lat (struct perftest_parameters *user_param)
 	cycles_t *delta = NULL;
 	const char* units;
 	double latency, stdev, average_sum = 0 , average, stdev_sum = 0;
-	int iters_99, iters_99_9;
-	int measure_cnt;
+	int iters_99, iters_99_9, iters_99_99;
+	int measure_cnt, start_ind, end_ind;
 
 	measure_cnt = (user_param->tst == LAT) ? user_param->iters - 1 : (user_param->iters) / user_param->reply_every;
+	start_ind = user_param->iters / 3;
+	end_ind = user_param->iters * 2 / 3 + 1;
+	end_ind = end_ind < measure_cnt ? end_ind : measure_cnt;
+	measure_cnt = end_ind - start_ind;
 	rtt_factor = (user_param->verb == READ || user_param->verb == ATOMIC) ? 1 : 2;
 	ALLOCATE(delta, cycles_t, measure_cnt);
 
@@ -3069,6 +3073,7 @@ void print_report_lat (struct perftest_parameters *user_param)
 	stdev = sqrt(stdev_sum / measure_cnt);
 	iters_99 = ceil((measure_cnt) * 0.99);
 	iters_99_9 = ceil((measure_cnt) * 0.999);
+	iters_99_99 = ceil((measure_cnt) * 0.9999);
 
 	if (user_param->output == OUTPUT_LAT)
 		printf("%lf\n",average);
@@ -3084,6 +3089,17 @@ void print_report_lat (struct perftest_parameters *user_param)
 				delta[iters_99] / cycles_rtt_quotient,
 				delta[iters_99_9] / cycles_rtt_quotient);
 		printf( user_param->cpu_util_data.enable ? REPORT_EXT_CPU_UTIL : REPORT_EXT , calc_cpu_util(user_param));
+		printf("calculated duration start=%.2fmin\n", (user_param->tposted[start_ind] - user_param->tposted[0]) / cycles_to_units / 60000000);
+		printf("calculated duration end=%.2fmin\n", (user_param->tposted[end_ind] - user_param->tposted[0]) / cycles_to_units / 60000000);
+		printf("duration of interest = %.2f usec\n", (user_param->tposted[end_ind] - user_param->tposted[start_ind]) / cycles_to_units);
+		printf("first post send timestamp (usec): %.2f\n", (user_param->tposted[0]) / cycles_to_units);
+		printf("last post send timestamp (usec): %.2f\n", (user_param->tposted[user_param->iters - 1]) / cycles_to_units);
+		printf("total duration (usec): %.2f\n", (user_param->tposted[user_param->iters - 1] - user_param->START_CYCLE) / cycles_to_units);
+		printf("[message per sec] = %.2f \n", (end_ind - start_ind) / ((double)(user_param->tposted[end_ind] - user_param->tposted[start_ind]) / cycles_to_units / 1000000));
+		printf("%.2f\n", median / cycles_rtt_quotient);
+		printf("%.2f\n", delta[iters_99] / cycles_rtt_quotient);
+		printf("%.2f\n", delta[iters_99_9] / cycles_rtt_quotient);
+		printf("%.2f\n", delta[iters_99_99] / cycles_rtt_quotient);
 	}
 
 	free(delta);

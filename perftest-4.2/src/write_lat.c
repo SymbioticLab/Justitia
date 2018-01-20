@@ -222,6 +222,16 @@ int main(int argc, char *argv[])
 
 	ctx_set_send_wqes(&ctx,&user_param,rem_dest);
 
+	//// make ib_write_lat unidirectional
+	if (user_param.machine == SERVER) {
+		if (ctx_hand_shake(&user_comm,&my_dest[0],&rem_dest[0])) {
+				fprintf(stderr," Failed to exchange data between server and clients\n");
+				return FAILURE;
+		}
+
+		return 0;
+	}
+
 	if (user_param.output == FULL_VERBOSITY) {
 		printf(RESULT_LINE);
 		printf("%s",(user_param.test_type == ITERATIONS) ? RESULT_FMT_LAT : RESULT_FMT_LAT_DUR);
@@ -249,8 +259,14 @@ int main(int argc, char *argv[])
 		user_param.test_type == ITERATIONS ? print_report_lat(&user_param) : print_report_lat_duration(&user_param);
 	}
 
-	if (user_param.output == FULL_VERBOSITY) {
-		printf(RESULT_LINE);
+	//// make ib_write_lat unidirectional
+	if (ctx_hand_shake(&user_comm,&my_dest[0],&rem_dest[0])) {
+		fprintf(stderr," Failed to exchange data between server and clients\n");
+		return FAILURE;
 	}
+
+	//if (user_param.output == FULL_VERBOSITY) {
+	//	printf(RESULT_LINE);
+	//}
 	return 0;
 }
