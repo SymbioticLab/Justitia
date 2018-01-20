@@ -619,6 +619,8 @@ struct ibv_qp_init_attr {
 	int			sq_sig_all;
 	/* Below is needed for backwards compatabile */
 	struct ibv_xrc_domain  *xrc_domain;
+	//// NOTE: if later has issue, move isSmall before xrc_domian, since in create_qp it will call offsetof to only copy thins upto xrc_domian
+	//// Not sure why it magically works with the current position of isSmall.
 	//// User can set. In a memset-0 case should be elephant by dafault
 	int isSmall;
 	////
