@@ -3172,10 +3172,12 @@ int mlx4_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr,
 
 	if (unlikely(start_recv)) {
 		start_recv = 0;
-		if (qp->isSmall) {
-			num_active_small_flows++;
-			__atomic_fetch_add(&sb->num_active_small_flows, 1, __ATOMIC_RELAXED);
-			printf("DEBUG POST RECV increment SMALL counter\n");
+		if (sb){
+			if(qp->isSmall) {
+				num_active_small_flows++;
+				__atomic_fetch_add(&sb->num_active_small_flows, 1, __ATOMIC_RELAXED);
+				printf("DEBUG POST RECV increment SMALL counter\n");
+			}
 		}
 	}
 
