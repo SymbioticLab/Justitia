@@ -258,6 +258,8 @@ static void usage(const char *argv0, VerbType verb, TestType tst, int connection
 		printf(" Post list of WQEs of <list size> size (instead of single post)\n");
 	}
 
+	printf("  -L, --output_log=<log_filename>\n");
+
 	if (tst != FS_RATE) {
 		if (connection_type == RawEth) {
 			printf("  -m, --mtu=<mtu> ");
@@ -632,6 +634,9 @@ static void init_perftest_params(struct perftest_parameters *user_param)
 	user_param->iters		= (user_param->tst == BW && user_param->verb == WRITE) ? DEF_ITERS_WB : DEF_ITERS;
 	user_param->dualport		= OFF;
 	user_param->post_list		= 1;
+	////
+	user_param->output_log = "temp_out.txt";
+	////
 	user_param->use_srq		= OFF;
 	user_param->use_xrc		= OFF;
 	user_param->use_rss		= OFF;
@@ -1328,8 +1333,12 @@ static void force_dependecies(struct perftest_parameters *user_param)
 	if (user_param->verb == SEND && (user_param->rx_depth % 2 == 1) && user_param->test_method == RUN_REGULAR)
 		user_param->rx_depth += 1;
 
+	//// can't turn on noPeak
+	/*
 	if (user_param->test_type == ITERATIONS && user_param->iters > 20000 && user_param->noPeak == OFF && user_param->tst == BW)
 		user_param->noPeak = ON;
+	*/
+	////
 
 	if (!(user_param->duration > 2*user_param->margin)) {
 		printf(RESULT_LINE);
@@ -1815,6 +1824,9 @@ int parser(struct perftest_parameters *user_param,char *argv[], int argc)
 			{ .name = "atomic_type",	.has_arg = 1, .val = 'A' },
 			{ .name = "dualport",		.has_arg = 0, .val = 'O' },
 			{ .name = "post_list",		.has_arg = 1, .val = 'l' },
+			////
+			{ .name = "output_log",		.has_arg = 1, .val = 'L' },
+			////
 			{ .name = "duration",		.has_arg = 1, .val = 'D' },
 			{ .name = "margin",		.has_arg = 1, .val = 'f' },
 			{ .name = "source_mac",		.has_arg = 1, .val = 'B' },
@@ -1964,6 +1976,7 @@ int parser(struct perftest_parameters *user_param,char *argv[], int argc)
 				  }
 				  break;
 			case 'l': user_param->post_list = strtol(optarg, NULL, 0); break;
+			case 'L': user_param->output_log = optarg; break;
 			case 'D': user_param->duration = strtol(optarg, NULL, 0);
 				printf("get the pcpc flag %s\n",optarg);
 				  if (user_param->duration <= 0) {
@@ -2008,10 +2021,10 @@ int parser(struct perftest_parameters *user_param,char *argv[], int argc)
 				  }
 				  break;
 			case 'e': user_param->use_event = ON;
-				  if (user_param->verb == WRITE) {
-					  fprintf(stderr," Events feature not available on WRITE verb\n");
-					  return 1;
-				  }
+				  //if (user_param->verb == WRITE) {
+					 // fprintf(stderr," Events feature not available on WRITE verb\n");
+					 // return 1;
+				  //}
 				  break;
 			case 'X':
 				  if (user_param->verb == WRITE) {
@@ -2800,8 +2813,9 @@ void print_report_bw (struct perftest_parameters *user_param, struct bw_report_d
 	if((user_param->connection_type == DC ||user_param->use_xrc) && user_param->duplex)
 		num_of_qps /= 2;
 
+	/*
 	if (user_param->noPeak == OFF) {
-		/* Find the peak bandwidth unless asked not to in command line */
+		// Find the peak bandwidth unless asked not to in command line
 		for (i = 0; i < num_of_calculated_iters * num_of_qps; ++i) {
 			for (j = i; j < num_of_calculated_iters * num_of_qps; ++j) {
 				t = (user_param->tcompleted[j] - user_param->tposted[i]) / (j - i + 1);
@@ -2813,6 +2827,7 @@ void print_report_bw (struct perftest_parameters *user_param, struct bw_report_d
 			}
 		}
 	}
+	*/
 
 	cycles_to_units = get_cpu_mhz(user_param->cpu_freq_f) * 1000000;
 	if ((cycles_to_units == 0 && !user_param->cpu_freq_f)) {
@@ -2828,6 +2843,8 @@ void print_report_bw (struct perftest_parameters *user_param, struct bw_report_d
 	format_factor = (user_param->report_fmt == MBS) ? 0x100000 : 125000000;
 
 	sum_of_test_cycles = ((double)(user_param->tcompleted[location_arr] - user_param->tposted[0]));
+	printf("TOTAL duration = %.2f\n", sum_of_test_cycles * 1000000 / cycles_to_units);
+	printf("[message per sec] = %.2f\n", ((double)num_of_calculated_iters * cycles_to_units * run_inf_bi_factor) /sum_of_test_cycles);
 
 	double bw_avg = ((double)tsize*num_of_calculated_iters * cycles_to_units) / (sum_of_test_cycles * format_factor);
 	double msgRate_avg = ((double)num_of_calculated_iters * cycles_to_units * run_inf_bi_factor) / (sum_of_test_cycles * 1000000);
@@ -2840,6 +2857,28 @@ void print_report_bw (struct perftest_parameters *user_param, struct bw_report_d
 
 	peak_up = !(user_param->noPeak)*(cycles_t)tsize*(cycles_t)cycles_to_units;
 	peak_down = (cycles_t)opt_delta * format_factor;
+
+	FILE *f = fopen(user_param->output_log, "w");
+	//fprintf(f, "Task_cnt\tTime(us)\n");
+	fprintf(f, "Task_cnt\tTime(us)\t\tLatency(us)\n");
+	//fprintf(f, "Task_cnt\tTime(us)\tTcompleted\tTposted\n");
+	double cpu_mhz = get_cpu_mhz(user_param->cpu_freq_f);
+	double curr_time_us;
+	for (i = 0; i < user_param->iters * user_param->num_of_qps; ++i) {
+		if (user_param->tcompleted[i] == 0) {
+			curr_time_us = 0;
+		} else {
+			curr_time_us = (double)(user_param->tcompleted[i] - user_param->START_CYCLE) / cpu_mhz;
+		}
+		//fprintf(f, "%ld\t\t%.2f\n", i + 1, curr_time_us);
+		fprintf(f, "%ld\t\t%.2f\t\t%.2f\n", i + 1, curr_time_us, (double)((double)(user_param->tcompleted[i] - user_param->tposted[i])) / cpu_mhz);
+		//fprintf(f, "%ld\t\t%.2f\t\t%.2f\t\t%.2f\n", i + 1, curr_time_us, user_param->tcompleted[i] / cpu_mhz, user_param->tposted[i] / cpu_mhz);
+	}
+	//fprintf(f, "START_CYCLE / cpu_mhz: %.2f\n", user_param->START_CYCLE / cpu_mhz);
+	fprintf(f, "START1: %.2f, START2: %.2f, START_DIFF: %.2f\n", user_param->START_CYCLE / cpu_mhz, user_param->START_CYCLE2 / cpu_mhz, user_param->START_CYCLE2 / cpu_mhz - user_param->START_CYCLE / cpu_mhz);
+	fprintf(f, "DIFF2: %.2f\n", (user_param->tposted[0] - user_param->START_CYCLE) / cpu_mhz);
+	fprintf(f, "tposted[0] (usec): %.2f\n", user_param->tposted[0] / cpu_mhz);
+	fclose(f);
 
 	if (my_bw_rep == NULL) {
 		free_my_bw_rep = 1;

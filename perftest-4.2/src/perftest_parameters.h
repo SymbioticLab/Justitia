@@ -498,6 +498,11 @@ struct perftest_parameters {
 	int                             vlan_en;
 	uint32_t			vlan_pcp;
 	void 				(*print_eth_func)(void*);
+	////
+	cycles_t		START_CYCLE;
+	cycles_t		START_CYCLE2;
+	char 			*output_log;
+	////
 
 };
 

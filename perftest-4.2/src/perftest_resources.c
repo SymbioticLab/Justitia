@@ -3193,6 +3193,9 @@ int run_iter_bw(struct pingpong_context *ctx,struct perftest_parameters *user_pa
 					#endif
 				}
 
+				if (totscnt == 0) {
+                    user_param->START_CYCLE2 = get_cycles();
+                }
 				if (user_param->noPeak == OFF)
 					user_param->tposted[totscnt] = get_cycles();
 
@@ -3332,7 +3335,8 @@ int run_iter_bw(struct pingpong_context *ctx,struct perftest_parameters *user_pa
 						totccnt += user_param->cq_mod;
 						if (user_param->noPeak == OFF) {
 
-							if (totccnt >=  tot_iters - 1)
+							//if (totccnt >=  tot_iters - 1)
+							if (totccnt >  tot_iters - 1)
 								user_param->tcompleted[user_param->iters*num_of_qps - 1] = get_cycles();
 							else
 								user_param->tcompleted[totccnt-1] = get_cycles();

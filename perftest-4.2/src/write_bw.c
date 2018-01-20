@@ -47,6 +47,7 @@
  ******************************************************************************/
 int main(int argc, char *argv[])
 {
+	cycles_t start_cycle = get_cycles();
 	int				ret_parser,i = 0;
 	struct ibv_device		*ib_dev = NULL;
 	struct pingpong_context		ctx;
@@ -60,6 +61,7 @@ int main(int argc, char *argv[])
 	memset(&user_comm,0,sizeof(struct perftest_comm));
 	memset(&ctx,0,sizeof(struct pingpong_context));
 
+	user_param.START_CYCLE = start_cycle;
 	user_param.verb    = WRITE;
 	user_param.tst     = BW;
 	strncpy(user_param.version, VERSION, sizeof(user_param.version));
@@ -255,6 +257,15 @@ int main(int argc, char *argv[])
 
 		return destroy_ctx(&ctx,&user_param);
 	}
+
+	//// "need to call notify cq once at first to specify the type, otherwise later get_notify call will be blocked forever"
+	if (user_param.use_event) {
+		if (ibv_req_notify_cq(ctx.send_cq, 0)) {
+			fprintf(stderr, "Couldn't request CQ notification\n");
+			return FAILURE;
+		}
+	}
+	////
 
 	if (user_param.test_method == RUN_ALL) {
 
