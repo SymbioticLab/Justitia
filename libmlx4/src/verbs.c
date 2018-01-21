@@ -1211,7 +1211,7 @@ struct ibv_qp *mlx4_create_qp(struct ibv_pd *pd, struct ibv_qp_init_attr *attr)
 		}
 		sb = mmap(NULL, sizeof(struct shared_block), PROT_WRITE | PROT_READ,
 			MAP_SHARED, fd_shm, 0);
-		contact_pacer();
+		contact_pacer(1);
 		flow = &sb->flows[slot];
 		printf("@@@At slot %d.\n", slot);
 	}

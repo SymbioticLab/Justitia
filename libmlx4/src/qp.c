@@ -50,6 +50,7 @@
 #include "qp_pacer.h"
 #include <inttypes.h>
 int isSmall = 1; /* 0: elephant flow, 1: mouse flow */
+int isRead = 0;
 /* end */
 
 #ifndef htobe64
@@ -1213,6 +1214,7 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 			} else if (qp->isSmall == 0) {
 				isSmall = 0;
 				if (wr->opcode == IBV_WR_RDMA_READ) {
+					isRead = 1;
 					contact_pacer_read();
 				} else {
 					num_active_big_flows++;

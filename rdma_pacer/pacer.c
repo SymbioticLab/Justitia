@@ -115,7 +115,12 @@ static void flow_handler()
             send_sge.addr = (uintptr_t)cb.ctx->local_read_buf;
             send_sge.length = BUF_READ_SIZE;
             send_sge.lkey = cb.ctx->local_read_mr->lkey;
-            
+
+            strcpy(cb.ctx->local_read_buf, buf);
+            ibv_post_send(cb.ctx->qp_read, &send_wr, &bad_wr);
+        } 
+        else if (strcmp(buf, "exit") == 0)
+        {
             strcpy(cb.ctx->local_read_buf, buf);
             ibv_post_send(cb.ctx->qp_read, &send_wr, &bad_wr);
         }

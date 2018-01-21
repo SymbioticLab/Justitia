@@ -7,7 +7,7 @@
 unsigned int slot;
 static int registered = 0;
 
-static void contact_pacer() {
+static void contact_pacer(int join) {
     /* prepare unix domain socket */
     unsigned int s, len;
     struct sockaddr_un remote;
@@ -28,24 +28,32 @@ static void contact_pacer() {
         exit(1);
     }
 
-    /* send join message */
-    printf("Sending join message...\n");
-    strcpy(str, "join");
-    if (send(s, str, strlen(str), 0) == -1) {
-        perror("send");
-        exit(1);
-    }
-
-    /* receive the slot number */
-    if ((len = recv(s, str, MSG_LEN, 0)) > 0) {
-        str[len] = '\0';
+    if (!join) {
+        strcpy(str, "exit");
+        if (send(s, str, strlen(str), 0) == -1) {
+            perror("send: exit");
+            exit(1);
+        }
     } else {
-        if (len < 0) perror("recv");
-        else printf("Server closed connection\n");
-        exit(1);
+        /* send join message */
+        printf("Sending join message...\n");
+        strcpy(str, "join");
+        if (send(s, str, strlen(str), 0) == -1) {
+            perror("send: join");
+            exit(1);
+        }
+
+        /* receive the slot number */
+        if ((len = recv(s, str, MSG_LEN, 0)) > 0) {
+            str[len] = '\0';
+        } else {
+            if (len < 0) perror("recv");
+            else printf("Server closed connection\n");
+            exit(1);
+        }
+        slot = strtol(str, NULL, 10);
+        printf("Received slot number.\n");
     }
-    slot = strtol(str, NULL, 10);
-    printf("Received slot number.\n");
     close(s);
 }
 
@@ -54,6 +62,8 @@ static void set_inactive_on_exit() {
         if (isSmall) {
             __atomic_fetch_sub(&sb->num_active_small_flows, num_active_small_flows, __ATOMIC_RELAXED);
             printf("DEBUG decrement SMALL counter by %d\n", num_active_small_flows);
+        } else if (isRead) {
+            contact_pacer(0);
         } else {
             __atomic_fetch_sub(&sb->num_active_big_flows, num_active_big_flows, __ATOMIC_RELAXED);
             printf("DEBUG decrement BIG counter by %d\n", num_active_big_flows);

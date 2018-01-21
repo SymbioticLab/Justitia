@@ -39,6 +39,7 @@ extern struct shared_block *sb;    /* declaration; initialization in verbs.c */
 extern int start_flag;             /* Initialized in verbs.c */
 extern int start_recv;             /* initialized in qp.c */
 extern int isSmall;                /* initialized in qp.c */
+extern int isRead;                 /* initialized in qp.c */
 extern int num_active_small_flows; /* initialized in verbs.c */
 extern int num_active_big_flows;   /* initialized in verbs.c */
 
