@@ -27,6 +27,7 @@ struct pingpong_context *init_monitor_chan(const char *addr, int isclient){
     // do not use gid for now
     memset(&my_dest.gid, 0, sizeof my_dest.gid);
     my_dest.qpn = ctx->qp->qp_num;
+    my_dest.qpn_read = ctx->qp_read->qp_num;
     my_dest.psn = lrand48() & 0xffffff;
     my_dest.rkey = ctx->recv_mr->rkey;
     my_dest.vaddr = (uintptr_t)ctx->recv_buf;
@@ -42,6 +43,10 @@ struct pingpong_context *init_monitor_chan(const char *addr, int isclient){
         if (pp_connect_ctx(ctx, my_dest.psn, ctx->rem_dest))
             return NULL;
 
+    printf("my monitor qp qp_num=%d\n", my_dest.qpn);
+    printf("my send/recv qp qp_num=%d\n", my_dest.qpn_read);
+    printf("remote monitor qp qp_num=%d\n", ctx->rem_dest->qpn);
+    printf("remote send/recv qp qp_num=%d\n", ctx->rem_dest->qpn_read);
     return ctx;
 }
 
@@ -49,7 +54,6 @@ static struct pingpong_context *alloc_monitor_qp() {
     struct ibv_device **dev_list;
     struct ibv_device *ib_dev;
     struct pingpong_context *ctx;
-    struct ibv_exp_device_attr dattr;    
 
     dev_list = ibv_get_device_list(NULL);
     if (!dev_list) {
@@ -65,10 +69,11 @@ static struct pingpong_context *alloc_monitor_qp() {
 
     ctx = calloc(1, sizeof(*ctx));
     if (!ctx) {
-        fprintf(stderr, "Couldn't allocate pingping_context.\n");
+        fprintf(stderr, "Couldn't allocate pingpong_context.\n");
         return NULL;
     }
-    memset(&dattr, 0, sizeof(dattr));
+    
+    /* buffers */
     ctx->send_buf = memalign(sysconf(_SC_PAGE_SIZE), BUF_SIZE);
     if (!ctx->send_buf) {
         fprintf(stderr, "Couldn't allocate send buf.\n");
@@ -79,7 +84,18 @@ static struct pingpong_context *alloc_monitor_qp() {
         fprintf(stderr, "Couldn't allocate recv buf.\n");
         goto clean_send_buf;
     }
+    ctx->local_read_buf = memalign(sysconf(_SC_PAGE_SIZE), BUF_READ_SIZE);
+    if (!ctx->send_buf) {
+        fprintf(stderr, "Couldn't allocate send buf.\n");
+        goto clean_ctx;
+    }
+    ctx->remote_read_buf = memalign(sysconf(_SC_PAGE_SIZE), BUF_READ_SIZE);
+    if (!ctx->recv_buf) {
+        fprintf(stderr, "Couldn't allocate recv buf.\n");
+        goto clean_send_buf;
+    }
     
+    /* device context */
     ctx->context = ibv_open_device(ib_dev);
     if (!ctx->context) {
         fprintf(stderr, "Couldn't get context for %s\n",
@@ -87,6 +103,7 @@ static struct pingpong_context *alloc_monitor_qp() {
         goto clean_recv_buf;
     }
     
+    /* montior qp's pd & mr */
     ctx->pd = ibv_alloc_pd(ctx->context);
     if (!ctx->pd) {
         fprintf(stderr, "Couldn't allocate PD\n");
@@ -106,10 +123,38 @@ static struct pingpong_context *alloc_monitor_qp() {
         goto clean_send_mr;
     }
 
+    /* send/recv qp's qd & mr */
+    ctx->pd_read = ibv_alloc_pd(ctx->context);
+    if (!ctx->pd) {
+        fprintf(stderr, "Couldn't allocate PD_READ\n");
+        goto clean_recv_mr;
+    }
+
+    ctx->local_read_mr = ibv_reg_mr(ctx->pd_read, ctx->local_read_buf, BUF_READ_SIZE, IBV_ACCESS_LOCAL_WRITE);
+    if (!ctx->send_mr) {
+        fprintf(stderr, "Couldn't register LOCAL_READ_MR\n");
+        goto clean_pd_read;
+    }
+
+    // if remote write is allowed then local write must also be allowed
+    ctx->remote_read_mr = ibv_reg_mr(ctx->pd_read, ctx->remote_read_buf, BUF_READ_SIZE, IBV_ACCESS_REMOTE_WRITE|IBV_ACCESS_LOCAL_WRITE);
+    if (!ctx->recv_mr) {
+        fprintf(stderr, "Couldn't register REMOTE_READ_MR\n");
+        goto clean_local_read_mr;
+    }
+
+    /* monitor qp's cq */
     ctx->cq = ibv_create_cq(ctx->context, 2, NULL, NULL, 0);
     if (!ctx->cq) {
         fprintf(stderr, "Couldn't create CQ\n");
-        goto clean_recv_mr;
+        goto clean_remote_read_mr;
+    }
+
+    /* send/recv qp's cq */
+    ctx->cq_read = ibv_create_cq(ctx->context, 2, NULL, NULL, 0);
+    if (!ctx->cq_read) {
+        fprintf(stderr, "Couldn't create CQ_READ\n");
+        goto clean_cq;
     }
 
     {
@@ -124,27 +169,19 @@ static struct pingpong_context *alloc_monitor_qp() {
 	    init_attr.cap.max_inline_data = 100;	// probably not going to use inline there
 	    init_attr.qp_type = IBV_QPT_RC;
         init_attr.isSmall = 1;
-        /*
-        struct ibv_exp_qp_init_attr attr = {
-            .send_cq = ctx->cq,
-            .recv_cq = ctx->cq,
-            .cap = {
-                .max_send_wr = 1,
-                .max_recv_wr = 1,
-                .max_send_sge = 1,
-                .max_recv_sge = 1
-            },
-            .qp_type = IBV_QPT_RC,
-            .pd = ctx->pd,
-            .comp_mask = IBV_EXP_QP_INIT_ATTR_PD,
-            .isSmall = 1
-        };
-        ctx->qp = ibv_exp_create_qp(ctx->context, &attr);
-        */
+        
         ctx->qp = ibv_create_qp(ctx->pd, &init_attr);
         if (!ctx->qp)  {
             fprintf(stderr, "Couldn't create QP\n");
-            goto clean_cq;
+            goto clean_cq_read;
+        }
+
+        init_attr.send_cq = ctx->cq_read;
+        init_attr.recv_cq = ctx->cq_read;
+        ctx->qp_read = ibv_create_qp(ctx->pd_read, &init_attr);
+        if (!ctx->qp_read)  {
+            fprintf(stderr, "Couldn't create QP_READ\n");
+            goto clean_qp;
         }
     }
 
@@ -161,16 +198,34 @@ static struct pingpong_context *alloc_monitor_qp() {
                 IBV_QP_PORT             |
                 IBV_QP_ACCESS_FLAGS)) {
             fprintf(stderr, "Failed to modify QP to INIT\n");
-            goto clean_qp;
+            goto clean_qp_read;
+        }
+        if (ibv_modify_qp(ctx->qp_read, &attr,
+                IBV_QP_STATE            |
+                IBV_QP_PKEY_INDEX       |
+                IBV_QP_PORT             |
+                IBV_QP_ACCESS_FLAGS)) {
+            fprintf(stderr, "Failed to modify QP to INIT\n");
+            goto clean_qp_read;
         }
     }
     ibv_free_device_list(dev_list);
     return ctx;
 
+clean_qp_read:
+    ibv_destroy_qp(ctx->qp_read);
 clean_qp:
     ibv_destroy_qp(ctx->qp);
+clean_cq_read:
+    ibv_destroy_cq(ctx->cq_read);
 clean_cq:
     ibv_destroy_cq(ctx->cq);
+clean_remote_read_mr:
+    ibv_dereg_mr(ctx->remote_read_mr);
+clean_local_read_mr:
+    ibv_dereg_mr(ctx->local_read_mr);
+clean_pd_read:
+    ibv_dealloc_pd(ctx->pd_read);
 clean_recv_mr:
     ibv_dereg_mr(ctx->recv_mr);
 clean_send_mr:
@@ -198,7 +253,7 @@ static struct pingpong_dest * pp_client_exch_dest(const char *servername,
         .ai_socktype = SOCK_STREAM
     };
     char *service;
-    char msg[sizeof "0000:000000:000000:00000000:0000000000000000:00000000000000000000000000000000"];
+    char msg[sizeof "0000:000000:000000:000000:00000000:0000000000000000:00000000000000000000000000000000"];
     int n;
     int sockfd = -1;
     struct pingpong_dest *rem_dest = NULL;
@@ -235,7 +290,7 @@ static struct pingpong_dest * pp_client_exch_dest(const char *servername,
     }
 
     gid_to_wire_gid(&my_dest->gid, gid);
-    sprintf(msg, "%04x:%06x:%06x:%08x:%016Lx:%s", my_dest->lid, my_dest->qpn,
+    sprintf(msg, "%04x:%06x:%06x:%06x:%08x:%016Lx:%s", my_dest->lid, my_dest->qpn, my_dest->qpn_read,
                             my_dest->psn, my_dest->rkey, my_dest->vaddr, gid);
     if (write(sockfd, msg, sizeof msg) != sizeof msg) {
         fprintf(stderr, "Couldn't send local address\n");
@@ -257,7 +312,7 @@ static struct pingpong_dest * pp_client_exch_dest(const char *servername,
     if (!rem_dest)
         goto out;
 
-    sscanf(msg, "%x:%x:%x:%x:%Lx:%s", &rem_dest->lid, &rem_dest->qpn,
+    sscanf(msg, "%x:%x:%x:%x:%x:%Lx:%s", &rem_dest->lid, &rem_dest->qpn, &rem_dest->qpn_read,
                             &rem_dest->psn, &rem_dest->rkey, &rem_dest->vaddr, gid);
     wire_gid_to_gid(gid, &rem_dest->gid);
 
@@ -275,7 +330,7 @@ static struct pingpong_dest * pp_server_exch_dest(struct pingpong_context *ctx,
         .ai_socktype = SOCK_STREAM
     };
     char *service;
-    char msg[sizeof "0000:000000:000000:00000000:0000000000000000:00000000000000000000000000000000"];
+    char msg[sizeof "0000:000000:000000:000000:00000000:0000000000000000:00000000000000000000000000000000"];
     int n;
     int sockfd = -1, connfd;
     struct pingpong_dest *rem_dest = NULL;
@@ -334,7 +389,7 @@ static struct pingpong_dest * pp_server_exch_dest(struct pingpong_context *ctx,
     if (!rem_dest)
         goto out;
 
-    sscanf(msg, "%x:%x:%x:%x:%Lx:%s", &rem_dest->lid, &rem_dest->qpn,
+    sscanf(msg, "%x:%x:%x:%x:%x:%Lx:%s", &rem_dest->lid, &rem_dest->qpn, &rem_dest->qpn_read,
                             &rem_dest->psn, &rem_dest->rkey, &rem_dest->vaddr, gid);
     wire_gid_to_gid(gid, &rem_dest->gid);
 
@@ -351,7 +406,7 @@ static struct pingpong_dest * pp_server_exch_dest(struct pingpong_context *ctx,
 
 
     gid_to_wire_gid(&my_dest->gid, gid);
-    sprintf(msg, "%04x:%06x:%06x:%08x:%016Lx:%s", my_dest->lid, my_dest->qpn,
+    sprintf(msg, "%04x:%06x:%06x:%06x:%08x:%016Lx:%s", my_dest->lid, my_dest->qpn, my_dest->qpn_read,
                             my_dest->psn, my_dest->rkey, my_dest->vaddr, gid);
     if (write(connfd, msg, sizeof msg) != sizeof msg) {
         fprintf(stderr, "Couldn't send local address\n");
@@ -412,6 +467,19 @@ static int pp_connect_ctx(struct pingpong_context *ctx,
         return 1;
     }
 
+    attr.dest_qp_num = dest->qpn_read;
+    if (ibv_modify_qp(ctx->qp_read, &attr,
+        IBV_QP_STATE              |
+        IBV_QP_AV                 |
+        IBV_QP_PATH_MTU           |
+        IBV_QP_DEST_QPN           |
+        IBV_QP_RQ_PSN             |
+        IBV_QP_MAX_DEST_RD_ATOMIC |
+        IBV_QP_MIN_RNR_TIMER)) {
+        fprintf(stderr, "Failed to modify QP_READ to RTR\n");
+        return 1;
+    }
+
     attr.qp_state       = IBV_QPS_RTS;
     attr.timeout        = 14;
     attr.retry_cnt      = 7;
@@ -426,6 +494,16 @@ static int pp_connect_ctx(struct pingpong_context *ctx,
         IBV_QP_SQ_PSN             |
         IBV_QP_MAX_QP_RD_ATOMIC)) {
         fprintf(stderr, "Failed to modify QP to RTS\n");
+        return 1;
+    }
+    if (ibv_modify_qp(ctx->qp_read, &attr,
+        IBV_QP_STATE              |
+        IBV_QP_TIMEOUT            |
+        IBV_QP_RETRY_CNT          |
+        IBV_QP_RNR_RETRY          |
+        IBV_QP_SQ_PSN             |
+        IBV_QP_MAX_QP_RD_ATOMIC)) {
+        fprintf(stderr, "Failed to modify QP_READ to RTS\n");
         return 1;
     }
 

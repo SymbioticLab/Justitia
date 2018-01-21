@@ -41,7 +41,8 @@ struct control_block {
     struct shared_block *sb;
 
     uint64_t tokens;                       /* number of available tokens */
-    uint32_t virtual_link_cap;             /* capacity of the virtual link that elephants go through */    
+    uint32_t virtual_link_cap;             /* capacity of the virtual link that elephants go through */
+    uint32_t remote_read_rate;             /* remote read rate */    
     uint16_t next_slot;
 };
 

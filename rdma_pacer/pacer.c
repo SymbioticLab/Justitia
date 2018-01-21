@@ -209,6 +209,7 @@ int main(int argc, char **argv)
     /* initialize control block */
     cb.tokens = 0;
     cb.virtual_link_cap = LINE_RATE_MB;
+    cb.remote_read_rate = LINE_RATE_MB;
     cb.next_slot = 0;
     cb.sb->active_chunk_size = DEFAULT_CHUNK_SIZE;
     cb.sb->num_active_big_flows = 0;
