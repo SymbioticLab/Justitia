@@ -6,10 +6,10 @@ static const int mtu = IBV_MTU_2048;
 
 static struct pingpong_context * alloc_monitor_qp();
 static struct pingpong_dest * pp_client_exch_dest(const char *, struct pingpong_dest *);
-static struct pingpong_dest * pp_server_exch_dest(struct pingpong_context *, const struct pingpong_dest *);
-static int pp_connect_ctx(struct pingpong_context *, int, struct pingpong_dest *);
+static struct pingpong_dest * pp_server_exch_dest(struct pingpong_context *, const struct pingpong_dest *, int);
+static int pp_connect_ctx(struct pingpong_context *, int, struct pingpong_dest *, int);
 
-struct pingpong_context *init_monitor_chan(const char *addr, int isclient){
+struct pingpong_context *init_monitor_chan(const char *addr, int isclient, int gidx){
     struct pingpong_context *ctx;
     struct pingpong_dest my_dest;
 
@@ -24,8 +24,14 @@ struct pingpong_context *init_monitor_chan(const char *addr, int isclient){
 
     printf("%d", isclient);
     my_dest.lid = ctx->portinfo.lid;
-    // do not use gid for now
-    memset(&my_dest.gid, 0, sizeof my_dest.gid);
+    if (gidx >= 0) {
+		if (ibv_query_gid(ctx->context, ib_port, gidx, &my_dest.gid)) {
+			fprintf(stderr, "Could not get local gid for gid index %d\n", gidx);
+			return 1;
+		}
+	} else {
+		memset(&my_dest.gid, 0, sizeof my_dest.gid);
+    }
     my_dest.qpn = ctx->qp->qp_num;
     my_dest.psn = lrand48() & 0xffffff;
     my_dest.rkey = ctx->recv_mr->rkey;
@@ -34,12 +40,12 @@ struct pingpong_context *init_monitor_chan(const char *addr, int isclient){
     if (isclient)
         ctx->rem_dest = pp_client_exch_dest(addr, &my_dest);
     else
-        ctx->rem_dest = pp_server_exch_dest(ctx, &my_dest);
+        ctx->rem_dest = pp_server_exch_dest(ctx, &my_dest, gidx);
     if (!ctx->rem_dest)
         return NULL;
 
     if (isclient)
-        if (pp_connect_ctx(ctx, my_dest.psn, ctx->rem_dest))
+        if (pp_connect_ctx(ctx, my_dest.psn, ctx->rem_dest, gidx))
             return NULL;
 
     return ctx;
@@ -267,7 +273,8 @@ out:
 }
 
 static struct pingpong_dest * pp_server_exch_dest(struct pingpong_context *ctx,
-                                            const struct pingpong_dest *my_dest) {
+                                            const struct pingpong_dest *my_dest,
+                                            int sgid_idx) {
     struct addrinfo *res, *t;
     struct addrinfo hints = {
         .ai_flags    = AI_PASSIVE,
@@ -368,7 +375,7 @@ static struct pingpong_dest * pp_server_exch_dest(struct pingpong_context *ctx,
         goto out;
     }
 
-    if (pp_connect_ctx(ctx, my_dest->psn, rem_dest)) {
+    if (pp_connect_ctx(ctx, my_dest->psn, rem_dest, sgid_idx)) {
         fprintf(stderr, "Couldn't connect to remote QP\n");
         free(rem_dest);
         rem_dest = NULL;
@@ -382,7 +389,7 @@ out:
 
 static int pp_connect_ctx(struct pingpong_context *ctx, 
                         int my_psn,
-                        struct pingpong_dest *dest)
+                        struct pingpong_dest *dest, int sgid_idx)
 {
     struct ibv_qp_attr attr = {
         .qp_state       = IBV_QPS_RTR,
@@ -399,6 +406,13 @@ static int pp_connect_ctx(struct pingpong_context *ctx,
             .port_num   = ib_port
         }
     };
+
+    if (dest->gid.global.interface_id) {
+		attr.ah_attr.is_global = 1;
+		attr.ah_attr.grh.hop_limit = 1;
+		attr.ah_attr.grh.dgid = dest->gid;
+		attr.ah_attr.grh.sgid_index = sgid_idx;
+	}
 
     if (ibv_modify_qp(ctx->qp, &attr,
         IBV_QP_STATE              |

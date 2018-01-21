@@ -20,7 +20,7 @@ static void error(char *msg)
 
 static void usage()
 {
-    printf("Usage: program remote-addr isclient\n");
+    printf("Usage: program remote-addr isclient [gid_idx]\n");
 }
 
 static inline void cpu_relax() __attribute__((always_inline));
@@ -185,9 +185,15 @@ int main(int argc, char **argv)
     struct monitor_param param;
     char *endPtr;
     param.addr = argv[1];
+    param.gid_idx = -1;
     if (argc == 3)
     {
         param.isclient = strtol(argv[2], &endPtr, 10);
+    }
+    else if (argc == 4)
+    {
+        param.isclient = strtol(argv[2], &endPtr, 10);
+        param.gid_idx = strtol(argv[3], NULL, 10);
     }
     else
     {

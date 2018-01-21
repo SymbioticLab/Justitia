@@ -35,10 +35,11 @@ void monitor_latency(void *arg)
     struct ibv_wc wc;
     const char *servername = ((struct monitor_param *)arg)->addr;
     int isclient = ((struct monitor_param *)arg)->isclient;
+    int gid_idx = ((struct monitor_param *)arg)->gid_idx;
     int num_comp;
     uint32_t temp;
 
-    ctx = init_monitor_chan(servername, isclient);
+    ctx = init_monitor_chan(servername, isclient, gid_idx);
     if (!ctx)
     {
         fprintf(stderr, ">>>exiting monitor_latency\n");

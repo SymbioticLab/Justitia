@@ -45,6 +45,6 @@ struct pingpong_dest {
 	union ibv_gid gid;
 };
 
-struct pingpong_context * init_monitor_chan(const char *, int);
+struct pingpong_context * init_monitor_chan(const char *, int, int);
 
 #endif
