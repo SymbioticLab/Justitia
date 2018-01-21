@@ -84,7 +84,7 @@ static struct pingpong_context *alloc_monitor_qp() {
         fprintf(stderr, "Couldn't allocate recv buf.\n");
         goto clean_send_buf;
     }
-    ctx->local_read_buf = memalign(sysconf(_SC_PAGE_SIZE), BUF_READ_SIZE);
+    ctx->local_read_buf = memalign(sysconf(_SC_PAGE_SIZE), BUF_READ_SIZE * 2);
     if (!ctx->send_buf) {
         fprintf(stderr, "Couldn't allocate send buf.\n");
         goto clean_ctx;

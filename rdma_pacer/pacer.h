@@ -16,6 +16,7 @@
 #include <time.h>
 #include <pthread.h>
 #include <signal.h>
+#include "pingpong.h"
 
 #define SHARED_MEM_NAME "/rdma-fairness"
 #define MAX_FLOWS 100
@@ -40,6 +41,7 @@ struct shared_block {
 struct control_block {
     struct shared_block *sb;
 
+    struct pingpong_context *ctx;
     uint64_t tokens;                       /* number of available tokens */
     uint32_t virtual_link_cap;             /* capacity of the virtual link that elephants go through */
     uint32_t remote_read_rate;             /* remote read rate */    

@@ -1117,7 +1117,7 @@ int __mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 
 	for (nreq = 0; wr; ++nreq, wr = wr->next) {
 		/* isolation */
-		if (isSmall == 0 && flow) {
+		if (isSmall == 0 && flow && wr->opcode != IBV_WR_RDMA_READ) {
 			__atomic_store_n(&flow->pending, 1, __ATOMIC_RELAXED);
 			while (__atomic_load_n(&flow->pending, __ATOMIC_RELAXED))
 				cpu_relax();
@@ -1212,9 +1212,13 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 				__atomic_fetch_add(&sb->num_active_small_flows, 1, __ATOMIC_RELAXED);
 			} else if (qp->isSmall == 0) {
 				isSmall = 0;
-				num_active_big_flows++;
-				printf("DEBUG POST SEND: INDEED increment BIG flow counter\n");
-				__atomic_fetch_add(&sb->num_active_big_flows, 1, __ATOMIC_RELAXED);
+				if (wr->opcode == IBV_WR_RDMA_READ) {
+					contact_pacer_read();
+				} else {
+					num_active_big_flows++;
+					printf("DEBUG POST SEND: INDEED increment BIG flow counter\n");
+					__atomic_fetch_add(&sb->num_active_big_flows, 1, __ATOMIC_RELAXED);
+				}
 			}
 		}
 	}
@@ -3170,16 +3174,16 @@ int mlx4_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr,
 
 	mlx4_lock(&qp->rq.lock);
 
-	if (unlikely(start_recv)) {
-		start_recv = 0;
-		if (sb){
-			if(qp->isSmall) {
-				num_active_small_flows++;
-				__atomic_fetch_add(&sb->num_active_small_flows, 1, __ATOMIC_RELAXED);
-				printf("DEBUG POST RECV increment SMALL counter\n");
-			}
-		}
-	}
+	// if (unlikely(start_recv)) {
+	// 	start_recv = 0;
+	// 	if (sb){
+	// 		if(qp->isSmall) {
+	// 			num_active_small_flows++;
+	// 			__atomic_fetch_add(&sb->num_active_small_flows, 1, __ATOMIC_RELAXED);
+	// 			printf("DEBUG POST RECV increment SMALL counter\n");
+	// 		}
+	// 	}
+	// }
 
 	//// Buffer all recv requests if qp is at INIT state.
 	//// Split qp shall never post RRs at its own INIT state

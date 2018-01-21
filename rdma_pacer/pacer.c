@@ -56,6 +56,17 @@ static void flow_handler()
     struct sockaddr_un local, remote;
     char buf[MSG_LEN];
 
+    struct ibv_send_wr send_wr, *bad_wr = NULL;
+    struct ibv_sge send_sge;
+
+    memset(&send_wr, 0, sizeof send_wr);
+    send_wr.opcode = IBV_WR_SEND;
+    send_wr.sg_list = &send_sge;
+    send_wr.num_sge = 1;
+    send_wr.send_flags = IBV_SEND_INLINE;
+
+    memset(&send_sge, 0, sizeof send_sge);
+
     /* get a socket descriptor */
     if ((s = socket(AF_UNIX, SOCK_STREAM, 0)) == -1)
         error("socket");
@@ -98,6 +109,15 @@ static void flow_handler()
             {
                 cb.next_slot++;
             }
+        } 
+        else if (strcmp(buf, "read") == 0)
+        {
+            send_sge.addr = (uintptr_t)cb.ctx->local_read_buf;
+            send_sge.length = BUF_READ_SIZE;
+            send_sge.lkey = cb.ctx->local_read_mr->lkey;
+            
+            strcpy(cb.ctx->local_read_buf, buf);
+            ibv_post_send(cb.ctx->qp_read, &send_wr, &bad_wr);
         }
     }
 }
