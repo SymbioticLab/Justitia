@@ -39,7 +39,7 @@ void monitor_latency(void *arg)
     int num_comp;
     int num_remote_big_reads = 0;
     uint32_t remote_read_rate;
-    uint32_t temp;
+    uint32_t temp, new_remote_read_rate;
 
     ctx = init_monitor_chan(servername, isclient);
     if (!ctx)
@@ -148,7 +148,7 @@ void monitor_latency(void *arg)
                 num_remote_big_reads--;
             } else {
                 remote_read_rate = (uint32_t)strtol((const char *)ctx->remote_read_buf, NULL, 10);
-                printf("receive bige read rate %" PRIu32 "\n", remote_read_rate);
+                printf("receive new big read rate %" PRIu32 "\n", remote_read_rate);
                 // __atomic_store_n(&cb->sb.local_read_rate, (int)strtol(ctx->remote_read_buf), __ATOMIC_RELAXED);
             }
             if (ibv_post_recv(ctx->qp_read, &recv_wr, &bad_recv_wr))
@@ -184,18 +184,22 @@ void monitor_latency(void *arg)
                     /* Additive Increase */
                     temp++;
                 }
-                __atomic_store_n(&cb.virtual_link_cap, temp, __ATOMIC_RELAXED);
                 if (num_remote_big_reads) {
-                    cb.remote_read_rate = (double)num_remote_big_reads
+                    new_remote_read_rate = (double)num_remote_big_reads
                         / (num_remote_big_reads + num_active_big_flows) * temp;
-                        temp -= cb.remote_read_rate;
-                    // memset((char *)ctx->local_read_buf + BUF_READ_SIZE, 0, BUF_READ_SIZE);
-                    // sprintf((char*)ctx->local_read_buf, "%d", cb.remote_read_rate);
-                    // if (ibv_post_send(ctx->qp_read, &send_wr, &bad_wr))
-                    // {
-                    //     perror("ibv_post_send: send_wr");
-                    // }
+                    temp -= cb.remote_read_rate;
+                    if (new_remote_read_rate != cb.remote_read_rate) {
+                        printf("new remote read rate %" PRIu32 "\n", new_remote_read_rate);
+                        cb.remote_read_rate = new_remote_read_rate;
+                        memset((char *)ctx->local_read_buf + BUF_READ_SIZE, 0, BUF_READ_SIZE);
+                        sprintf((char*)ctx->local_read_buf + BUF_READ_SIZE, "%d", cb.remote_read_rate);
+                        if (ibv_post_send(ctx->qp_read, &send_wr, &bad_wr))
+                        {
+                            perror("ibv_post_send: remote read rate");
+                        }
+                    }
                 }
+                __atomic_store_n(&cb.virtual_link_cap, temp, __ATOMIC_RELAXED);
             }
             else if (__atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED) != LINE_RATE_MB)
             {
