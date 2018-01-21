@@ -3006,7 +3006,8 @@ void print_report_lat (struct perftest_parameters *user_param)
 	end_ind = user_param->iters * 2 / 3 + 1;
 	end_ind = end_ind < measure_cnt ? end_ind : measure_cnt;
 	measure_cnt = end_ind - start_ind;
-	rtt_factor = (user_param->verb == READ || user_param->verb == ATOMIC) ? 1 : 2;
+	//rtt_factor = (user_param->verb == READ || user_param->verb == ATOMIC) ? 1 : 2;
+	rtt_factor = 1;
 	ALLOCATE(delta, cycles_t, measure_cnt);
 
 	if (user_param->r_flag->cycles) {
@@ -3018,12 +3019,12 @@ void print_report_lat (struct perftest_parameters *user_param)
 	}
 
 	if (user_param->tst == LAT) {
-		for (i = 0; i < measure_cnt; ++i) {
-			delta[i] = user_param->tposted[i + 1] - user_param->tposted[i];
+		for (i = start_ind; i < end_ind; ++i) {
+			delta[i - start_ind] = user_param->tposted[i + 1] - user_param->tposted[i];
 		}
 	} else if (user_param->tst == LAT_BY_BW) {
-		for (i = 0; i < measure_cnt; ++i) {
-			delta[i] = user_param->tcompleted[i] - user_param->tposted[i];
+		for (i = start_ind; i < end_ind; ++i) {
+			delta[i - start_ind] = user_param->tcompleted[i] - user_param->tposted[i];
 		}
 	}
 	else {

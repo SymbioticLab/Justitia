@@ -53,6 +53,7 @@
  ******************************************************************************/
 int main(int argc, char *argv[])
 {
+	cycles_t start_cycle = get_cycles();
 	int				ret_parser,i = 0;
 	struct report_options		report;
 	struct pingpong_context		ctx;
@@ -67,6 +68,7 @@ int main(int argc, char *argv[])
 	memset(&user_param, 0, sizeof(struct perftest_parameters));
 	memset(&user_comm,0,sizeof(struct perftest_comm));
 
+	user_param.START_CYCLE = start_cycle;
 	user_param.verb    = WRITE;
 	user_param.tst     = LAT;
 	user_param.r_flag  = &report;
