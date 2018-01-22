@@ -207,15 +207,43 @@ void monitor_latency(void *arg)
                             fprintf(stderr, "bad wc status: %s\n", ibv_wc_status_str(wc.status));
                         }
                     }
+                    temp -= new_remote_read_rate;
                 }
                 __atomic_store_n(&cb.virtual_link_cap, temp, __ATOMIC_RELAXED);
             }
             else if (__atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED) != LINE_RATE_MB)
-            {
-                __atomic_store_n(&cb.virtual_link_cap, LINE_RATE_MB, __ATOMIC_RELAXED);
+            {   
+                temp = LINE_RATE_MB;
+                if (num_remote_big_reads) {
+                    new_remote_read_rate = round((double)num_remote_big_reads
+                        / (num_remote_big_reads + num_active_big_flows) * temp);
+                    if (new_remote_read_rate != cb.remote_read_rate) {
+                        cb.remote_read_rate = new_remote_read_rate;
+                        memset((char *)ctx->local_read_buf + BUF_READ_SIZE, 0, BUF_READ_SIZE);
+                        sprintf((char*)ctx->local_read_buf + BUF_READ_SIZE, "%" PRIu32, cb.remote_read_rate);
+                        printf("new remote read rate %s\n", (char*)ctx->local_read_buf + BUF_READ_SIZE);
+                        if (ibv_post_send(ctx->qp_read, &send_wr, &bad_wr))
+                        {
+                            perror("ibv_post_send: remote read rate");
+                        }
+                        do {
+                            num_comp = ibv_poll_cq(ctx->cq_send, 1, &send_wc);
+                        } while(num_comp == 0);
+                        if (num_comp < 0) {
+                            perror("ibv_poll_cq: send_wr");
+                            break;
+                        }
+                        if (wc.status != IBV_WC_SUCCESS) {
+                            fprintf(stderr, "bad wc status: %s\n", ibv_wc_status_str(wc.status));
+                        }
+                    }
+                    temp -= new_remote_read_rate;
+                }
+                __atomic_store_n(&cb.virtual_link_cap, temp, __ATOMIC_RELAXED);
             }
             //printf(">>>> virtual link cap: %" PRIu32 "\n", __atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED));
         }
+
     }
     printf("Out of while loop. exiting...\n");
     CMH_Destroy(cmh);
