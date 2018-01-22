@@ -1118,7 +1118,8 @@ int __mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 
 	for (nreq = 0; wr; ++nreq, wr = wr->next) {
 		/* isolation */
-		if (isSmall == 0 && flow && wr->opcode != IBV_WR_RDMA_READ) {
+		if (isSmall == 0 && flow) {
+			//printf("DEBUG ENTER HERE\n");
 			__atomic_store_n(&flow->pending, 1, __ATOMIC_RELAXED);
 			while (__atomic_load_n(&flow->pending, __ATOMIC_RELAXED))
 				cpu_relax();
@@ -1214,7 +1215,7 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 			} else if (qp->isSmall == 0) {
 				isSmall = 0;
 				if (wr->opcode == IBV_WR_RDMA_READ) {
-					isRead = 1;
+					__atomic_store_n(&flow->read, 1, __ATOMIC_RELAXED);
 					contact_pacer_read();
 				} else {
 					num_active_big_flows++;
@@ -1235,7 +1236,11 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 
 		//// splitting logic
 		//// Update split chunk size
-		uint32_t split_chunk_size = sb ? __atomic_load_n(&sb->active_chunk_size, __ATOMIC_RELAXED) : SPLIT_CHUNK_SIZE;
+		uint32_t split_chunk_size = sb ? 
+			(wr->opcode == IBV_WR_RDMA_READ ? 
+				__atomic_load_n(&sb->active_chunk_size_read, __ATOMIC_RELAXED) 
+				: __atomic_load_n(&sb->active_chunk_size, __ATOMIC_RELAXED)) 
+			: SPLIT_CHUNK_SIZE;
 		//if (++GLOBAL_CNT % 100 == 0) {
 		//	printf("DEBUG: POST SEND: split_chunk_size = %" PRIu32 " [%d]\n", split_chunk_size, GLOBAL_CNT);
 		//	fflush(stdout);

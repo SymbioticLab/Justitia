@@ -34,7 +34,8 @@ struct pingpong_context {
 	struct ibv_mr           *remote_read_mr;
 	struct ibv_cq			*cq;
 	struct ibv_qp			*qp;
-	struct ibv_cq           *cq_read;
+	struct ibv_cq           *cq_send;
+	struct ibv_cq           *cq_recv;
 	struct ibv_qp			*qp_read;
 	struct pingpong_dest 	*rem_dest;
 	void			    	*send_buf;

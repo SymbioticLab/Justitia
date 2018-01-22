@@ -62,7 +62,8 @@ static void set_inactive_on_exit() {
         if (isSmall) {
             __atomic_fetch_sub(&sb->num_active_small_flows, num_active_small_flows, __ATOMIC_RELAXED);
             printf("DEBUG decrement SMALL counter by %d\n", num_active_small_flows);
-        } else if (isRead) {
+        } else if (__atomic_load_n(&flow->read, __ATOMIC_RELAXED)) {
+            __atomic_store_n(&flow->read, 0, __ATOMIC_RELAXED);
             contact_pacer(0);
         } else {
             __atomic_fetch_sub(&sb->num_active_big_flows, num_active_big_flows, __ATOMIC_RELAXED);

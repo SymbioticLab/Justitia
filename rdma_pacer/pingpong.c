@@ -151,10 +151,16 @@ static struct pingpong_context *alloc_monitor_qp() {
     }
 
     /* send/recv qp's cq */
-    ctx->cq_read = ibv_create_cq(ctx->context, 2, NULL, NULL, 0);
-    if (!ctx->cq_read) {
-        fprintf(stderr, "Couldn't create CQ_READ\n");
+    ctx->cq_send = ibv_create_cq(ctx->context, 2, NULL, NULL, 0);
+    if (!ctx->cq_send) {
+        fprintf(stderr, "Couldn't create CQ_SEND\n");
         goto clean_cq;
+    }
+
+    ctx->cq_recv = ibv_create_cq(ctx->context, 2, NULL, NULL, 0);
+    if (!ctx->cq_recv) {
+        fprintf(stderr, "Coundln't create CQ_RECV\n");
+        goto clean_cq_send;
     }
 
     {
@@ -162,8 +168,8 @@ static struct pingpong_context *alloc_monitor_qp() {
 	    memset(&init_attr, 0, sizeof(struct ibv_qp_init_attr));
 	    init_attr.send_cq = ctx->cq;
 	    init_attr.recv_cq = ctx->cq;
-	    init_attr.cap.max_send_wr  = 1;
-	    init_attr.cap.max_recv_wr  = 1;
+	    init_attr.cap.max_send_wr  = 2;
+	    init_attr.cap.max_recv_wr  = 2;
 	    init_attr.cap.max_send_sge = 1;
 	    init_attr.cap.max_recv_sge = 1;
 	    init_attr.cap.max_inline_data = 100;	// probably not going to use inline there
@@ -173,11 +179,11 @@ static struct pingpong_context *alloc_monitor_qp() {
         ctx->qp = ibv_create_qp(ctx->pd, &init_attr);
         if (!ctx->qp)  {
             fprintf(stderr, "Couldn't create QP\n");
-            goto clean_cq_read;
+            goto clean_cq_recv;
         }
 
-        init_attr.send_cq = ctx->cq_read;
-        init_attr.recv_cq = ctx->cq_read;
+        init_attr.send_cq = ctx->cq_send;
+        init_attr.recv_cq = ctx->cq_recv;
         ctx->qp_read = ibv_create_qp(ctx->pd_read, &init_attr);
         if (!ctx->qp_read)  {
             fprintf(stderr, "Couldn't create QP_READ\n");
@@ -216,8 +222,10 @@ clean_qp_read:
     ibv_destroy_qp(ctx->qp_read);
 clean_qp:
     ibv_destroy_qp(ctx->qp);
-clean_cq_read:
-    ibv_destroy_cq(ctx->cq_read);
+clean_cq_recv:
+    ibv_destroy_cq(ctx->cq_recv);
+clean_cq_send:
+    ibv_destroy_cq(ctx->cq_send);
 clean_cq:
     ibv_destroy_cq(ctx->cq);
 clean_remote_read_mr:

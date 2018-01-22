@@ -7,7 +7,7 @@
 #include <math.h>
 
 #define MEDIAN 2
-#define TAIL 2
+#define TAIL 3
 
 #define WIDTH 32768
 #define DEPTH 16
@@ -33,12 +33,12 @@ void monitor_latency(void *arg)
     struct ibv_send_wr wr, send_wr, *bad_wr = NULL;
     struct ibv_recv_wr recv_wr, *bad_recv_wr = NULL;
     struct ibv_sge sge, send_sge, recv_sge;
-    struct ibv_wc wc, recv_wc;
+    struct ibv_wc wc, recv_wc, send_wc;
     const char *servername = ((struct monitor_param *)arg)->addr;
     int isclient = ((struct monitor_param *)arg)->isclient;
     int num_comp;
     int num_remote_big_reads = 0;
-    uint32_t remote_read_rate;
+    uint32_t received_read_rate;
     uint32_t temp, new_remote_read_rate;
 
     ctx = init_monitor_chan(servername, isclient);
@@ -69,7 +69,7 @@ void monitor_latency(void *arg)
     send_wr.opcode = IBV_WR_SEND;
     send_wr.sg_list = &send_sge;
     send_wr.num_sge = 1;
-    send_wr.send_flags = IBV_SEND_INLINE;
+    send_wr.send_flags = IBV_SEND_INLINE | IBV_SEND_SIGNALED;
 
     memset(&send_sge, 0, sizeof send_sge);
     memset((char *)ctx->local_read_buf + BUF_READ_SIZE, 0, BUF_READ_SIZE);
@@ -134,7 +134,7 @@ void monitor_latency(void *arg)
         wr.wr_id = seq;
 
         /* check if any remote read is registered or if read rate is received */
-        num_comp = ibv_poll_cq(ctx->cq_read, 1, &recv_wc);
+        num_comp = ibv_poll_cq(ctx->cq_recv, 1, &recv_wc);
         if (num_comp == 1) {
             if (recv_wc.status != IBV_WC_SUCCESS) {
                 fprintf(stderr, "error bad recv_wc status: %u.%s\n", recv_wc.status, ibv_wc_status_str(recv_wc.status));
@@ -147,9 +147,9 @@ void monitor_latency(void *arg)
                 printf("receive big read flow deregistration\n");
                 num_remote_big_reads--;
             } else {
-                remote_read_rate = (uint32_t)strtol((const char *)ctx->remote_read_buf, NULL, 10);
-                printf("receive new big read rate %" PRIu32 "\n", remote_read_rate);
-                // __atomic_store_n(&cb->sb.local_read_rate, (int)strtol(ctx->remote_read_buf), __ATOMIC_RELAXED);
+                received_read_rate = (uint32_t)strtol((const char *)ctx->remote_read_buf, NULL, 10);
+                printf("receive new big read rate %" PRIu32 "\n", received_read_rate);
+                __atomic_store_n(&cb.local_read_rate, received_read_rate, __ATOMIC_RELAXED);
             }
             if (ibv_post_recv(ctx->qp_read, &recv_wr, &bad_recv_wr))
                 perror("ibv_post_recv: recv_wr");
@@ -185,17 +185,26 @@ void monitor_latency(void *arg)
                     temp++;
                 }
                 if (num_remote_big_reads) {
-                    new_remote_read_rate = (double)num_remote_big_reads
-                        / (num_remote_big_reads + num_active_big_flows) * temp;
-                    temp -= cb.remote_read_rate;
+                    new_remote_read_rate = round((double)num_remote_big_reads
+                        / (num_remote_big_reads + num_active_big_flows) * temp);
                     if (new_remote_read_rate != cb.remote_read_rate) {
-                        printf("new remote read rate %" PRIu32 "\n", new_remote_read_rate);
                         cb.remote_read_rate = new_remote_read_rate;
                         memset((char *)ctx->local_read_buf + BUF_READ_SIZE, 0, BUF_READ_SIZE);
-                        sprintf((char*)ctx->local_read_buf + BUF_READ_SIZE, "%d", cb.remote_read_rate);
+                        sprintf((char*)ctx->local_read_buf + BUF_READ_SIZE, "%" PRIu32, cb.remote_read_rate);
+                        printf("new remote read rate %s\n", (char*)ctx->local_read_buf + BUF_READ_SIZE);
                         if (ibv_post_send(ctx->qp_read, &send_wr, &bad_wr))
                         {
                             perror("ibv_post_send: remote read rate");
+                        }
+                        do {
+                            num_comp = ibv_poll_cq(ctx->cq_send, 1, &send_wc);
+                        } while(num_comp == 0);
+                        if (num_comp < 0) {
+                            perror("ibv_poll_cq: send_wr");
+                            break;
+                        }
+                        if (wc.status != IBV_WC_SUCCESS) {
+                            fprintf(stderr, "bad wc status: %s\n", ibv_wc_status_str(wc.status));
                         }
                     }
                 }

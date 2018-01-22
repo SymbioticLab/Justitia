@@ -118,11 +118,13 @@ static void flow_handler()
 
             strcpy(cb.ctx->local_read_buf, buf);
             ibv_post_send(cb.ctx->qp_read, &send_wr, &bad_wr);
+            __atomic_fetch_add(&cb.num_big_read_flows, 1, __ATOMIC_RELAXED);
         } 
         else if (strcmp(buf, "exit") == 0)
         {
             strcpy(cb.ctx->local_read_buf, buf);
             ibv_post_send(cb.ctx->qp_read, &send_wr, &bad_wr);
+            __atomic_fetch_sub(&cb.num_big_read_flows, 1, __ATOMIC_RELAXED);
         }
     }
 }
@@ -135,6 +137,14 @@ static inline void fetch_token()
     while (!__atomic_load_n(&cb.tokens, __ATOMIC_RELAXED))
         cpu_relax();
     __atomic_fetch_sub(&cb.tokens, 1, __ATOMIC_RELAXED);
+}
+
+static inline void fetch_token_read() __attribute__((always_inline));
+static inline void fetch_token_read()
+{
+    while (!__atomic_load_n(&cb.tokens_read, __ATOMIC_RELAXED))
+        cpu_relax();
+    __atomic_fetch_sub(&cb.tokens_read, 1, __ATOMIC_RELAXED);
 }
 
 /* generate tokens at some rate
@@ -153,12 +163,11 @@ static void generate_tokens()
     uint16_t num_big;
     while (1)
     {
-        if (__atomic_load_n(&cb.sb->num_active_big_flows, __ATOMIC_RELAXED))
+        if ((num_big = __atomic_load_n(&cb.sb->num_active_big_flows, __ATOMIC_RELAXED)))
         {
             // temp = 4999; // for testing
             temp = __atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED);
-            num_big = __atomic_load_n(&cb.sb->num_active_big_flows, __ATOMIC_RELAXED);
-            chunk_size = (num_big ? chunk_size_table[temp / num_big / 1000] : chunk_size_table[temp/1000]);
+            chunk_size = chunk_size_table[temp / num_big / 1000];
             __atomic_store_n(&cb.sb->active_chunk_size, chunk_size, __ATOMIC_RELAXED);
             // __atomic_fetch_add(&cb.tokens, 10, __ATOMIC_RELAXED);
             // wait_time.tv_nsec = 10 * chunk_size / temp * 1000;
@@ -180,6 +189,66 @@ static void generate_tokens()
             }
         }
         // nanosleep(&wait_time, NULL);
+    }
+}
+
+static void generate_tokens_read()
+{
+    cycles_t start_cycle = 0;
+    int cpu_mhz = get_cpu_mhz(1);
+    int start_flag = 1;
+    // struct timespec wait_time;
+
+    /* infinite loop: generate tokens at a rate calculated 
+     * from virtual_link_cap and active chunk size 
+     */
+    uint32_t temp, chunk_size;
+    uint16_t num_read;
+    while (1)
+    {
+        if ((num_read = __atomic_load_n(&cb.num_big_read_flows, __ATOMIC_RELAXED)))
+        {
+            // temp = 4999; // for testing
+            temp = __atomic_load_n(&cb.local_read_rate, __ATOMIC_RELAXED);
+            chunk_size = chunk_size_table[temp / num_read / 1000];
+            __atomic_store_n(&cb.sb->active_chunk_size_read, chunk_size, __ATOMIC_RELAXED);
+            // __atomic_fetch_add(&cb.tokens, 10, __ATOMIC_RELAXED);
+            // wait_time.tv_nsec = 10 * chunk_size / temp * 1000;
+            if (__atomic_load_n(&cb.tokens_read, __ATOMIC_RELAXED) < MAX_TOKEN)
+            {
+                if (start_flag)
+                {
+                    start_flag = 0;
+                    start_cycle = get_cycles();
+                    __atomic_fetch_add(&cb.tokens_read, 1, __ATOMIC_RELAXED);
+                }
+                else
+                {
+                    while (get_cycles() - start_cycle < cpu_mhz * chunk_size / temp)
+                        cpu_relax();
+                    start_cycle = get_cycles();
+                    __atomic_fetch_add(&cb.tokens_read, 1, __ATOMIC_RELAXED);
+                }
+            }
+        }
+        // nanosleep(&wait_time, NULL);
+    }
+}
+
+void rate_limit_read()
+{
+    int i;
+    while(1)
+    {
+        for (i = 0; i < MAX_FLOWS; i++)
+        {
+            if (__atomic_load_n(&cb.sb->flows[i].read, __ATOMIC_RELAXED) 
+                && __atomic_load_n(&cb.sb->flows[i].pending, __ATOMIC_RELAXED))
+            {
+                fetch_token_read();
+                __atomic_store_n(&cb.sb->flows[i].pending, 0, __ATOMIC_RELAXED);
+            }
+        }
     }
 }
 
@@ -206,7 +275,7 @@ int main(int argc, char **argv)
     atexit(rm_shmem_on_exit);
 
     int fd_shm, i;
-    pthread_t th1, th2, th3;
+    pthread_t th1, th2, th3, th4;
     struct monitor_param param;
     char *endPtr;
     param.addr = argv[1];
@@ -233,8 +302,10 @@ int main(int argc, char **argv)
 
     /* initialize control block */
     cb.tokens = 0;
+    cb.tokens_read = 0;
+    cb.num_big_read_flows = 0;
     cb.virtual_link_cap = LINE_RATE_MB;
-    cb.remote_read_rate = LINE_RATE_MB;
+    cb.local_read_rate = LINE_RATE_MB;
     cb.next_slot = 0;
     cb.sb->active_chunk_size = DEFAULT_CHUNK_SIZE;
     cb.sb->num_active_big_flows = 0;
@@ -266,12 +337,25 @@ int main(int argc, char **argv)
         error("pthread_create: generate_tokens");
     }
 
+    printf("startiong thread for token generating for read...\n");
+    if (pthread_create(&th4, NULL, (void *(*)(void *)) & generate_tokens_read, NULL))
+    {
+        error("pthread_create: generate_tokens_read");
+    }
+
+    printf("starting thread for rate limiting big read flows...\n");
+    if (pthread_create(&th4, NULL, (void *(*)(void *)) & rate_limit_read, NULL))
+    {
+        error("pthread_create: generate_tokens_read");
+    }
+
     /* main loop: fetch token */
     while (1)
     {
         for (i = 0; i < MAX_FLOWS; i++)
         {
-            if (__atomic_load_n(&cb.sb->flows[i].pending, __ATOMIC_RELAXED))
+            if (!__atomic_load_n(&cb.sb->flows[i].read, __ATOMIC_RELAXED)
+                && __atomic_load_n(&cb.sb->flows[i].pending, __ATOMIC_RELAXED))
             {
                 fetch_token();
                 __atomic_store_n(&cb.sb->flows[i].pending, 0, __ATOMIC_RELAXED);
