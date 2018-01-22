@@ -938,6 +938,9 @@ static int mlx5_alloc_context(struct verbs_device *vdev,
 				&resp.ibv_resp, sizeof resp))
 		goto err_free;
 
+	////
+	//printf("resp.cqe_version = %d\n", resp.cqe_version);
+	////
 	context->max_num_qps		= resp.qp_tab_size;
 	context->bf_reg_size		= resp.bf_reg_size;
 	context->tot_uuars		= resp.tot_uuars;
@@ -992,6 +995,7 @@ static int mlx5_alloc_context(struct verbs_device *vdev,
 	context->cqe_version = resp.cqe_version;
 	if (context->cqe_version) {
 		if (context->cqe_version == 1) {
+			////printf("GGGGGGGGGGGO here?\n");
 			ctx->ops.poll_cq = mlx5_poll_cq_1;
 		} else {
 			printf("Unsupported cqe_vesion = %d, stay on  cqe version 0\n",
