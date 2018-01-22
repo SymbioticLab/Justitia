@@ -50,7 +50,7 @@
 #include "qp_pacer.h"
 #include <inttypes.h>
 int isSmall = 1; /* 0: elephant flow, 1: mouse flow */
-int never_active = 1;
+int isRead = 0;
 /* end */
 
 #ifndef htobe64
@@ -1119,6 +1119,7 @@ int __mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 	for (nreq = 0; wr; ++nreq, wr = wr->next) {
 		/* isolation */
 		if (isSmall == 0 && flow) {
+			//printf("DEBUG ENTER HERE\n");
 			__atomic_store_n(&flow->pending, 1, __ATOMIC_RELAXED);
 			while (__atomic_load_n(&flow->pending, __ATOMIC_RELAXED))
 				cpu_relax();
@@ -1209,14 +1210,19 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 			//if (wr->sg_list->length <= MAX_SMALL) {
 			if (qp->isSmall == 1) {
 				isSmall = 1;
-				never_active = 0;
+				num_active_small_flows++;
 				printf("DEBUG POST SEND: INDEED increment SMALL flow counter\n");
 				__atomic_fetch_add(&sb->num_active_small_flows, 1, __ATOMIC_RELAXED);
 			} else if (qp->isSmall == 0) {
 				isSmall = 0;
-				never_active = 0;
-				printf("DEBUG POST SEND: INDEED increment BIG flow counter\n");
-				__atomic_fetch_add(&sb->num_active_big_flows, 1, __ATOMIC_RELAXED);
+				if (wr->opcode == IBV_WR_RDMA_READ) {
+					__atomic_store_n(&flow->read, 1, __ATOMIC_RELAXED);
+					contact_pacer_read();
+				} else {
+					num_active_big_flows++;
+					printf("DEBUG POST SEND: INDEED increment BIG flow counter\n");
+					__atomic_fetch_add(&sb->num_active_big_flows, 1, __ATOMIC_RELAXED);
+				}
 			}
 		}
 	}
@@ -1226,26 +1232,33 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 	int ret = 0;
 	mlx4_lock(&qp->sq.lock);
 
-	//// splitting logic
-	//// Update split chunk size
-	uint32_t split_chunk_size = sb ? __atomic_load_n(&sb->active_chunk_size, __ATOMIC_RELAXED) : SPLIT_CHUNK_SIZE;
-	//if (++GLOBAL_CNT % 100 == 0) {
-	//	printf("DEBUG: POST SEND: split_chunk_size = %" PRIu32 " [%d]\n", split_chunk_size, GLOBAL_CNT);
-	//	fflush(stdout);
-	//}
-	//printf("DEBUG: POST SEND: split_chunk_size = %" PRIu32 "; msg size = %d [%d]\n", split_chunk_size, wr->sg_list->length, ++GLOBAL_CNT);
-	fflush(stdout);
+	for (nreq = 0; wr; ++nreq, wr = wr->next)
+	{
 
-	int is_two_sided = 0;
-	int is_wimm = 0;
-	if (wr->opcode == IBV_WR_RDMA_WRITE_WITH_IMM ||
-		wr->opcode == IBV_WR_SEND ||
-		wr->opcode == IBV_WR_SEND_WITH_IMM) {
-		is_two_sided = 1;
-	}
-	if (wr->opcode == IBV_WR_RDMA_WRITE_WITH_IMM) {
-		is_wimm = 1;
-	}
+		//// splitting logic
+		//// Update split chunk size
+		uint32_t split_chunk_size = sb ? 
+			(wr->opcode == IBV_WR_RDMA_READ ? 
+				__atomic_load_n(&sb->active_chunk_size_read, __ATOMIC_RELAXED) 
+				: __atomic_load_n(&sb->active_chunk_size, __ATOMIC_RELAXED)) 
+			: SPLIT_CHUNK_SIZE;
+		//if (++GLOBAL_CNT % 100 == 0) {
+		//	printf("DEBUG: POST SEND: split_chunk_size = %" PRIu32 " [%d]\n", split_chunk_size, GLOBAL_CNT);
+		//	fflush(stdout);
+		//}
+		//printf("DEBUG: POST SEND: split_chunk_size = %" PRIu32 "; msg size = %d [%d]\n", split_chunk_size, wr->sg_list->length, ++GLOBAL_CNT);
+		fflush(stdout);
+
+		int is_two_sided = 0;
+		int is_wimm = 0;
+		if (wr->opcode == IBV_WR_RDMA_WRITE_WITH_IMM ||
+			wr->opcode == IBV_WR_SEND ||
+			wr->opcode == IBV_WR_SEND_WITH_IMM) {
+			is_two_sided = 1;
+		}
+		if (wr->opcode == IBV_WR_RDMA_WRITE_WITH_IMM) {
+			is_wimm = 1;
+		}
 
 	//// Now in two-sided case, the receiver will alywas try to get a split INFO message after receiving the first chunk (unless message is really small)
 	//// In other words, sender alywas send an extra INFO message (again unless msg is really small -- less than MIN_SPLIT_CHUNK_SIZE)
@@ -3168,6 +3181,17 @@ int mlx4_post_recv(struct ibv_qp *ibqp, struct ibv_recv_wr *wr,
 	struct mlx4_inlr_rbuff *rbuffs;
 
 	mlx4_lock(&qp->rq.lock);
+
+	// if (unlikely(start_recv)) {
+	// 	start_recv = 0;
+	// 	if (sb){
+	// 		if(qp->isSmall) {
+	// 			num_active_small_flows++;
+	// 			__atomic_fetch_add(&sb->num_active_small_flows, 1, __ATOMIC_RELAXED);
+	// 			printf("DEBUG POST RECV increment SMALL counter\n");
+	// 		}
+	// 	}
+	// }
 
 	//// Buffer all recv requests if qp is at INIT state.
 	//// Split qp shall never post RRs at its own INIT state

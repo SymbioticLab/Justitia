@@ -16,6 +16,7 @@
 #include <time.h>
 #include <pthread.h>
 #include <signal.h>
+#include "pingpong.h"
 
 #define SHARED_MEM_NAME "/rdma-fairness"
 #define MAX_FLOWS 100
@@ -28,11 +29,13 @@
 struct flow_info {
     uint8_t pending;
     uint8_t active;
+    uint8_t read;
 };
 
 struct shared_block {
     struct flow_info flows[MAX_FLOWS];
     uint32_t active_chunk_size;
+    uint32_t active_chunk_size_read;
     uint16_t num_active_big_flows;         /* incremented when an elephant first sends a message */
     uint16_t num_active_small_flows;       /* incremented when a mouse first sends a message */
 };
@@ -40,9 +43,14 @@ struct shared_block {
 struct control_block {
     struct shared_block *sb;
 
+    struct pingpong_context *ctx;
     uint64_t tokens;                       /* number of available tokens */
-    uint32_t virtual_link_cap;             /* capacity of the virtual link that elephants go through */    
+    uint64_t tokens_read;
+    uint32_t virtual_link_cap;             /* capacity of the virtual link that elephants go through */
+    uint32_t remote_read_rate;             /* remote read rate */
+    uint32_t local_read_rate;    
     uint16_t next_slot;
+    uint16_t num_big_read_flows;
 };
 
 extern struct control_block cb;            /* declaration */

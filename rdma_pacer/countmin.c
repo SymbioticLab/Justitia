@@ -67,7 +67,7 @@ CMH_type *CMH_Init(int width, int depth, int U, int gran, int windowSize)
     cmh->freelim = cmh->levels - cmh->freelim;
     /* cmh->freelim to 31 are levels keeping exact counts */
 
-    cmh->counts = (int **)calloc(1 + cmh->levels, sizeof(int));
+    cmh->counts = (int **)calloc(1 + cmh->levels, sizeof(int *));
     cmh->hasha = (unsigned int **)calloc(1 + cmh->levels, sizeof(unsigned int *));
     cmh->hashb = (unsigned int **)calloc(1 + cmh->levels, sizeof(unsigned int *));
     j = 1;
@@ -101,17 +101,15 @@ CMH_type *CMH_Init(int width, int depth, int U, int gran, int windowSize)
 // free up the space
 void CMH_Destroy(CMH_type *cmh)
 {
-    int i, j = 1;
-    if (!cmh)
-        return;
-    for (i = cmh->levels - 1; i >= 0; i--)
+    int i;
+    if (!cmh) return;
+    for (i=0;i<cmh->levels;i++)
     {
-        if (i >= cmh->freelim)
+        if (i>=cmh->freelim)
         {
             free(cmh->counts[i]);
-            j++;
         }
-        else
+        else 
         {
             free(cmh->hasha[i]);
             free(cmh->hashb[i]);
@@ -175,6 +173,12 @@ int CMH_Update(CMH_type *cmh, int item)
     if (item > (1 << cmh->U))
     {
         fprintf(stderr, "item exceeds the maximum supported value\n");
+        return 1;
+    }
+
+    if (item < 0)
+    {
+        fprintf(stderr, "item is negative\n");
         return 1;
     }
 
