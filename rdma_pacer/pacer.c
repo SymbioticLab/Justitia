@@ -3,14 +3,19 @@
 #include "get_clock.h"
 #include <immintrin.h> /* For _mm_pause */
 #include "countmin.h"
+#include <math.h>
 
 #define DEFAULT_CHUNK_SIZE 1000000
 #define MAX_TOKEN 5
+#define MIN_CHUNK_SIZE 8192
+#define OFFSET 100
 
 extern CMH_type *cmh;
 struct control_block cb;
 //uint32_t chunk_size_table[] = {4096, 8192, 16384, 32768, 65536, 1048576, 1048576};
-uint32_t chunk_size_table[] = {8192, 8192, 100000, 100000, 500000, 1000000, 1000000};
+// uint32_t chunk_size_table[] = {8192, 8192, 100000, 100000, 500000, 1000000, 1000000};
+uint32_t chunk_size_table[] = {1000000, 1000000, 1000000, 1000000, 1000000, 1000000, 1000000};
+
 /* utility fuctions */
 static void error(char *msg)
 {
@@ -109,7 +114,7 @@ static void flow_handler()
             {
                 cb.next_slot++;
             }
-        } 
+        }
         else if (strcmp(buf, "read") == 0)
         {
             send_sge.addr = (uintptr_t)cb.ctx->local_read_buf;
@@ -119,7 +124,7 @@ static void flow_handler()
             strcpy(cb.ctx->local_read_buf, buf);
             ibv_post_send(cb.ctx->qp_read, &send_wr, &bad_wr);
             __atomic_fetch_add(&cb.num_big_read_flows, 1, __ATOMIC_RELAXED);
-        } 
+        }
         else if (strcmp(buf, "exit") == 0)
         {
             strcpy(cb.ctx->local_read_buf, buf);
@@ -151,27 +156,86 @@ static inline void fetch_token_read()
  */
 static void generate_tokens()
 {
-    cycles_t start_cycle = 0;
-    int cpu_mhz = get_cpu_mhz(1);
+    double cpu_mhz = get_cpu_mhz(1);
     int start_flag = 1;
-    // struct timespec wait_time;
+    int test = 0;
+    int updated = 0;
+
+    // uint64_t seq1;
+    // uint64_t seq2;
+    uint64_t bytes;
+    uint32_t temp;
+    uint32_t old_temp = LINE_RATE_MB;
+    uint32_t chunk_size = DEFAULT_CHUNK_SIZE;
+    uint32_t measured_tput = 0;
+    uint32_t gap;
+    uint16_t num_big;
+
+    cycles_t start_cycle = 0;
+    cycles_t checkpoint_start;
+    cycles_t checkpoint_real_len;
+    cycles_t checkpoint_len = cpu_mhz * 500000; // we want at least 1ms here
 
     /* infinite loop: generate tokens at a rate calculated 
      * from virtual_link_cap and active chunk size 
      */
-    uint32_t temp, chunk_size;
-    uint16_t num_big;
+    checkpoint_start = get_cycles();
     while (1)
     {
+        if ((checkpoint_real_len = get_cycles() - checkpoint_start) > checkpoint_len)
+        {
+            bytes = __atomic_load_n(&cb.sb->bytes, __ATOMIC_RELAXED);
+            __atomic_fetch_sub(&cb.sb->bytes, bytes, __ATOMIC_RELAXED);
+            measured_tput = (uint32_t)round(bytes / (checkpoint_real_len / cpu_mhz));
+            // printf("DEBUG: measured throughput is %" PRIu32 "MBps over %.2f us\n", measured_tput, checkpoint_real_len / cpu_mhz);
+            if (test)
+                updated++;
+            checkpoint_start = get_cycles();
+        }
         if ((num_big = __atomic_load_n(&cb.sb->num_active_big_flows, __ATOMIC_RELAXED)))
         {
             // temp = 4999; // for testing
             if ((temp = __atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED)))
             {
-                chunk_size = chunk_size_table[temp / num_big / 1000];
+                if (temp == LINE_RATE_MB)
+                {
+                    old_temp = temp;
+                    chunk_size = DEFAULT_CHUNK_SIZE;
+                    printf("DEBUG: chunk size reset to 1M\n");
+                }
+                else if (temp < old_temp)
+                {
+                    // upon a decrease
+                    chunk_size = MIN_CHUNK_SIZE;
+                    old_temp = temp;
+                    test = 1;
+                    updated = 0;
+                    printf("DEBUG: chunk size reset to 8K and test 8K\n");
+                }
+                else if (test && updated >= 2 && measured_tput != 0)
+                {
+                    if (measured_tput < temp - OFFSET)
+                    {
+                        if (chunk_size < DEFAULT_CHUNK_SIZE)
+                        {
+                            chunk_size <<= 1;
+                            updated = 0;
+                        }
+                        else
+                        {
+                            test = 0;
+                        }
+                        printf("DEBUG: mesaured throughput is %" PRIu32 ", chunk size set to %" PRIu32 " and test %" PRIu32 "\n", measured_tput, chunk_size, chunk_size);
+                    }
+                    else
+                    {
+                        test = 0;
+                        printf("DEBUG: chunk size %" PRIu32 " passes the test with measured throughput %" PRIu32 "\n", chunk_size, measured_tput);
+                    }
+                }
+                // chunk_size = chunk_size_table[temp / num_big / 1000];
                 __atomic_store_n(&cb.sb->active_chunk_size, chunk_size, __ATOMIC_RELAXED);
-                // __atomic_fetch_add(&cb.tokens, 10, __ATOMIC_RELAXED);
-                // wait_time.tv_nsec = 10 * chunk_size / temp * 1000;
+
                 if (__atomic_load_n(&cb.tokens, __ATOMIC_RELAXED) < MAX_TOKEN)
                 {
                     if (start_flag)
@@ -182,7 +246,9 @@ static void generate_tokens()
                     }
                     else
                     {
-                        while (get_cycles() - start_cycle < cpu_mhz * chunk_size / temp)
+                        // printf("DEBUG: enter here temp = %" PRIu32 " chunk size = %" PRId32 "\n", temp, chunk_size);
+                        gap = (cycles_t)round(cpu_mhz * chunk_size / temp);
+                        while (get_cycles() - start_cycle < gap)
                             cpu_relax();
                         start_cycle = get_cycles();
                         __atomic_fetch_add(&cb.tokens, 1, __ATOMIC_RELAXED);
@@ -190,7 +256,6 @@ static void generate_tokens()
                 }
             }
         }
-        // nanosleep(&wait_time, NULL);
     }
 }
 
@@ -242,12 +307,11 @@ static void generate_tokens_read()
 void rate_limit_read()
 {
     int i;
-    while(1)
+    while (1)
     {
         for (i = 0; i < MAX_FLOWS; i++)
         {
-            if (__atomic_load_n(&cb.sb->flows[i].read, __ATOMIC_RELAXED) 
-                && __atomic_load_n(&cb.sb->flows[i].pending, __ATOMIC_RELAXED))
+            if (__atomic_load_n(&cb.sb->flows[i].read, __ATOMIC_RELAXED) && __atomic_load_n(&cb.sb->flows[i].pending, __ATOMIC_RELAXED))
             {
                 fetch_token_read();
                 __atomic_store_n(&cb.sb->flows[i].pending, 0, __ATOMIC_RELAXED);
@@ -317,6 +381,7 @@ int main(int argc, char **argv)
     cb.virtual_link_cap = LINE_RATE_MB;
     cb.local_read_rate = LINE_RATE_MB;
     cb.next_slot = 0;
+    cb.sb->bytes = 0;
     cb.sb->active_chunk_size = DEFAULT_CHUNK_SIZE;
     cb.sb->num_active_big_flows = 0;
     cb.sb->num_active_small_flows = 0; /* cancel out pacer's monitor flow */
@@ -364,8 +429,7 @@ int main(int argc, char **argv)
     {
         for (i = 0; i < MAX_FLOWS; i++)
         {
-            if (!__atomic_load_n(&cb.sb->flows[i].read, __ATOMIC_RELAXED)
-                && __atomic_load_n(&cb.sb->flows[i].pending, __ATOMIC_RELAXED))
+            if (!__atomic_load_n(&cb.sb->flows[i].read, __ATOMIC_RELAXED) && __atomic_load_n(&cb.sb->flows[i].pending, __ATOMIC_RELAXED))
             {
                 fetch_token();
                 __atomic_store_n(&cb.sb->flows[i].pending, 0, __ATOMIC_RELAXED);

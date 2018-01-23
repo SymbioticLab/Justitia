@@ -7,7 +7,7 @@
 #include <math.h>
 
 #define MEDIAN 2
-#define TAIL 3
+#define TAIL 2
 
 #define WIDTH 32768
 #define DEPTH 16
@@ -242,7 +242,7 @@ void monitor_latency(void *arg)
                 }
                 __atomic_store_n(&cb.virtual_link_cap, temp, __ATOMIC_RELAXED);
             }
-            //printf(">>>> virtual link cap: %" PRIu32 "\n", __atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED));
+            // printf("DEBUG: virtual link cap = %" PRIu32 "\n", temp);
         }
 
     }

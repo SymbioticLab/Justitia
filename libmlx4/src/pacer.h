@@ -30,6 +30,7 @@ struct flow_info {
 
 struct shared_block {
     struct flow_info flows[MAX_FLOWS];
+    uint64_t bytes;
     uint32_t active_chunk_size;
     uint32_t active_chunk_size_read;
     uint16_t num_active_big_flows;         /* incremented when an elephant first sends a message */

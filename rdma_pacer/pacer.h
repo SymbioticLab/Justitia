@@ -20,9 +20,9 @@
 
 #define SHARED_MEM_NAME "/rdma-fairness"
 #define MAX_FLOWS 100
-#define LINE_RATE_MB 6750 /* MBps */
+#define LINE_RATE_MB 6000 /* MBps */
 #define MSG_LEN 8
-#define SOCK_PATH "/home/yiwenzhg/rdma_socket"
+#define SOCK_PATH "/users/yuetan/rdma_socket"
 #define ELEPHANT_HAS_LOWER_BOUND 1  /* whether elephant has a minimum virtual link cap set by AIMD */
 #define TABLE_SIZE 7
 
@@ -34,6 +34,7 @@ struct flow_info {
 
 struct shared_block {
     struct flow_info flows[MAX_FLOWS];
+    uint64_t bytes;
     uint32_t active_chunk_size;
     uint32_t active_chunk_size_read;
     uint16_t num_active_big_flows;         /* incremented when an elephant first sends a message */
