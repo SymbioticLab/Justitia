@@ -45,7 +45,7 @@ void monitor_latency(void *arg)
     ctx = init_monitor_chan(servername, isclient, gid_idx);
     if (!ctx)
     {
-        fprintf(stderr, ">>>exiting monitor_latency\n");
+        fprintf(stderr, "failed to allocate pingpong context. exiting monitor_latency\n");
         exit(1);
     }
     cb.ctx = ctx;

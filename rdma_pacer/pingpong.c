@@ -27,7 +27,7 @@ struct pingpong_context *init_monitor_chan(const char *addr, int isclient, int g
     if (gidx >= 0) {
 		if (ibv_query_gid(ctx->context, ib_port, gidx, &my_dest.gid)) {
 			fprintf(stderr, "Could not get local gid for gid index %d\n", gidx);
-			return 1;
+			return NULL;
 		}
 	} else {
 		memset(&my_dest.gid, 0, sizeof my_dest.gid);
