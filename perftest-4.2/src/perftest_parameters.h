@@ -140,7 +140,7 @@
 #define MIN_IB_PORT   (1)
 #define MAX_IB_PORT   (3)
 #define MIN_ITER      (5)
-#define MAX_ITER      (1000000000)
+#define MAX_ITER      (2000000000)
 #define MIN_TX 	      (1)
 #define MAX_TX	      (15000)
 #define MIN_SL	      (0)
@@ -502,6 +502,8 @@ struct perftest_parameters {
 	cycles_t		START_CYCLE;
 	cycles_t		START_CYCLE2;
 	char 			*output_log;
+	int				log_tput;
+	struct timeval 	start_tv;
 	////
 
 };
