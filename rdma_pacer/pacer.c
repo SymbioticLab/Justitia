@@ -5,12 +5,13 @@
 #include "countmin.h"
 
 #define DEFAULT_CHUNK_SIZE 1000000
+#define DEFAULT_BATCH_OPS 1667
 #define MAX_TOKEN 5
 
 extern CMH_type *cmh;
 struct control_block cb;
-//uint32_t chunk_size_table[] = {4096, 8192, 16384, 32768, 65536, 1048576, 1048576};
-uint32_t chunk_size_table[] = {8192, 8192, 100000, 100000, 500000, 1000000, 1000000};
+uint32_t chunk_size_table[] = {4096, 8192, 16384, 32768, 65536, 1048576, 1048576};
+// uint32_t chunk_size_table[] = {8192, 8192, 100000, 100000, 500000, 1000000, 1000000};
 /* utility fuctions */
 static void error(char *msg)
 {
@@ -109,7 +110,7 @@ static void flow_handler()
             {
                 cb.next_slot++;
             }
-        } 
+        }
         else if (strcmp(buf, "read") == 0)
         {
             send_sge.addr = (uintptr_t)cb.ctx->local_read_buf;
@@ -119,7 +120,7 @@ static void flow_handler()
             strcpy(cb.ctx->local_read_buf, buf);
             ibv_post_send(cb.ctx->qp_read, &send_wr, &bad_wr);
             __atomic_fetch_add(&cb.num_big_read_flows, 1, __ATOMIC_RELAXED);
-        } 
+        }
         else if (strcmp(buf, "exit") == 0)
         {
             strcpy(cb.ctx->local_read_buf, buf);
@@ -163,30 +164,31 @@ static void generate_tokens()
     uint16_t num_big;
     while (1)
     {
-        if ((num_big = __atomic_load_n(&cb.sb->num_active_big_flows, __ATOMIC_RELAXED)))
+        // temp = 4999; // for testing
+        if ((temp = __atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED)))
         {
-            // temp = 4999; // for testing
-            if ((temp = __atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED)))
-            {
+            if ((num_big = __atomic_load_n(&cb.sb->num_active_big_flows, __ATOMIC_RELAXED)))
                 chunk_size = chunk_size_table[temp / num_big / 1000];
-                __atomic_store_n(&cb.sb->active_chunk_size, chunk_size, __ATOMIC_RELAXED);
-                // __atomic_fetch_add(&cb.tokens, 10, __ATOMIC_RELAXED);
-                // wait_time.tv_nsec = 10 * chunk_size / temp * 1000;
-                if (__atomic_load_n(&cb.tokens, __ATOMIC_RELAXED) < MAX_TOKEN)
+            else
+                chunk_size = DEFAULT_CHUNK_SIZE;
+            __atomic_store_n(&cb.sb->active_chunk_size, chunk_size, __ATOMIC_RELAXED);
+            __atomic_store_n(&cb.sb->active_batch_ops, chunk_size/1000000.0*DEFAULT_BATCH_OPS, __ATOMIC_RELAXED);
+            // __atomic_fetch_add(&cb.tokens, 10, __ATOMIC_RELAXED);
+            // wait_time.tv_nsec = 10 * chunk_size / temp * 1000;
+            if (__atomic_load_n(&cb.tokens, __ATOMIC_RELAXED) < MAX_TOKEN)
+            {
+                if (start_flag)
                 {
-                    if (start_flag)
-                    {
-                        start_flag = 0;
-                        start_cycle = get_cycles();
-                        __atomic_fetch_add(&cb.tokens, 1, __ATOMIC_RELAXED);
-                    }
-                    else
-                    {
-                        while (get_cycles() - start_cycle < cpu_mhz * chunk_size / temp)
-                            cpu_relax();
-                        start_cycle = get_cycles();
-                        __atomic_fetch_add(&cb.tokens, 1, __ATOMIC_RELAXED);
-                    }
+                    start_flag = 0;
+                    start_cycle = get_cycles();
+                    __atomic_fetch_add(&cb.tokens, 1, __ATOMIC_RELAXED);
+                }
+                else
+                {
+                    while (get_cycles() - start_cycle < cpu_mhz * chunk_size / temp)
+                        cpu_relax();
+                    start_cycle = get_cycles();
+                    __atomic_fetch_add(&cb.tokens, 1, __ATOMIC_RELAXED);
                 }
             }
         }
@@ -242,12 +244,11 @@ static void generate_tokens_read()
 void rate_limit_read()
 {
     int i;
-    while(1)
+    while (1)
     {
         for (i = 0; i < MAX_FLOWS; i++)
         {
-            if (__atomic_load_n(&cb.sb->flows[i].read, __ATOMIC_RELAXED) 
-                && __atomic_load_n(&cb.sb->flows[i].pending, __ATOMIC_RELAXED))
+            if (__atomic_load_n(&cb.sb->flows[i].read, __ATOMIC_RELAXED) && __atomic_load_n(&cb.sb->flows[i].pending, __ATOMIC_RELAXED))
             {
                 fetch_token_read();
                 __atomic_store_n(&cb.sb->flows[i].pending, 0, __ATOMIC_RELAXED);
@@ -318,6 +319,8 @@ int main(int argc, char **argv)
     cb.local_read_rate = LINE_RATE_MB;
     cb.next_slot = 0;
     cb.sb->active_chunk_size = DEFAULT_CHUNK_SIZE;
+    cb.sb->active_chunk_size_read = DEFAULT_CHUNK_SIZE;
+    cb.sb->active_batch_ops = DEFAULT_BATCH_OPS;
     cb.sb->num_active_big_flows = 0;
     cb.sb->num_active_small_flows = 0; /* cancel out pacer's monitor flow */
     for (i = 0; i < MAX_FLOWS; i++)
@@ -347,7 +350,7 @@ int main(int argc, char **argv)
         error("pthread_create: generate_tokens");
     }
 
-    printf("startiong thread for token generating for read...\n");
+    printf("starting thread for token generating for read...\n");
     if (pthread_create(&th4, NULL, (void *(*)(void *)) & generate_tokens_read, NULL))
     {
         error("pthread_create: generate_tokens_read");
@@ -364,8 +367,7 @@ int main(int argc, char **argv)
     {
         for (i = 0; i < MAX_FLOWS; i++)
         {
-            if (!__atomic_load_n(&cb.sb->flows[i].read, __ATOMIC_RELAXED)
-                && __atomic_load_n(&cb.sb->flows[i].pending, __ATOMIC_RELAXED))
+            if (!__atomic_load_n(&cb.sb->flows[i].read, __ATOMIC_RELAXED) && __atomic_load_n(&cb.sb->flows[i].pending, __ATOMIC_RELAXED))
             {
                 fetch_token();
                 __atomic_store_n(&cb.sb->flows[i].pending, 0, __ATOMIC_RELAXED);

@@ -32,6 +32,7 @@ struct shared_block {
     struct flow_info flows[MAX_FLOWS];
     uint32_t active_chunk_size;
     uint32_t active_chunk_size_read;
+    uint32_t active_batch_ops;
     uint16_t num_active_big_flows;         /* incremented when an elephant first sends a message */
     uint16_t num_active_small_flows;       /* incremented when a mouse first sends a message */
 };
