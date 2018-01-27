@@ -652,12 +652,6 @@ void alloc_ctx(struct pingpong_context *ctx,struct perftest_parameters *user_par
 	ALLOCATE(user_param->port_by_qp, uint64_t, user_param->num_of_qps);
 
 	tarr_size = (user_param->noPeak) ? 1 : user_param->iters*user_param->num_of_qps;
-	if (user_param->log_tput) {
-		//// for tput vs lat logging
-		tarr_size = (user_param->noPeak) ? 1 : user_param->iters*user_param->num_of_qps / user_param->post_list;
-		printf("tar_size = %lu\n", tarr_size);
-		////
-	}
 	ALLOCATE(user_param->tposted, cycles_t, tarr_size);
 	memset(user_param->tposted, 0, sizeof(cycles_t)*tarr_size);
 	if ((user_param->tst == LAT || user_param->tst == FS_RATE) && user_param->test_type == DURATION)
@@ -3207,14 +3201,7 @@ int run_iter_bw(struct pingpong_context *ctx,struct perftest_parameters *user_pa
                     user_param->START_CYCLE2 = get_cycles();
                 }
 				if (user_param->noPeak == OFF) {
-					if (!user_param->log_tput) {
-						user_param->tposted[totscnt] = get_cycles();
-					} else {
-						//// for tput vs lat logging
-						user_param->tposted[totscnt / user_param->post_list] = get_cycles();
-						////
-					}
-
+					user_param->tposted[totscnt] = get_cycles();
 				}
 
 				if (user_param->test_type == DURATION && user_param->state == END_STATE)
@@ -3355,22 +3342,10 @@ int run_iter_bw(struct pingpong_context *ctx,struct perftest_parameters *user_pa
 
 							//if (totccnt >=  tot_iters - 1)
 							if (totccnt >  tot_iters - 1) {
-								if (!user_param->log_tput) {
-									user_param->tcompleted[user_param->iters*num_of_qps - 1] = get_cycles();
-								} else {
-									//// for tput vs lat logging
-									user_param->tcompleted[(user_param->iters*num_of_qps)/user_param->cq_mod - 1] = get_cycles();
-									////
-								}
+								user_param->tcompleted[user_param->iters*num_of_qps - 1] = get_cycles();
 							}
 							else {
-								if (!user_param->log_tput) {
-									user_param->tcompleted[totccnt-1] = get_cycles();
-								} else {
-									//// for tput vs lat logging
-										user_param->tcompleted[totccnt/user_param->cq_mod-1] = get_cycles();
-									////
-								}
+								user_param->tcompleted[totccnt-1] = get_cycles();
 							}
 						}
 
