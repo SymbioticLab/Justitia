@@ -1,0 +1,104 @@
+dnl Process this file with autoconf to produce a configure script.
+
+AC_PREREQ(2.57)
+AC_INIT(libcxgb4, 1.0.0, linux-rdma@vger.kernel.org)
+AC_CONFIG_SRCDIR([src/libcxgb4.h])
+AC_CONFIG_AUX_DIR(config)
+AC_CONFIG_HEADERS(config.h)
+AM_INIT_AUTOMAKE(libcxgb4, 1.0.0)
+AM_PROG_LIBTOOL
+
+AC_ARG_ENABLE(libcheck, [  --disable-libcheck      do not test for presence of ib libraries],
+	[       if test x$enableval = xno ; then
+			disable_libcheck=yes
+		fi
+	])
+
+dnl Checks for programs
+AC_PROG_CC
+AC_CHECK_SIZEOF(long)
+
+dnl Checks for libraries
+if test "$disable_libcheck" != "yes"
+then
+AC_CHECK_LIB(ibverbs, ibv_get_device_list, [],
+    AC_MSG_ERROR([ibv_get_device_list() not found.  libcxgb4 requires libibverbs.]))
+fi
+
+dnl Checks for header files.
+AC_CHECK_HEADERS(sysfs/libsysfs.h)
+
+if test "$disable_libcheck" != "yes"
+then
+AC_CHECK_HEADER(infiniband/driver.h, [],
+    AC_MSG_ERROR([<infiniband/driver.h> not found.  Is libibverbs installed?]))
+AC_HEADER_STDC
+fi
+
+dnl Checks for typedefs, structures, and compiler characteristics.
+AC_C_CONST
+
+dnl Checks for library functions
+AC_CHECK_FUNCS(ibv_read_sysfs_file)
+
+dnl Now check if for libibverbs device library extension
+dummy=if$$
+cat <<IBV_VERSION > $dummy.c
+#include <infiniband/driver.h>
+IBV_DEVICE_LIBRARY_EXTENSION
+IBV_VERSION
+IBV_DEVICE_LIBRARY_EXTENSION=`$CC $CPPFLAGS -E $dummy.c 2> /dev/null | tail -1`
+rm -f $dummy.c
+if test $IBV_DEVICE_LIBRARY_EXTENSION = IBV_DEVICE_LIBRARY_EXTENSION; then
+    AC_MSG_ERROR([IBV_DEVICE_LIBRARY_EXTENSION not defined.  Is libibverbs new enough?])
+fi
+AC_SUBST(IBV_DEVICE_LIBRARY_EXTENSION)
+
+AC_CACHE_CHECK(whether ld accepts --version-script, ac_cv_version_script,
+    if test -n "`$LD --help < /dev/null 2>/dev/null | grep version-script`"; then
+        ac_cv_version_script=yes
+    else
+        ac_cv_version_script=no
+    fi)
+
+AC_LANG_PUSH(C)
+ac_c_werror_flag=yes
+save_CFLAGS=$CFLAGS
+CFLAGS="$CFLAGS -Werror"
+
+AC_CACHE_CHECK([for enums in API],
+               [ac_cv_ibv_enums_in_api],
+               [AC_COMPILE_IFELSE([AC_LANG_PROGRAM([#include <infiniband/verbs.h>],
+					[int c4iw_query_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
+							   int attr_mask,
+							   struct ibv_qp_init_attr *init_attr);
+					static struct ibv_context_ops c4iw_ctx_ops = {
+								.query_qp = c4iw_query_qp,
+					};])],
+                                   [ac_cv_ibv_enums_in_api=no],
+                                   [ac_cv_ibv_enums_in_api=yes])])
+if test $ac_cv_ibv_enums_in_api = yes; then
+	AC_DEFINE(HAVE_IBV_ENUMS_IN_API, 1, [ibv API has enums in parameters.])
+fi
+
+AC_CACHE_CHECK([for const gid in mcast API],
+               [ac_cv_ibv_const_gid_in_mcast_api],
+               [AC_COMPILE_IFELSE([AC_LANG_PROGRAM([#include <infiniband/verbs.h>],
+					[int c4iw_attach_mcast(struct ibv_qp *qp, const union ibv_gid *gid,
+								     uint16_t lid);
+					static struct ibv_context_ops c4iw_ctx_ops = {
+								.attach_mcast = c4iw_attach_mcast,
+					};])],
+                                   [ac_cv_ibv_const_gid_in_mcast_api=yes],
+                                   [ac_cv_ibv_const_gid_in_mcast_api=no])])
+if test $ac_cv_ibv_const_gid_in_mcast_api = yes; then
+	AC_DEFINE(HAVE_IBV_CONST_GID_IN_MCAST_API, 1, [ibv mcast API has const gid.])
+fi
+CFLAGS="$save_CFLAGS"
+ac_c_werror_flag=
+AC_LANG_POP
+
+AM_CONDITIONAL(HAVE_LD_VERSION_SCRIPT, test "$ac_cv_version_script" = "yes")
+
+AC_CONFIG_FILES([Makefile libcxgb4.spec])
+AC_OUTPUT
