@@ -25,18 +25,24 @@
 struct flow_info {
     uint8_t pending;
     uint8_t active;
+    uint8_t read;
 };
 
 struct shared_block {
     struct flow_info flows[MAX_FLOWS];
     uint32_t active_chunk_size;
-    uint16_t num_active_big_flows;
-    uint16_t num_active_small_flows;
+    uint32_t active_chunk_size_read;
+    uint32_t active_batch_ops;
+    uint16_t num_active_big_flows;         /* incremented when an elephant first sends a message */
+    uint16_t num_active_small_flows;       /* incremented when a mouse first sends a message */
 };
 
-extern struct flow_info *flow;  /* declaration; initialization inside verbs.c */
-extern struct shared_block *sb; /* declaration; initialization inside verbs.c */
-extern int start_flag;          /* Initialized in verbs.c */
-extern int isSmall;             /* initialized in qp.c */
+extern struct flow_info *flow;     /* declaration; initialization in verbs.c */
+extern struct shared_block *sb;    /* declaration; initialization in verbs.c */
+extern int start_flag;             /* Initialized in verbs.c */
+extern int start_recv;             /* initialized in qp.c */
+extern int isSmall;                /* initialized in qp.c */
+extern int num_active_small_flows; /* initialized in verbs.c */
+extern int num_active_big_flows;   /* initialized in verbs.c */
 
 #endif
