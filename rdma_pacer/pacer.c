@@ -5,13 +5,14 @@
 #include "countmin.h"
 
 #define DEFAULT_CHUNK_SIZE 1000000
-#define DEFAULT_BATCH_OPS 1667
+#define DEFAULT_BATCH_OPS 1500
 #define MAX_TOKEN 5
 
 extern CMH_type *cmh;
 struct control_block cb;
 uint32_t chunk_size_table[] = {4096, 8192, 16384, 32768, 65536, 1048576, 1048576};
 // uint32_t chunk_size_table[] = {8192, 8192, 100000, 100000, 500000, 1000000, 1000000};
+uint32_t chunk_size_table[] = {8192, 8192, 100000, 1000000, 1000000, 1000000, 1000000};
 /* utility fuctions */
 static void error(char *msg)
 {
