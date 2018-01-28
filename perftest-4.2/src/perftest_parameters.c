@@ -446,6 +446,7 @@ static void usage(const char *argv0, VerbType verb, TestType tst, int connection
 
 		printf("      --run_infinitely ");
 		printf(" Run test forever, print results every <duration> seconds\n");
+
 	}
 
 	if (connection_type != RawEth) {
@@ -2857,15 +2858,22 @@ void print_report_bw (struct perftest_parameters *user_param, struct bw_report_d
 
 	peak_up = !(user_param->noPeak)*(cycles_t)tsize*(cycles_t)cycles_to_units;
 	peak_down = (cycles_t)opt_delta * format_factor;
-
-	if (user_param->iters < 10000000) {
+	if (user_param->iters < 10000000 && user_param->post_list == 1) {
 		FILE *f = fopen(user_param->output_log, "w");
 		//fprintf(f, "Task_cnt\tTime(us)\n");
 		fprintf(f, "Task_cnt\tTime(us)\t\tLatency(us)\n");
 		//fprintf(f, "Task_cnt\tTime(us)\tTcompleted\tTposted\n");
 		double cpu_mhz = get_cpu_mhz(user_param->cpu_freq_f);
 		double curr_time_us;
-		for (i = 0; i < user_param->iters * user_param->num_of_qps; ++i) {
+		//// for tput vs lat logging
+		uint64_t idx = user_param->iters * user_param->num_of_qps;
+		if (user_param->log_tput) {
+			idx = idx / user_param->post_list;
+		}
+		////
+		
+		//for (i = 0; i < user_param->iters * user_param->num_of_qps; ++i) {
+		for (i = 0; i < idx; ++i) {
 			if (user_param->tcompleted[i] == 0) {
 				curr_time_us = 0;
 			} else {
@@ -2876,9 +2884,27 @@ void print_report_bw (struct perftest_parameters *user_param, struct bw_report_d
 			//fprintf(f, "%ld\t\t%.2f\t\t%.2f\t\t%.2f\n", i + 1, curr_time_us, user_param->tcompleted[i] / cpu_mhz, user_param->tposted[i] / cpu_mhz);
 		}
 		//fprintf(f, "START_CYCLE / cpu_mhz: %.2f\n", user_param->START_CYCLE / cpu_mhz);
+		fprintf(f, "program start: %ld\n", (long)(user_param->start_tv.tv_sec * 1000000 + user_param->start_tv.tv_usec));
 		fprintf(f, "START1: %.2f, START2: %.2f, START_DIFF: %.2f\n", user_param->START_CYCLE / cpu_mhz, user_param->START_CYCLE2 / cpu_mhz, user_param->START_CYCLE2 / cpu_mhz - user_param->START_CYCLE / cpu_mhz);
-		fprintf(f, "DIFF2: %.2f\n", (user_param->tposted[0] - user_param->START_CYCLE) / cpu_mhz);
-		fprintf(f, "tposted[0] (usec): %.2f\n", user_param->tposted[0] / cpu_mhz);
+		fprintf(f, "tposted[0]: %.2f\n", (user_param->tposted[0] - user_param->START_CYCLE) / cpu_mhz);
+		fclose(f);
+	}
+
+	if (user_param->post_list > 1) {
+		FILE *f = fopen(user_param->output_log, "w");
+		fprintf(f, "Task_cnt\tTime(us)\t\tLatency(us)\n");
+		double cpu_mhz = get_cpu_mhz(user_param->cpu_freq_f);
+		double curr_time_us;
+		uint64_t idx = user_param->iters * user_param->num_of_qps;
+		for (i = 0; i < idx; ++i) {
+			if (user_param->tcompleted[i] != 0) {
+				curr_time_us = (double)(user_param->tcompleted[i] - user_param->START_CYCLE) / cpu_mhz;
+				fprintf(f, "%ld\t\t%.2f\t\t%.2f\n", i + 1, curr_time_us, (double)((double)(user_param->tcompleted[i] - user_param->tposted[i])) / cpu_mhz);
+			}
+		}	
+		fprintf(f, "program start: %ld\n", (long)(user_param->start_tv.tv_sec * 1000000 + user_param->start_tv.tv_usec));
+		fprintf(f, "START1: %.2f, START2: %.2f, START_DIFF: %.2f\n", user_param->START_CYCLE / cpu_mhz, user_param->START_CYCLE2 / cpu_mhz, user_param->START_CYCLE2 / cpu_mhz - user_param->START_CYCLE / cpu_mhz);
+		fprintf(f, "tposted[0]: %.2f\n", (user_param->tposted[0] - user_param->START_CYCLE) / cpu_mhz);
 		fclose(f);
 	}
 
@@ -3103,6 +3129,32 @@ void print_report_lat (struct perftest_parameters *user_param)
 		printf("%.2f\n", delta[iters_99] / cycles_rtt_quotient);
 		printf("%.2f\n", delta[iters_99_9] / cycles_rtt_quotient);
 		printf("%.2f\n", delta[iters_99_99] / cycles_rtt_quotient);
+	}
+
+	if (user_param->iters < 100000000) {
+		FILE *f = fopen(user_param->output_log, "w");
+		//fprintf(f, "Task_cnt\tTime(us)\n");
+		fprintf(f, "Task_cnt\tTime(us)\t\tLatency(us)\n");
+		//fprintf(f, "Task_cnt\tTime(us)\tTcompleted\tTposted\n");
+		double cpu_mhz = get_cpu_mhz(user_param->cpu_freq_f);
+		double curr_time_us;
+		uint64_t idx = user_param->iters * user_param->num_of_qps;
+		for (i = 0; i < idx - 1; ++i) {
+			//if (user_param->tcompleted[i] == 0) {
+			//	curr_time_us = 0;
+			//} else {
+			//	curr_time_us = (double)(user_param->tposted[i] - user_param->START_CYCLE) / cpu_mhz;
+			//}
+			curr_time_us = (double)(user_param->tposted[i] - user_param->START_CYCLE) / cpu_mhz;
+			//fprintf(f, "%ld\t\t%.2f\n", i + 1, curr_time_us);
+			fprintf(f, "%ld\t\t%.2f\t\t%.2f\n", i + 1, curr_time_us, (double)((double)(user_param->tposted[i+1] - user_param->tposted[i])) / cpu_mhz);
+			//fprintf(f, "%ld\t\t%.2f\t\t%.2f\t\t%.2f\n", i + 1, curr_time_us, user_param->tcompleted[i] / cpu_mhz, user_param->tposted[i] / cpu_mhz);
+		}
+		//fprintf(f, "START_CYCLE / cpu_mhz: %.2f\n", user_param->START_CYCLE / cpu_mhz);
+		fprintf(f, "program start: %ld\n", (long)(user_param->start_tv.tv_sec * 1000000 + user_param->start_tv.tv_usec));
+		fprintf(f, "START1: %.2f\n", user_param->START_CYCLE / cpu_mhz);
+		fprintf(f, "This is Lat; tposted[0]: %.2f\n", (user_param->tposted[0] - user_param->START_CYCLE) / cpu_mhz);
+		fclose(f);
 	}
 
 	free(delta);

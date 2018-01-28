@@ -918,6 +918,13 @@ static inline int mlx5_poll_one(struct mlx5_cq *cq,
 				uint32_t wc_size,
 				int cqe_ver)
 {
+	////
+	//if (*cur_rsc == NULL) {
+	//	printf("DEBUG MLX5_POLL_ONE ckpt0, cur_rsc is NULL\n");
+	//} else {
+	//	printf("DEBUG MLX5_POLL_ONE ckpt0, cur_rsc is not NULL\n");
+	//}
+	////
 	struct mlx5_cqe64 *cqe64;
 	struct mlx5_wq *wq;
 	uint16_t wqe_ctr;
@@ -971,6 +978,9 @@ repoll:
 
 	((struct ibv_wc *)wc)->wc_flags = 0;
 	opcode = cqe64->op_own >> 4;
+	////
+	//printf("DEBUG MLX5_POLL_ONE: opcode: %x\n", opcode);
+	////
 	requestor = is_requestor(opcode);
 	responder = is_responder(opcode);
 	if (unlikely(!requestor && !responder))
@@ -984,6 +994,13 @@ repoll:
 			if (unlikely(!*cur_rsc))
 				return CQ_POLL_ERR;
 		}
+		////
+		//if (*cur_rsc == NULL) {
+		//	printf("DEBUG MLX5_POLL_ONE ckpt1, cur_rsc is NULL\n");
+		//} else {
+		//	printf("DEBUG MLX5_POLL_ONE ckpt1, cur_rsc is not NULL\n");
+		//}
+		////
 	} else {
 		if (responder && srqn_uidx) {
 			is_srq = 1;
@@ -993,17 +1010,32 @@ repoll:
 					return CQ_POLL_ERR;
 			}
 		}
+		////
+		//if (*cur_rsc == NULL) {
+		//	printf("DEBUG MLX5_POLL_ONE ckpt2, cur_rsc is NULL\n");
+		//} else {
+		//	printf("DEBUG MLX5_POLL_ONE ckpt2, cur_rsc is not NULL\n");
+		//}
+		////
 
 		if (!*cur_rsc || (rsn != (*cur_rsc)->rsn)) {
 			*cur_rsc = mlx5_find_rsc(mctx, rsn);
 			if (unlikely(!*cur_rsc && !srqn_uidx))
 				return CQ_POLL_ERR;
 		}
+		////
+		//if (*cur_rsc == NULL) {
+		//	printf("DEBUG MLX5_POLL_ONE ckpt3, cur_rsc is NULL\n");
+		//} else {
+		//	printf("DEBUG MLX5_POLL_ONE ckpt3, cur_rsc is not NULL\n");
+		//}
+		////
 	}
 
 	if (*cur_rsc) {
 		switch ((*cur_rsc)->type) {
 		case MLX5_RSC_TYPE_QP:
+			////printf("Enter here to set mqp\n");
 			mqp = (struct mlx5_qp *)*cur_rsc;
 			if (likely(offsetof(struct ibv_exp_wc, qp) < wc_size)) {
 				wc->qp = &mqp->verbs_qp.qp;
@@ -1330,11 +1362,13 @@ static inline int poll_cq(struct ibv_cq *ibcq, int ne, struct ibv_exp_wc *wc,
 
 int mlx5_poll_cq(struct ibv_cq *ibcq, int ne, struct ibv_wc *wc)
 {
+	////printf("I entered mlx5_poll_cq\n");
 	return poll_cq(ibcq, ne, (struct ibv_exp_wc *)wc, sizeof(*wc), 0);
 }
 
 int mlx5_poll_cq_1(struct ibv_cq *ibcq, int ne, struct ibv_wc *wc)
 {
+	////printf("I entered mlx5_poll_cq_1\n");
 	return poll_cq(ibcq, ne, (struct ibv_exp_wc *)wc, sizeof(*wc), 1);
 }
 

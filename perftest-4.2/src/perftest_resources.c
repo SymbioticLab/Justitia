@@ -1860,6 +1860,10 @@ struct ibv_qp* ctx_qp_create(struct pingpong_context *ctx,
 	attr.cap.max_send_sge = MAX_SEND_SGE;
 	attr.cap.max_inline_data = user_param->inline_size;
 
+	if (user_param->size <= 1024) {
+		attr.isSmall = 1;
+	}
+
 	if (user_param->use_srq && (user_param->tst == LAT || user_param->machine == SERVER || user_param->duplex == ON)) {
 		attr.srq = ctx->srq;
 		attr.cap.max_recv_wr  = 0;
@@ -3196,8 +3200,9 @@ int run_iter_bw(struct pingpong_context *ctx,struct perftest_parameters *user_pa
 				if (totscnt == 0) {
                     user_param->START_CYCLE2 = get_cycles();
                 }
-				if (user_param->noPeak == OFF)
+				if (user_param->noPeak == OFF) {
 					user_param->tposted[totscnt] = get_cycles();
+				}
 
 				if (user_param->test_type == DURATION && user_param->state == END_STATE)
 					break;
@@ -3336,10 +3341,12 @@ int run_iter_bw(struct pingpong_context *ctx,struct perftest_parameters *user_pa
 						if (user_param->noPeak == OFF) {
 
 							//if (totccnt >=  tot_iters - 1)
-							if (totccnt >  tot_iters - 1)
+							if (totccnt >  tot_iters - 1) {
 								user_param->tcompleted[user_param->iters*num_of_qps - 1] = get_cycles();
-							else
+							}
+							else {
 								user_param->tcompleted[totccnt-1] = get_cycles();
+							}
 						}
 
 						if (user_param->test_type==DURATION && user_param->state == SAMPLE_STATE) {
@@ -3357,6 +3364,7 @@ int run_iter_bw(struct pingpong_context *ctx,struct perftest_parameters *user_pa
 					}
 		}
 	}
+	printf("totscnt = %d, totccnt = %d\n", totscnt, totccnt);
 	if (user_param->noPeak == ON && user_param->test_type == ITERATIONS)
 		user_param->tcompleted[0] = get_cycles();
 

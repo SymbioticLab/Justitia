@@ -1244,7 +1244,7 @@ int mlx4_poll_cq(struct ibv_cq *ibcq, int ne, struct ibv_exp_wc *wc,
 		//// increment npolled;
 		++npolled;
 	} else if (err == CQ_SPLIT_WIMM) {
-		printf("INDEED WIMM, USER received %d bytes\n", wc->byte_len);
+		//printf("INDEED WIMM, USER received %d bytes\n", wc->byte_len);
 
 		struct ibv_sge rsge;
 		struct ibv_recv_wr rwr;
@@ -1288,7 +1288,7 @@ int mlx4_poll_cq(struct ibv_cq *ibcq, int ne, struct ibv_exp_wc *wc,
 			ne2 = __mlx4_poll_cq(qp->split_recv_cq, 1, &split_wc, wc_size, is_exp);
 		} while (ne2 == 0);
 
-		printf("GET WIMM chunk from split cq; recv byte = %d\n", split_wc.byte_len);
+		//printf("GET WIMM chunk from split cq; recv byte = %d\n", split_wc.byte_len);
 		fflush(stdout);
 
 		//// increment npolled;
