@@ -1179,6 +1179,7 @@ int __mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 		++ind;
 	}
 	// printf("ORIG POST SEND: nreq = %d\n", nreq);
+	/* isolation */
 	if (isSmall == 2 && flow)
 	{
 		// printf("DEBUG enter\n");
@@ -1193,6 +1194,7 @@ int __mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 		}
 		debit -= nreq;
 	}
+	/* end */
 out:
 	ring_db(qp, ctrl, nreq, size, inl);
 

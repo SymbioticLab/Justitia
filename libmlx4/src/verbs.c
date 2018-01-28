@@ -63,7 +63,7 @@
 struct flow_info *flow = NULL;
 struct shared_block *sb = NULL;
 int start_flag = 0;
-int start_recv = 0;
+//int start_recv = 0;
 int num_active_small_flows = 0;
 int num_active_big_flows = 0;
 /* end */
@@ -1333,7 +1333,7 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 		    int attr_mask)
 {
 	start_flag = 0;
-	start_recv = 0;
+	//start_recv = 0;
 
 	struct ibv_modify_qp cmd;
 	int ret;
@@ -1808,7 +1808,7 @@ check:
 		}
 	}
 	start_flag = 1;
-	start_recv = 1;
+	//start_recv = 1;
 err:
 	return ret;
 }

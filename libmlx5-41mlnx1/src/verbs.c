@@ -57,6 +57,9 @@
 struct flow_info *flow = NULL;
 struct shared_block *sb = NULL;
 int start_flag = 0;
+//int start_recv = 0;
+int num_active_small_flows = 0;
+int num_active_big_flows = 0;
 /* end */
 
 int mlx5_single_threaded = 0;
@@ -2439,19 +2442,39 @@ struct ibv_qp *mlx5_create_qp(struct ibv_pd *pd,
 	////
 
 	/* isolation */
-	
 	int fd_shm;
 	if ((fd_shm = shm_open(SHARED_MEM_NAME, O_RDWR, 0600)) == -1){
 		printf("@@@Pacer's shared memory is not found. Pacer won't be used.\n");
 	} else {
-		atexit(set_inactive_on_exit);
+		if (!registered) {
+			registered = 1;
+			/* set up signal handler */
+		    struct sigaction new_action, old_action;
+		    new_action.sa_handler = termination_handler;
+		    sigemptyset(&new_action.sa_mask);
+		    new_action.sa_flags = 0;
+
+		    sigaction(SIGINT, NULL, &old_action);
+		    if (old_action.sa_handler != SIG_IGN)
+		        sigaction(SIGINT, &new_action, NULL);
+
+		    sigaction(SIGHUP, NULL, &old_action);
+		    if (old_action.sa_handler != SIG_IGN)
+		        sigaction(SIGHUP, &new_action, NULL);
+
+		    sigaction(SIGTERM, NULL, &old_action);
+		    if (old_action.sa_handler != SIG_IGN)
+		        sigaction(SIGTERM, &new_action, NULL);
+		    /* end */
+			atexit(set_inactive_on_exit);
+		}
 		sb = mmap(NULL, sizeof(struct shared_block), PROT_WRITE | PROT_READ,
 			MAP_SHARED, fd_shm, 0);
-		contact_pacer();
+		contact_pacer(1);
 		flow = &sb->flows[slot];
 		printf("@@@At slot %d.\n", slot);
 	}
-	/* end */
+	/* end */	
 
 	return qp;
 }
@@ -3072,6 +3095,8 @@ int __mlx5_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 int mlx5_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 		   int attr_mask)
 {
+	start_flag = 0;
+
 	struct mlx5_qp *mqp = to_mqp(qp);
 	struct mlx5_context *ctx = to_mctx(qp->context);
 	struct ibv_modify_qp cmd;
@@ -3299,6 +3324,7 @@ check:
 		mlx5_unlock(&mqp->rq.lock);
 	}
 
+	start_flag = 1;
 err:
 	return ret;
 }
