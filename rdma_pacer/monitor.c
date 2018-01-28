@@ -6,7 +6,6 @@
 #include <inttypes.h>
 #include <math.h>
 
-#define MEDIAN 2
 #define TAIL 3
 
 #define WIDTH 32768
@@ -21,10 +20,12 @@ void monitor_latency(void *arg)
 {
     printf(">>>starting monitor_latency...\n");
 
-    double median, tail_99;
+    double tail_99;
 
     int lat; // in nanoseconds
     cycles_t start_cycle, end_cycle;
+    cycles_t prev_start_cycle = 0;
+    // cycles_t cmh_start, cmh_end;
     int no_cpu_freq_warn = 1;
     double cpu_mhz = get_cpu_mhz(no_cpu_freq_warn);
 
@@ -129,8 +130,15 @@ void monitor_latency(void *arg)
             fprintf(stderr, "CMH_Update failed\n");
             break;
         }
-        median = round(CMH_Quantile(cmh, 0.5)/100.0)/10;
+
+        //cmh_start = get_cycles();
         tail_99 = round(CMH_Quantile(cmh, 0.99)/100.0)/10;
+        //cmh_end = get_cycles();
+        //printf("CMH_Quantile 99th takes %.2f us\n", (cmh_end - cmh_start)/cpu_mhz);
+        // if (prev_start_cycle)
+        //     printf("time between two sends %.2f us", (start_cycle - prev_start_cycle)/cpu_mhz);
+        // prev_start_cycle = start_cycle;
+        // printf("median %.1f us 99th %.1f us\n", median, tail_99);
         seq++;
         wr.wr_id = seq;
 
@@ -171,7 +179,7 @@ void monitor_latency(void *arg)
                 min_virtual_link_cap = round((double)(num_active_big_flows + num_remote_big_reads) 
                     / (num_active_big_flows + num_active_small_flows + num_remote_big_reads) * LINE_RATE_MB);
                 temp = __atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED);
-                if (median > MEDIAN || tail_99 > TAIL)
+                if (tail_99 > TAIL)
                 {
                     /* Multiplicative Decrease */
                     temp >>= 1;
