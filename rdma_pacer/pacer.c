@@ -5,7 +5,7 @@
 #include "countmin.h"
 
 #define DEFAULT_CHUNK_SIZE 1000000
-#define DEFAULT_BATCH_OPS 1667
+#define DEFAULT_BATCH_OPS 1500
 #define MAX_TOKEN 5
 
 extern CMH_type *cmh;

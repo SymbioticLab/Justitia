@@ -47,10 +47,11 @@
 #include "wqe.h"
 
 /* isolation */
+#include "qp_pacer.h"
 #include <inttypes.h>
-#include "pacer.h"
 int isSmall = 1; /* 0: elephant flow, 1: mouse flow */
-int never_active = 1;
+int isRead = 0;
+int32_t debit = 0;
 /* end */
 //int GLOBAL_CNT = 0;
 
@@ -2158,7 +2159,7 @@ static inline int __mlx5_post_send(struct ibv_qp *ibqp, struct ibv_exp_send_wr *
 			while (__atomic_load_n(&flow->pending, __ATOMIC_RELAXED)) {
 				//cpu_relax();
 				asm("nop");
-				printf("pending: %d\n", flow->pending);
+				//printf("pending: %d\n", flow->pending);
 			}
 		}
 		/* end */
@@ -2208,7 +2209,22 @@ static inline int __mlx5_post_send(struct ibv_qp *ibqp, struct ibv_exp_send_wr *
 			dump_wqe(to_mctx(ibqp->context)->dbg_fp, idx, size, qp);
 #endif
 	}
-
+	/* isolation */
+	if (isSmall == 2 && flow)
+	{
+		// printf("DEBUG enter\n");
+		while (debit <= 0)
+		{
+			// printf("DEBUG REQUEST TOKEN\n");
+			__atomic_store_n(&flow->pending, 1, __ATOMIC_RELAXED);
+			while (__atomic_load_n(&flow->pending, __ATOMIC_RELAXED))
+				cpu_relax();
+			debit += __atomic_load_n(&sb->active_batch_ops, __ATOMIC_RELAXED);
+			// printf("DEBUG DEBIT %d\n", debit);
+		}
+		debit -= nreq;
+	}
+	/* end */
 out:
 	if (likely(nreq)) {
 		qp->sq.head += nreq;
@@ -2250,23 +2266,49 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 	struct mlx5_qp *qp = to_mqp(ibqp);
 
 	/* isolation */
-	if (unlikely(start_flag)) {	
+	if (unlikely(start_flag))
+	{
 		start_flag = 0;
-		if (flow) {
-			//if (wr->sg_list->length <= MAX_SMALL) {
-			if (qp->isSmall == 1) {
+		if (flow)
+		{
+			switch (qp->isSmall)
+			{
+			case 0:
+			{
+				isSmall = 0;
+				if (wr->opcode == IBV_WR_RDMA_READ)
+				{
+					__atomic_store_n(&flow->read, 1, __ATOMIC_RELAXED);
+					contact_pacer_read();
+				}
+				else
+				{
+					num_active_big_flows++;
+					printf("DEBUG POST SEND: INDEED increment BIG flow counter\n");
+					__atomic_fetch_add(&sb->num_active_big_flows, 1, __ATOMIC_RELAXED);
+				}
+				break;
+			}
+			case 1:
+			{
 				isSmall = 1;
-				never_active = 0;
+				num_active_small_flows++;
 				printf("DEBUG POST SEND: INDEED increment SMALL flow counter\n");
 				__atomic_fetch_add(&sb->num_active_small_flows, 1, __ATOMIC_RELAXED);
-			} else if (qp->isSmall == 0) {
-				isSmall = 0;
-				never_active = 0;
-				printf("DEBUG POST SEND: INDEED increment BIG flow counter\n");
-				__atomic_fetch_add(&sb->num_active_big_flows, 1, __ATOMIC_RELAXED);
+				break;
+			}
+			case 2:
+			{
+				isSmall = 2;
+				// num_active_small_flows++;
+				// printf("DEBUG POST SEND: INDEED increment SMALL flow counter\n");
+				// __atomic_fetch_add(&sb->num_active_small_flows, 1, __ATOMIC_RELAXED);
+				printf("DEBUG POST SEND: TPUT SENSITIVE\n");
+				break;
+			}
 			}
 		}
-	}
+	}	
 	/* end */
 
 	int ret = 0;

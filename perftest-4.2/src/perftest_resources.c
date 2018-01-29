@@ -1861,7 +1861,11 @@ struct ibv_qp* ctx_qp_create(struct pingpong_context *ctx,
 	attr.cap.max_inline_data = user_param->inline_size;
 
 	if (user_param->size <= 1024) {
-		attr.isSmall = 1;
+		if (user_param->post_list < 16) {
+			attr.isSmall = 1;
+		} else {
+			attr.isSmall = 2;
+		}
 	}
 
 	if (user_param->use_srq && (user_param->tst == LAT || user_param->machine == SERVER || user_param->duplex == ON)) {
