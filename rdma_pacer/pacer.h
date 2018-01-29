@@ -19,8 +19,8 @@
 #include "pingpong.h"
 
 #define SHARED_MEM_NAME "/rdma-fairness"
-#define MAX_FLOWS 100
-#define LINE_RATE_MB 6750 /* MBps */
+#define MAX_FLOWS 512
+#define LINE_RATE_MB 6000 /* MBps */
 #define MSG_LEN 8
 #define SOCK_PATH "/users/yuetan/rdma_socket"
 #define ELEPHANT_HAS_LOWER_BOUND 1  /* whether elephant has a minimum virtual link cap set by AIMD */
