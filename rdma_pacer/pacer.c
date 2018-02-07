@@ -10,9 +10,9 @@
 
 extern CMH_type *cmh;
 struct control_block cb;
-uint32_t chunk_size_table[] = {4096, 8192, 16384, 32768, 65536, 1048576, 1048576};
-// uint32_t chunk_size_table[] = {8192, 8192, 100000, 100000, 500000, 1000000, 1000000};
-uint32_t chunk_size_table[] = {8192, 8192, 100000, 1000000, 1000000, 1000000, 1000000};
+//uint32_t chunk_size_table[] = {4096, 8192, 16384, 32768, 65536, 1048576, 1048576};
+//uint32_t chunk_size_table[] = {8192, 8192, 100000, 100000, 500000, 1000000, 1000000};
+uint32_t chunk_size_table[] = {1000000, 1000000, 1000000, 1000000, 1000000, 1000000, 1000000};
 /* utility fuctions */
 static void error(char *msg)
 {
@@ -106,10 +106,10 @@ static void flow_handler()
             send(s2, &buf, len, 0);
 
             /* find next empty slot */
-            cb.next_slot++;
+            cb.next_slot = (cb.next_slot + 1) % MAX_FLOWS;
             while (__atomic_load_n(&cb.sb->flows[cb.next_slot].active, __ATOMIC_RELAXED))
             {
-                cb.next_slot++;
+                cb.next_slot = (cb.next_slot + 1) % MAX_FLOWS;
             }
         }
         else if (strcmp(buf, "read") == 0)
