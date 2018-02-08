@@ -2899,7 +2899,8 @@ void print_report_bw (struct perftest_parameters *user_param, struct bw_report_d
 		for (i = 0; i < idx; ++i) {
 			if (user_param->tcompleted[i] != 0) {
 				curr_time_us = (double)(user_param->tcompleted[i] - user_param->START_CYCLE) / cpu_mhz;
-				fprintf(f, "%ld\t\t%.2f\t\t%.2f\n", i + 1, curr_time_us, (double)((double)(user_param->tcompleted[i] - user_param->tposted[i])) / cpu_mhz);
+				//fprintf(f, "%ld\t\t%.2f\t\t%.2f\n", i + 1, curr_time_us, (double)((double)(user_param->tcompleted[i] - user_param->tposted[i])) / cpu_mhz);
+				fprintf(f, "%ld\t\t%.2f\t\t%.2f\n", i + 1, curr_time_us, (double)((double)(user_param->tposted[i+1] - user_param->tposted[i-user_param->post_list])) / cpu_mhz);
 			}
 		}	
 		fprintf(f, "program start: %ld\n", (long)(user_param->start_tv.tv_sec * 1000000 + user_param->start_tv.tv_usec));
