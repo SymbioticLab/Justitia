@@ -21,6 +21,7 @@
 #define SOCK_PATH "/gpfs/gpfs0/groups/chowdhury/yiwenzhg/rdma_socket"
 #define MSG_LEN 8
 #define MAX_FLOWS 512
+#define HOSTNAME_PATH "/proc/sys/kernel/hostname"
 
 struct flow_info {
     uint8_t pending;
@@ -44,5 +45,7 @@ extern int start_recv;             /* initialized in qp.c */
 extern int isSmall;                /* initialized in qp.c */
 extern int num_active_small_flows; /* initialized in verbs.c */
 extern int num_active_big_flows;   /* initialized in verbs.c */
+
+char *get_sock_path();
 
 #endif

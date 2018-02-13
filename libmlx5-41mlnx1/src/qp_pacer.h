@@ -5,6 +5,7 @@
 
 static void contact_pacer_read() {
     /* prepare unix domain socket */
+    char *sock_path = get_sock_path();
     unsigned int s, len;
     struct sockaddr_un remote;
     char str[MSG_LEN];
@@ -17,7 +18,8 @@ static void contact_pacer_read() {
     printf("Contacting pacer...\n");
 
     remote.sun_family = AF_UNIX;
-    strcpy(remote.sun_path, SOCK_PATH);
+    strcpy(remote.sun_path, sock_path);
+    free(sock_path);
     len = strlen(remote.sun_path) + sizeof(remote.sun_family);
     if (connect(s, (struct sockaddr *)&remote, len) == -1) {
         perror("connect");

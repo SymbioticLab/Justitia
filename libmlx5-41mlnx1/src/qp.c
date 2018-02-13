@@ -2157,8 +2157,7 @@ static inline int __mlx5_post_send(struct ibv_qp *ibqp, struct ibv_exp_send_wr *
 		if (isSmall == 0 && flow) {
 			__atomic_store_n(&flow->pending, 1, __ATOMIC_RELAXED);
 			while (__atomic_load_n(&flow->pending, __ATOMIC_RELAXED)) {
-				//cpu_relax();
-				asm("nop");
+				cpu_relax();
 				//printf("pending: %d\n", flow->pending);
 			}
 		}
@@ -2316,7 +2315,9 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 
 	//// splitting logic
 	//// Update split chunk size
+	if (sb == NULL) printf("(2)sb is NULL!!\n");
 	uint32_t split_chunk_size = sb ? __atomic_load_n(&sb->active_chunk_size, __ATOMIC_RELAXED) : SPLIT_CHUNK_SIZE;
+	printf("DEBUG: POST_SEND: split_chunk_size = %" PRIu32 "\n", split_chunk_size);
 	//if (++GLOBAL_CNT % 100 == 0) {
 	//	printf("DEBUG: POST SEND: split_chunk_size = %" PRIu32 " [%d]\n", split_chunk_size, GLOBAL_CNT);
 	//	fflush(stdout);

@@ -1,18 +1,22 @@
 #include "pacer.h"
 #include "monitor.h"
 #include "get_clock.h"
-#include <immintrin.h> /* For _mm_pause */
+//#include <immintrin.h> /* For _mm_pause */
 #include "countmin.h"
 
-#define DEFAULT_CHUNK_SIZE 1000000
-#define DEFAULT_BATCH_OPS 1500
+#define DEFAULT_CHUNK_SIZE 10000000
+//#define DEFAULT_CHUNK_SIZE 1000000
+#define DEFAULT_BATCH_OPS 667
+//#define DEFAULT_BATCH_OPS 1500
 #define MAX_TOKEN 5
+#define HOSTNAME_PATH "/proc/sys/kernel/hostname"
 
 extern CMH_type *cmh;
 struct control_block cb;
 //uint32_t chunk_size_table[] = {4096, 8192, 16384, 32768, 65536, 1048576, 1048576};
 //uint32_t chunk_size_table[] = {8192, 8192, 100000, 100000, 500000, 1000000, 1000000};
-uint32_t chunk_size_table[] = {1000000, 1000000, 1000000, 1000000, 1000000, 1000000, 1000000};
+//uint32_t chunk_size_table[] = {100000, 100000, 100000, 100000, 100000, 100000, 100000};
+uint32_t chunk_size_table[] = {1000000, 1000000, 1000000, 1000000, 1000000, 1000000, 10000000};
 /* utility fuctions */
 static void error(char *msg)
 {
@@ -28,11 +32,14 @@ static void usage()
 static inline void cpu_relax() __attribute__((always_inline));
 static inline void cpu_relax()
 {
+/*
 #if (COMPILER == MVCC)
     _mm_pause();
 #elif (COMPILER == GCC || COMPILER == LLVM)
     asm("pause");
 #endif
+*/
+    asm("nop");
 }
 
 static void termination_handler(int sig)
@@ -47,6 +54,34 @@ static void rm_shmem_on_exit()
 {
     remove("/dev/shm/rdma-fairness");
 }
+
+char *get_sock_path() {
+    FILE *fp;
+    fp = fopen(HOSTNAME_PATH, "r");
+    if (fp == NULL) {
+        printf("Error opening %s, use default SOCK_PATH", HOSTNAME_PATH);
+        fclose(fp);
+        return SOCK_PATH;
+    }
+
+    char hostname[60];
+    if(fgets(hostname, 60, fp) != NULL) {
+        char *sock_path = (char *)malloc(108 * sizeof(char));
+        printf("DE hostname:%s\n", hostname);
+        int len = strlen(hostname);
+        if (len > 0 && hostname[len-1] == '\n') hostname[len-1] = '\0';
+        strcat(hostname, "_rdma_socket");
+        strcpy(sock_path, getenv("HOME"));
+        len = strlen(sock_path);
+        sock_path[len] = '/';
+        strcat(sock_path, hostname);
+        fclose(fp);
+        return sock_path;
+    }
+
+    fclose(fp);
+    return SOCK_PATH;
+}
 /* end */
 
 /* handle incoming flows one by one; assign a slot to an incoming flow */
@@ -57,6 +92,7 @@ static void flow_handler()
     unsigned int s, s2, len;
     struct sockaddr_un local, remote;
     char buf[MSG_LEN];
+    char *sock_path = get_sock_path();
 
     struct ibv_send_wr send_wr, *bad_wr = NULL;
     struct ibv_sge send_sge;
@@ -75,7 +111,7 @@ static void flow_handler()
 
     /* bind to an address */
     local.sun_family = AF_UNIX;
-    strcpy(local.sun_path, SOCK_PATH);
+    strcpy(local.sun_path, sock_path);
     unlink(local.sun_path);
     len = strlen(local.sun_path) + sizeof(local.sun_family);
     if (bind(s, (struct sockaddr *)&local, len))
@@ -169,11 +205,12 @@ static void generate_tokens()
         if ((temp = __atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED)))
         {
             if ((num_big = __atomic_load_n(&cb.sb->num_active_big_flows, __ATOMIC_RELAXED)))
-                chunk_size = chunk_size_table[temp / num_big / 1000];
+                chunk_size = chunk_size_table[temp / num_big / (LINE_RATE_MB/6)];
             else
                 chunk_size = DEFAULT_CHUNK_SIZE;
             __atomic_store_n(&cb.sb->active_chunk_size, chunk_size, __ATOMIC_RELAXED);
-            __atomic_store_n(&cb.sb->active_batch_ops, chunk_size/1000000.0*DEFAULT_BATCH_OPS, __ATOMIC_RELAXED);
+            //__atomic_store_n(&cb.sb->active_batch_ops, chunk_size/1000000.0*DEFAULT_BATCH_OPS, __ATOMIC_RELAXED);
+            __atomic_store_n(&cb.sb->active_batch_ops, chunk_size/DEFAULT_CHUNK_SIZE*DEFAULT_BATCH_OPS, __ATOMIC_RELAXED);
             // __atomic_fetch_add(&cb.tokens, 10, __ATOMIC_RELAXED);
             // wait_time.tv_nsec = 10 * chunk_size / temp * 1000;
             if (__atomic_load_n(&cb.tokens, __ATOMIC_RELAXED) < MAX_TOKEN)
