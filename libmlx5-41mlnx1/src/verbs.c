@@ -2472,7 +2472,6 @@ struct ibv_qp *mlx5_create_qp(struct ibv_pd *pd,
 			MAP_SHARED, fd_shm, 0);
 		contact_pacer(1);
 		flow = &sb->flows[slot];
-		if (sb == NULL) printf("sb is NULL!!\n");
 		printf("@@@At slot %d.\n", slot);
 	}
 	/* end */	

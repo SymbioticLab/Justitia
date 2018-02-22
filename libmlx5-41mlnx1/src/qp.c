@@ -2270,6 +2270,7 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 		start_flag = 0;
 		if (flow)
 		{
+			printf("DEBUG: split_mlx5_post_send: qp->isSmall = %d\n", qp->isSmall);
 			switch (qp->isSmall)
 			{
 			case 0:
@@ -2294,6 +2295,7 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 				num_active_small_flows++;
 				printf("DEBUG POST SEND: INDEED increment SMALL flow counter\n");
 				__atomic_fetch_add(&sb->num_active_small_flows, 1, __ATOMIC_RELAXED);
+				printf("current num small flows = %d\n", __atomic_load_n(&sb->num_active_small_flows, __ATOMIC_RELAXED));
 				break;
 			}
 			case 2:
@@ -2315,9 +2317,8 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 
 	//// splitting logic
 	//// Update split chunk size
-	if (sb == NULL) printf("(2)sb is NULL!!\n");
 	uint32_t split_chunk_size = sb ? __atomic_load_n(&sb->active_chunk_size, __ATOMIC_RELAXED) : SPLIT_CHUNK_SIZE;
-	printf("DEBUG: POST_SEND: split_chunk_size = %" PRIu32 "\n", split_chunk_size);
+	//printf("DEBUG: POST_SEND: split_chunk_size = %" PRIu32 "\n", split_chunk_size);
 	//if (++GLOBAL_CNT % 100 == 0) {
 	//	printf("DEBUG: POST SEND: split_chunk_size = %" PRIu32 " [%d]\n", split_chunk_size, GLOBAL_CNT);
 	//	fflush(stdout);

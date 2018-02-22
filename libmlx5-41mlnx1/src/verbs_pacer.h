@@ -52,8 +52,8 @@ static void contact_pacer(int join) {
     remote.sun_family = AF_UNIX;
     strcpy(remote.sun_path, sock_path);
     free(sock_path);
-    printf("SUN_PATH = %s\n", remote.sun_path);
-    printf("SOCK_PATH = %s\n", SOCK_PATH);
+    //printf("SUN_PATH = %s\n", remote.sun_path);
+    //printf("SOCK_PATH = %s\n", SOCK_PATH);
     len = strlen(remote.sun_path) + sizeof(remote.sun_family);
     if (connect(s, (struct sockaddr *)&remote, len) == -1) {
         perror("connect");

@@ -7,8 +7,37 @@
 unsigned int slot;
 static int registered = 0;
 
+char *get_sock_path() {
+    FILE *fp;
+    fp = fopen(HOSTNAME_PATH, "r");
+    if (fp == NULL) {
+        printf("Error opening %s, use default SOCK_PATH", HOSTNAME_PATH);
+        fclose(fp);
+        return SOCK_PATH;
+    }
+
+    char hostname[60];
+    if(fgets(hostname, 60, fp) != NULL) {
+        char *sock_path = (char *)malloc(108 * sizeof(char));
+        printf("DE hostname:%s\n", hostname);
+        int len = strlen(hostname);
+        if (len > 0 && hostname[len-1] == '\n') hostname[len-1] = '\0';
+        strcat(hostname, "_rdma_socket");
+        strcpy(sock_path, getenv("HOME"));
+        len = strlen(sock_path);
+        sock_path[len] = '/';
+        strcat(sock_path, hostname);
+        fclose(fp);
+        return sock_path;
+    }
+
+    fclose(fp);
+    return SOCK_PATH;
+}
+
 static void contact_pacer(int join) {
     /* prepare unix domain socket */
+    char *sock_path = get_sock_path();
     unsigned int s, len;
     struct sockaddr_un remote;
     char str[MSG_LEN];
@@ -21,7 +50,10 @@ static void contact_pacer(int join) {
     printf("Contacting pacer...\n");
 
     remote.sun_family = AF_UNIX;
-    strcpy(remote.sun_path, SOCK_PATH);
+    strcpy(remote.sun_path, sock_path);
+    free(sock_path);
+    printf("SUN_PATH = %s\n", remote.sun_path);
+    printf("SOCK_PATH = %s\n", SOCK_PATH);
     len = strlen(remote.sun_path) + sizeof(remote.sun_family);
     if (connect(s, (struct sockaddr *)&remote, len) == -1) {
         perror("connect");
