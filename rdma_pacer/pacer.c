@@ -65,7 +65,7 @@ char *get_sock_path() {
     }
 
     char hostname[60];
-    if(fgets(hostname, 60, fp) != NULL) {
+    if (fgets(hostname, 60, fp) != NULL) {
         char *sock_path = (char *)malloc(108 * sizeof(char));
         printf("DE hostname:%s\n", hostname);
         int len = strlen(hostname);
@@ -81,6 +81,82 @@ char *get_sock_path() {
 
     fclose(fp);
     return SOCK_PATH;
+}
+/* end */
+
+/* circular buffer for future logging */
+struct circular_buffer {
+    void *buffer;     // data buffer
+    void *buffer_end; // end of data buffer
+    size_t capacity;  // maximum number of items in the buffer
+    size_t count;     // number of items in the buffer
+    size_t sz;        // size of each item in the buffer
+    void *head;       // pointer to head
+    void *tail;       // pointer to tail
+};
+
+//struct circular_buffer token_cbuf;
+
+int cbuf_init(struct circular_buffer *buf, size_t capacity, size_t sz)
+{
+    buf->buffer = malloc(capacity * sz);
+    if (buf->buffer == NULL)
+        return -1;
+    buf->buffer_end = (char *)buf->buffer + capacity * sz;
+    buf->capacity = capacity;
+    buf->count = 0;
+    buf->sz = sz;
+    buf->head = buf->buffer;
+    buf->tail = buf->buffer;
+    return 0;
+}
+
+void cbuf_free(struct circular_buffer *buf)
+{
+    free(buf->buffer);
+}
+
+int cbuf_push_back(struct circular_buffer *buf, const void *item)
+{
+    if (buf->count == buf->capacity)
+        return -1;
+    memcpy(buf->head, item, buf->sz);
+    buf->head = (char*)buf->head + buf->sz;
+    if (buf->head == buf->buffer_end)
+        buf->head = buf->buffer;
+    buf->count++;
+    return 0;
+}
+
+int cbuf_pop_front(struct circular_buffer *buf, void *item)
+{
+    if (buf->count == 0)
+        return -1;
+    memcpy(item, buf->tail, buf->sz);
+    buf->tail = (char*)buf->tail + buf->sz;
+    if (buf->tail == buf->buffer_end)
+        buf->tail = buf->buffer;
+    buf->count--;
+    return 0;
+}
+
+void logging_tokens()
+{
+    //cbuf_init(&token_cbuf, 1000000, sizeof(uint64_t));
+    //cbuf_push_back(&token_cbuf, &cb.tokens)
+    FILE *f = fopen("token_log.txt", "w");
+    fprintf(f, "Time(us)\tnum_tokens\n");
+    cycles_t start_cycle, curr_cycle;
+    start_cycle = get_cycles();
+    double cpu_mhz = get_cpu_mhz(1);
+    while (1) {
+        while (get_cycles() - curr_cycle < cpu_mhz * DEFAULT_CHUNK_SIZE / LINE_RATE_MB)
+            cpu_relax();
+        curr_cycle = get_cycles();
+        fprintf(f, "%.2f\t\t%lld\n", ((double) (curr_cycle - start_cycle) / cpu_mhz), cb.tokens);
+        //fprintf(f, "%.2f\t\t%" PRIu64 "\n", (double) ((curr_cycle - start_cycle) / cpu_mhz), __atomic_load_n(&cb.tokens, __ATOMIC_RELAXED));
+    }
+
 }
 /* end */
 
@@ -318,7 +394,7 @@ int main(int argc, char **argv)
     atexit(rm_shmem_on_exit);
 
     int fd_shm, i;
-    pthread_t th1, th2, th3, th4;
+    pthread_t th1, th2, th3, th4, th5;
     struct monitor_param param;
     char *endPtr;
     param.addr = argv[1];
@@ -398,6 +474,13 @@ int main(int argc, char **argv)
     if (pthread_create(&th4, NULL, (void *(*)(void *)) & rate_limit_read, NULL))
     {
         error("pthread_create: generate_tokens_read");
+    }
+
+    /* logging thread */
+    printf("starting thread for logging...\n");
+    if (pthread_create(&th5, NULL, (void *(*)(void *)) & logging_tokens, NULL))
+    {
+        error("pthread_create: logging_tokens");
     }
 
     /* main loop: fetch token */
