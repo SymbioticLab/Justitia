@@ -3101,7 +3101,8 @@ int run_iter_bw(struct pingpong_context *ctx,struct perftest_parameters *user_pa
 	int			address_offset = 0;
 	int			flows_burst_iter = 0;
 
-	ALLOCATE(wc ,struct ibv_wc ,CTX_POLL_BATCH);
+	//ALLOCATE(wc ,struct ibv_wc ,CTX_POLL_BATCH);
+	ALLOCATE(wc ,struct ibv_wc , user_param->num_of_qps);
 
 	if (user_param->test_type == DURATION) {
 		duration_param=user_param;
@@ -3162,6 +3163,7 @@ int run_iter_bw(struct pingpong_context *ctx,struct perftest_parameters *user_pa
 	while (totscnt < tot_iters  || totccnt < tot_iters ||
 		(user_param->test_type == DURATION && user_param->state != END_STATE) ) {
 
+		printf("DEBUG: (1) totccnt: %d; totscnt: %d\n", totccnt, totscnt);
 		/* main loop to run over all the qps and post each time n messages */
 		for (index =0 ; index < num_of_qps ; index++) {
 			if (user_param->rate_limit_type == SW_RATE_LIMIT && is_sending_burst == 0) {
@@ -3312,7 +3314,9 @@ int run_iter_bw(struct pingpong_context *ctx,struct perftest_parameters *user_pa
 			}
 		}
 		if (totccnt < tot_iters || (user_param->test_type == DURATION &&  totccnt < totscnt)) {
+			printf("DEBUG: (2) totccnt: %d; totscnt: %d\n", totccnt, totscnt);
 				if (user_param->use_event) {
+					printf("stuck?\n");
 					if (ctx_notify_events(ctx->channel)) {
 						fprintf(stderr, "Couldn't request CQ notification\n");
 						return_value = FAILURE;
@@ -3320,12 +3324,18 @@ int run_iter_bw(struct pingpong_context *ctx,struct perftest_parameters *user_pa
 					}
 				}
 
+				printf("DEBUG: calling ibv_poll_cq\n");
 				#ifdef HAVE_ACCL_VERBS
 				if (user_param->verb_type == ACCL_INTF)
 					ne = ctx->send_cq_family->poll_cnt(ctx->send_cq, CTX_POLL_BATCH);
-				else
+				else {
 				#endif
-					ne = ibv_poll_cq(ctx->send_cq,CTX_POLL_BATCH,wc);
+					//ne = ibv_poll_cq(ctx->send_cq,CTX_POLL_BATCH,wc);
+					ne = ibv_poll_cq(ctx->send_cq,user_param->num_of_qps,wc);
+					//printf("PUPU ne: %d\n", ne);
+				#ifdef HAVE_ACCL_VERBS
+				}
+				#endif
 
 				if (ne > 0) {
 					for (i = 0; i < ne; i++) {
