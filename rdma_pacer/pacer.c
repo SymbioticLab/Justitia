@@ -393,7 +393,8 @@ int main(int argc, char **argv)
     atexit(rm_shmem_on_exit);
 
     int fd_shm, i;
-    pthread_t th1, th2, th3, th4, th5;
+    pthread_t th1, th2, th3, th4;
+    //pthread_t th1, th2, th3, th4, th5;
     struct monitor_param param;
     char *endPtr;
     param.addr = argv[1];
@@ -476,11 +477,13 @@ int main(int argc, char **argv)
     }
 
     /* logging thread */
+    /*
     printf("starting thread for logging...\n");
     if (pthread_create(&th5, NULL, (void *(*)(void *)) & logging_tokens, NULL))
     {
         error("pthread_create: logging_tokens");
     }
+    */
 
     /* main loop: fetch token */
     while (1)
