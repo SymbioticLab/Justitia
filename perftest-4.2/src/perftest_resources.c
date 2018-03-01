@@ -3316,7 +3316,6 @@ int run_iter_bw(struct pingpong_context *ctx,struct perftest_parameters *user_pa
 		if (totccnt < tot_iters || (user_param->test_type == DURATION &&  totccnt < totscnt)) {
 			//printf("DEBUG: (2) totccnt: %d; totscnt: %d\n", totccnt, totscnt);
 				if (user_param->use_event) {
-					printf("stuck?\n");
 					if (ctx_notify_events(ctx->channel)) {
 						fprintf(stderr, "Couldn't request CQ notification\n");
 						return_value = FAILURE;
@@ -3324,7 +3323,6 @@ int run_iter_bw(struct pingpong_context *ctx,struct perftest_parameters *user_pa
 					}
 				}
 
-				printf("DEBUG: calling ibv_poll_cq\n");
 				#ifdef HAVE_ACCL_VERBS
 				if (user_param->verb_type == ACCL_INTF)
 					ne = ctx->send_cq_family->poll_cnt(ctx->send_cq, CTX_POLL_BATCH);
