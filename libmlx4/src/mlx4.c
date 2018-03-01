@@ -463,6 +463,7 @@ void read_init_vars(struct mlx4_context *ctx)
 		}
 
 		ctx->env_initialized = 1;
+		//printf("DEBUG BF: ctx->prefer_bf: %d\n", ctx->prefer_bf);
 	}
 	pthread_mutex_unlock(&ctx->env_mtx);
 }

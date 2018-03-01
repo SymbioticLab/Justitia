@@ -531,9 +531,11 @@ static inline void __ring_db(struct mlx4_qp *qp, struct mlx4_wqe_ctrl_seg *ctrl,
 							 const int use_bf, const int dedic_bf, const int one_thread_auto_evict,
 							 const int prefer_bf)
 {
+	//printf("DEBUG BF: dedic_bf = %d; prefer_bf = %d; inl = %d; use_bf = %d; qp->bf_buf_size = %d; size = %d\n", dedic_bf, prefer_bf, inl, use_bf, qp->bf_buf_size, size);
 	if (use_bf && nreq == 1 && (inl || prefer_bf) &&
 		size > 1 && size <= qp->bf_buf_size / 16)
 	{
+		//printf("DEBUG BF: Indeed copy wqe to bf\n");
 		copy_wqe_to_bf(qp, ctrl, align(size * 16, 64),
 					   qp->sq.head, dedic_bf,
 					   one_thread_auto_evict);
@@ -1196,6 +1198,7 @@ int __mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 	}
 	/* end */
 out:
+	//printf("DEBUG __mlx4_post_send: right before ring_db: size = %d\n", size);
 	ring_db(qp, ctrl, nreq, size, inl);
 
 	if (likely(nreq))
@@ -1278,7 +1281,7 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 	//	fflush(stdout);
 	//}
 	//printf("DEBUG: POST SEND: split_chunk_size = %" PRIu32 "; msg size = %d [%d]\n", split_chunk_size, wr->sg_list->length, ++GLOBAL_CNT);
-	fflush(stdout);
+	//fflush(stdout);
 
 	int is_two_sided = 0;
 	int is_wimm = 0;

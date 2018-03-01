@@ -573,6 +573,7 @@ struct ibv_qp *mlx4_exp_create_qp(struct ibv_context *context, struct ibv_exp_qp
 			for (i = 0 ; i < bfs->num_dedic_bfs; i++) {
 				if (!bfs->dedic_bf_used[i]) {
 					/* using dedicated BF */
+					//printf("DEBUG BF: DEDICATED BLUE FLAME\n");
 					qp->db_method = MLX4_QP_DB_METHOD_DEDIC_BF;
 					qp->bf = (union mlx4_bf *)(&bfs->dedic_bf[i]);
 					bfs->dedic_bf_used[i] = 1;
