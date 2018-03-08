@@ -260,6 +260,9 @@ static void usage(const char *argv0, VerbType verb, TestType tst, int connection
 
 	printf("  -L, --output_log=<log_filename>\n");
 
+	printf("  --log_off\n");
+	printf(" Does not dump log\n");
+
 	if (tst != FS_RATE) {
 		if (connection_type == RawEth) {
 			printf("  -m, --mtu=<mtu> ");
@@ -722,6 +725,7 @@ static void init_perftest_params(struct perftest_parameters *user_param)
 	user_param->flows_burst		= 1;
 	user_param->perform_warm_up	= 0;
 	user_param->use_ooo		= 0;
+	user_param->log_off 	= 0;
 }
 
 /******************************************************************************
@@ -1774,6 +1778,7 @@ int parser(struct perftest_parameters *user_param,char *argv[], int argc)
 	static int remote_mac_flag = 0;
 	static int reply_every_flag = 0;
 	static int perform_warm_up_flag = 0;
+	static int log_off_flag = 0;
 	static int use_ooo_flag = 0;
 	static int vlan_en = 0;
 	static int vlan_pcp_flag = 0;
@@ -1903,6 +1908,7 @@ int parser(struct perftest_parameters *user_param,char *argv[], int argc)
 			{ .name = "perform_warm_up",	.has_arg = 0, .flag = &perform_warm_up_flag, .val = 1},
 			{ .name = "vlan_en",            .has_arg = 0, .flag = &vlan_en, .val = 1 },
 			{ .name = "vlan_pcp",		.has_arg = 1, .flag = &vlan_pcp_flag, .val = 1 },
+			{ .name = "log_off",	.has_arg = 0, .flag = &log_off_flag, .val = 1},
 
 			#if defined HAVE_OOO_ATTR || defined HAVE_EXP_OOO_ATTR
 			{ .name = "use_ooo",		.has_arg = 0, .flag = &use_ooo_flag, .val = 1},
@@ -2507,6 +2513,9 @@ int parser(struct perftest_parameters *user_param,char *argv[], int argc)
 	if (perform_warm_up_flag) {
 		user_param->perform_warm_up = 1;
 	}
+	if (log_off_flag) {
+		user_param->log_off = 1;
+	}
 	if (use_ooo_flag)
 		user_param->use_ooo = 1;
 	if(vlan_en) {
@@ -2844,6 +2853,7 @@ void print_report_bw (struct perftest_parameters *user_param, struct bw_report_d
 	format_factor = (user_param->report_fmt == MBS) ? 0x100000 : 125000000;
 
 	sum_of_test_cycles = ((double)(user_param->tcompleted[location_arr] - user_param->tposted[0]));
+	printf("DEDEDE: user_param->tcompleted[%d](in us) = %.2f\n", location_arr, (double)user_param->tcompleted[location_arr]*1000000/cycles_to_units);
 	printf("TOTAL duration = %.2f\n", sum_of_test_cycles * 1000000 / cycles_to_units);
 	printf("[message per sec] = %.2f\n", ((double)num_of_calculated_iters * cycles_to_units * run_inf_bi_factor) /sum_of_test_cycles);
 
@@ -2858,7 +2868,7 @@ void print_report_bw (struct perftest_parameters *user_param, struct bw_report_d
 
 	peak_up = !(user_param->noPeak)*(cycles_t)tsize*(cycles_t)cycles_to_units;
 	peak_down = (cycles_t)opt_delta * format_factor;
-	if (user_param->iters < 10000000 && user_param->post_list == 1) {
+	if (user_param->iters < 10000000 && user_param->post_list == 1 && !user_param->log_off) {
 		FILE *f = fopen(user_param->output_log, "w");
 		//fprintf(f, "Task_cnt\tTime(us)\n");
 		fprintf(f, "Task_cnt\tTime(us)\t\tLatency(us)\n");
@@ -2890,7 +2900,7 @@ void print_report_bw (struct perftest_parameters *user_param, struct bw_report_d
 		fclose(f);
 	}
 
-	if (user_param->post_list > 1) {
+	if (user_param->post_list > 1 && !user_param->log_off) {
 		FILE *f = fopen(user_param->output_log, "w");
 		fprintf(f, "Task_cnt\tTime(us)\t\tLatency(us)\n");
 		double cpu_mhz = get_cpu_mhz(user_param->cpu_freq_f);
@@ -2906,6 +2916,18 @@ void print_report_bw (struct perftest_parameters *user_param, struct bw_report_d
 		fprintf(f, "program start: %ld\n", (long)(user_param->start_tv.tv_sec * 1000000 + user_param->start_tv.tv_usec));
 		fprintf(f, "START1: %.2f, START2: %.2f, START_DIFF: %.2f\n", user_param->START_CYCLE / cpu_mhz, user_param->START_CYCLE2 / cpu_mhz, user_param->START_CYCLE2 / cpu_mhz - user_param->START_CYCLE / cpu_mhz);
 		fprintf(f, "tposted[0]: %.2f\n", (user_param->tposted[0] - user_param->START_CYCLE) / cpu_mhz);
+		fclose(f);
+	}
+
+	if (user_param->num_of_qps > 1) {
+		FILE *f = fopen("multi_qp_result.txt", "w");
+		fprintf(f, "qp\tJCT(us)\n");
+		double cpu_mhz = get_cpu_mhz(user_param->cpu_freq_f);
+		double curr_time_us;
+		uint64_t idx = user_param->num_of_qps;
+		for (i = 0; i < idx; ++i) {
+			fprintf(f, "%ld\t%.2f\n", i + 1, (double)((double)(user_param->tcompleted2[i] - user_param->tposted2[i])) / cpu_mhz);
+		}
 		fclose(f);
 	}
 

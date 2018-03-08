@@ -679,6 +679,14 @@ void alloc_ctx(struct pingpong_context *ctx,struct perftest_parameters *user_par
 
 		ALLOCATE(user_param->tcompleted,cycles_t,tarr_size);
 		memset(user_param->tcompleted, 0, sizeof(cycles_t)*tarr_size);
+		//// for many-qp
+		if (user_param->num_of_qps > 1) {
+			ALLOCATE(user_param->tposted2, cycles_t, user_param->num_of_qps);
+			memset(user_param->tposted2, 0, sizeof(cycles_t)*user_param->num_of_qps);
+			ALLOCATE(user_param->tcompleted2,cycles_t, user_param->num_of_qps);
+			memset(user_param->tcompleted2, 0, sizeof(cycles_t)*user_param->num_of_qps);
+		}
+		////
 		ALLOCATE(ctx->my_addr,uint64_t,user_param->num_of_qps);
 		ALLOCATE(ctx->rem_addr,uint64_t,user_param->num_of_qps);
 		ALLOCATE(ctx->scnt,uint64_t,user_param->num_of_qps);
@@ -3160,6 +3168,7 @@ int run_iter_bw(struct pingpong_context *ctx,struct perftest_parameters *user_pa
 	}
 
 	/* main loop for posting */
+	int *first_post_flag = (int*) calloc(user_param->num_of_qps, sizeof(int));
 	while (totscnt < tot_iters  || totccnt < tot_iters ||
 		(user_param->test_type == DURATION && user_param->state != END_STATE) ) {
 
@@ -3176,13 +3185,15 @@ int run_iter_bw(struct pingpong_context *ctx,struct perftest_parameters *user_pa
 				burst_iter = 0;
 			}
 
+			//printf("scnt[%d] = %d; ccnt[%d] = %d\n", index, ctx->scnt[index], index, ctx->ccnt[index]);
 			while ((ctx->scnt[index] < user_param->iters || user_param->test_type == DURATION) && (ctx->scnt[index] - ctx->ccnt[index]) < (user_param->tx_depth) &&
 					!((user_param->rate_limit_type == SW_RATE_LIMIT ) && is_sending_burst == 0)) {
 
 				if (ctx->send_rcredit) {
 					uint32_t swindow = ctx->scnt[index] + user_param->post_list - ctx->credit_buf[index];
-					if (swindow >= user_param->rx_depth)
+					if (swindow >= user_param->rx_depth) {
 						break;
+					}
 				}
 				if (user_param->post_list == 1 && (ctx->scnt[index] % user_param->cq_mod == 0 && user_param->cq_mod > 1)
 					&& !(ctx->scnt[index] == (user_param->iters - 1) && user_param->test_type == ITERATIONS)) {
@@ -3283,6 +3294,14 @@ int run_iter_bw(struct pingpong_context *ctx,struct perftest_parameters *user_pa
 				}
 
 				ctx->scnt[index] += user_param->post_list;
+				//// take note of first post timestamp for each qp
+				if (first_post_flag[index] == 0) {
+					if (ctx->scnt[index] == 1 && ctx->ccnt[index] == 0)	{
+						first_post_flag[index] = 1;
+						user_param->tposted2[index] = user_param->tposted[totscnt];
+					}
+				}
+				////
 				totscnt += user_param->post_list;
 				/* ask for completion on this wr */
 				if (user_param->post_list == 1 &&
@@ -3360,6 +3379,14 @@ int run_iter_bw(struct pingpong_context *ctx,struct perftest_parameters *user_pa
 								user_param->tcompleted[totccnt-1] = get_cycles();
 							}
 						}
+						//// take note of last complete timestamp of each qp
+						if (ctx->ccnt[wc_id] == user_param->iters) {
+							if (totccnt >  tot_iters - 1)
+								user_param->tcompleted2[wc_id] = user_param->tcompleted[user_param->iters*num_of_qps - 1];
+							else
+								user_param->tcompleted2[wc_id] = user_param->tcompleted[totccnt-1];
+						}
+						////
 
 						if (user_param->test_type==DURATION && user_param->state == SAMPLE_STATE) {
 							if (user_param->report_per_port) {

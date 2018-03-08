@@ -432,6 +432,8 @@ struct perftest_parameters {
 	char				rem_version[MAX_VERSION];
 	cycles_t			*tposted;
 	cycles_t			*tcompleted;
+	cycles_t			*tposted2;
+	cycles_t			*tcompleted2;
 	int				use_mcg;
 	int 				use_rdma_cm;
 	int				is_reversed;
@@ -504,6 +506,7 @@ struct perftest_parameters {
 	char 			*output_log;
 	int				log_tput;
 	struct timeval 	start_tv;
+	int				log_off;
 	////
 
 };
