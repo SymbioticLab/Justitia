@@ -20,16 +20,15 @@ char *get_sock_path() {
     if(fgets(hostname, 60, fp) != NULL) {
         //char *sock_path = (char *)malloc(108 * sizeof(char));
         char *sock_path = (char *)calloc(108, sizeof(char));
-        printf("DE hostname:%s\n", hostname);
+        //printf("DE hostname:%s\n", hostname);
         int len = strlen(hostname);
         if (len > 0 && hostname[len-1] == '\n') hostname[len-1] = '\0';
         strcat(hostname, "_rdma_socket");
         strcpy(sock_path, getenv("HOME"));
         len = strlen(sock_path);
         sock_path[len] = '/';
-        printf("DE: len(sock_path) = %d\n", len);
-        printf("DE: sock_path:%s\n", sock_path);
-        fflush(stdout);
+        //printf("DE: len(sock_path) = %d\n", len);
+        //printf("DE: sock_path:%s\n", sock_path);
         strcat(sock_path, hostname);
         fclose(fp);
         return sock_path;
