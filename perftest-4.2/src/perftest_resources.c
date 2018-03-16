@@ -3295,7 +3295,7 @@ int run_iter_bw(struct pingpong_context *ctx,struct perftest_parameters *user_pa
 
 				ctx->scnt[index] += user_param->post_list;
 				//// take note of first post timestamp for each qp
-				if (first_post_flag[index] == 0) {
+				if (user_param->num_of_qps > 1 && first_post_flag[index] == 0) {
 					if (ctx->scnt[index] == 1 && ctx->ccnt[index] == 0)	{
 						first_post_flag[index] = 1;
 						user_param->tposted2[index] = user_param->tposted[totscnt];
@@ -3380,7 +3380,7 @@ int run_iter_bw(struct pingpong_context *ctx,struct perftest_parameters *user_pa
 							}
 						}
 						//// take note of last complete timestamp of each qp
-						if (ctx->ccnt[wc_id] == user_param->iters) {
+						if (user_param->num_of_qps > 1 && ctx->ccnt[wc_id] == user_param->iters) {
 							if (totccnt >  tot_iters - 1)
 								user_param->tcompleted2[wc_id] = user_param->tcompleted[user_param->iters*num_of_qps - 1];
 							else

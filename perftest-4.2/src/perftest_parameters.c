@@ -2920,7 +2920,10 @@ void print_report_bw (struct perftest_parameters *user_param, struct bw_report_d
 	}
 
 	if (user_param->num_of_qps > 1) {
-		FILE *f = fopen("multi_qp_result.txt", "w");
+		strcat(user_param->output_log, "_multi_qp_res.txt");
+		//FILE *f = fopen("multi_qp_result.txt", "w");
+		printf("DEBUG: logname: %s\n", user_param->output_log);
+		FILE *f = fopen(user_param->output_log, "w");
 		fprintf(f, "qp\tJCT(us)\n");
 		double cpu_mhz = get_cpu_mhz(user_param->cpu_freq_f);
 		double curr_time_us;
