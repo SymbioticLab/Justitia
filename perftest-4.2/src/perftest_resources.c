@@ -1872,10 +1872,10 @@ struct ibv_qp* ctx_qp_create(struct pingpong_context *ctx,
 	if (user_param->size <= 1024) {
 		if (user_param->post_list < 16) {
 			//attr.isSmall = 1;
-			attr.qp_context = 1;
+			attr.qp_context = (void *)1;
 		} else {
 			//attr.isSmall = 2;
-			attr.qp_context = 2;
+			attr.qp_context = (void *)2;
 		}
 	}
 
