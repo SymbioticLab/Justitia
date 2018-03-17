@@ -180,7 +180,7 @@ static struct pingpong_context *alloc_monitor_qp() {
 	    init_attr.cap.max_recv_sge = 1;
 	    init_attr.cap.max_inline_data = 100;	// probably not going to use inline there
 	    init_attr.qp_type = IBV_QPT_RC;
-        init_attr.isSmall = 1;
+        init_attr.qp_context = (void *)1;
         
         ctx->qp = ibv_create_qp(ctx->pd, &init_attr);
         if (!ctx->qp)  {
