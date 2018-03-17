@@ -2386,7 +2386,7 @@ struct ibv_qp *mlx5_create_qp(struct ibv_pd *pd,
 	split_init_attr.cap.max_recv_sge = 1;
 	split_init_attr.cap.max_inline_data = 100;	// probably not going to use inline there
 	split_init_attr.qp_type = IBV_QPT_RC;
-	split_init_attr.isSmall = 1;
+	split_init_attr.qp_context = (void *)1;
 	memcpy(&split_init_attr2, &split_init_attr, sizeof(struct ibv_qp_init_attr));
 	split_init_attr2.send_cq = split_cq2;
 	split_init_attr2.recv_cq = split_cq2;
@@ -2434,7 +2434,7 @@ struct ibv_qp *mlx5_create_qp(struct ibv_pd *pd,
 			mqp->split_qp_exchange_done = 0;
 		}
 		//// set whether user has set the qp to send mice flows
-		mqp->isSmall = attr->isSmall;
+		mqp->isSmall = (long)attr->qp_context;
 	} else {
 		fprintf(stderr, "Error creating Split QP\n");
 		return qp;
