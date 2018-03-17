@@ -926,7 +926,7 @@ struct ibv_exp_qp_init_attr {
 	struct ibv_exp_peer_direct_attr *peer_direct_attrs;
 	uint16_t		max_tso_header;
 	//// User can set. In a memset-0 case should be elephant by dafault
-	int isSmall;
+	//int isSmall;	//// remove to undo ibverb changes
 	////
 };
 

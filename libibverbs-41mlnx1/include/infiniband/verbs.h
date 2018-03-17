@@ -620,7 +620,7 @@ struct ibv_qp_init_attr {
 	/* Below is needed for backwards compatabile */
 	struct ibv_xrc_domain  *xrc_domain;
 	//// User can set. In a memset-0 case should be elephant by dafault
-	int isSmall;
+	//int isSmall;		// remove ibverbs changes; use qp_context
 	////
 };
 
