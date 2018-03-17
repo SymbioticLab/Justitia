@@ -1868,6 +1868,8 @@ struct ibv_qp* ctx_qp_create(struct pingpong_context *ctx,
 	attr.cap.max_send_sge = MAX_SEND_SGE;
 	attr.cap.max_inline_data = user_param->inline_size;
 
+	/* Now longer need to change ibverbs */
+	/*
 	if (user_param->size <= 1024) {
 		if (user_param->post_list < 16) {
 			attr.isSmall = 1;
@@ -1875,6 +1877,7 @@ struct ibv_qp* ctx_qp_create(struct pingpong_context *ctx,
 			attr.isSmall = 2;
 		}
 	}
+	*/
 
 	if (user_param->use_srq && (user_param->tst == LAT || user_param->machine == SERVER || user_param->duplex == ON)) {
 		attr.srq = ctx->srq;
