@@ -7,11 +7,11 @@ static const int mtu = IBV_MTU_2048;
 
 static struct pingpong_context * alloc_qps(struct host_info *);
 static struct pingpong_dest * pp_client_exch_dest(const char *, struct pingpong_dest *);
-//static struct pingpong_dest * pp_server_exch_dest(struct pingpong_context *, const struct pingpong_dest *, int);
+static struct pingpong_dest * pp_server_exch_dest(struct pingpong_context *, const struct pingpong_dest *, int);
 static int pp_connect_ctx(struct pingpong_context *, int, struct pingpong_dest *, int);
-struct pingpong_context *init_ctx_and_build_conn(const char *, int, struct host_info *);
+struct pingpong_context *init_ctx_and_build_conn(const char *, int, int, struct host_info *);
 
-struct pingpong_context *init_ctx_and_build_conn(const char *addr, int gidx, struct host_info *host) {
+struct pingpong_context *init_ctx_and_build_conn(const char *addr, int is_aribter, int gidx, struct host_info *host) {
     struct pingpong_context *ctx;
     struct pingpong_dest my_dest;
 
@@ -41,7 +41,10 @@ struct pingpong_context *init_ctx_and_build_conn(const char *addr, int gidx, str
     my_dest.vaddr_rmf = (uintptr_t)ctx->rmf_buf;
     my_dest.vaddr_req = (uintptr_t)&host->host_req;
 
-    ctx->rem_dest = pp_client_exch_dest(addr, &my_dest);
+    if (is_aribter)
+        ctx->rem_dest = pp_client_exch_dest(addr, &my_dest);
+    else
+        ctx->rem_dest = pp_server_exch_dest(ctx, &my_dest, gidx);
 
     if (!ctx->rem_dest)
         return NULL;
@@ -227,7 +230,7 @@ static struct pingpong_dest * pp_client_exch_dest(const char *servername,
     struct pingpong_dest *rem_dest = NULL;
     char gid[33];
 
-    printf("CLIENT\n");
+    printf("ARBITER\n");
     if (asprintf(&service, "%d", port) < 0)
         return NULL;
 
@@ -288,7 +291,7 @@ out:
     close(sockfd);
     return rem_dest;
 }
-/*
+
 static struct pingpong_dest * pp_server_exch_dest(struct pingpong_context *ctx,
                                             const struct pingpong_dest *my_dest,
                                             int sgid_idx) {
@@ -299,13 +302,13 @@ static struct pingpong_dest * pp_server_exch_dest(struct pingpong_context *ctx,
         .ai_socktype = SOCK_STREAM
     };
     char *service;
-    char msg[sizeof "0000:000000:000000:000000:00000000:0000000000000000:00000000000000000000000000000000"];
+    char msg[sizeof "0000:000000:000000:000000:00000000:00000000:0000000000000000:0000000000000000:00000000000000000000000000000000"];
     int n;
     int sockfd = -1, connfd;
     struct pingpong_dest *rem_dest = NULL;
     char gid[33];
 
-    printf("SERVER\n");
+    printf("PACER\n");
     if (asprintf(&service, "%d", port) < 0)
         return NULL;
 
@@ -358,8 +361,8 @@ static struct pingpong_dest * pp_server_exch_dest(struct pingpong_context *ctx,
     if (!rem_dest)
         goto out;
 
-    sscanf(msg, "%x:%x:%x:%x:%x:%Lx:%s", &rem_dest->lid, &rem_dest->qpn, &rem_dest->qpn_read,
-                            &rem_dest->psn, &rem_dest->rkey, &rem_dest->vaddr, gid);
+    sscanf(msg, "%x:%x:%x:%x:%x:%x:%Lx:%Lx:%s", &rem_dest->lid, &rem_dest->qpn_req, &rem_dest->qpn_req,
+                            &rem_dest->psn, &rem_dest->rkey_rmf, &rem_dest->rkey_req, &rem_dest->vaddr_rmf, &rem_dest->vaddr_req, gid);
     wire_gid_to_gid(gid, &rem_dest->gid);
 
     ////
@@ -375,8 +378,8 @@ static struct pingpong_dest * pp_server_exch_dest(struct pingpong_context *ctx,
 
 
     gid_to_wire_gid(&my_dest->gid, gid);
-    sprintf(msg, "%04x:%06x:%06x:%06x:%08x:%016Lx:%s", my_dest->lid, my_dest->qpn, my_dest->qpn_read,
-                            my_dest->psn, my_dest->rkey, my_dest->vaddr, gid);
+    sprintf(msg, "%04x:%06x:%06x:%06x:%08x:%08x:%016Lx:%016Lx:%s", my_dest->lid, my_dest->qpn_rmf, my_dest->qpn_req,
+                            my_dest->psn, my_dest->rkey_rmf, my_dest->rkey_req, my_dest->vaddr_rmf, my_dest->vaddr_req, gid);
     if (write(connfd, msg, sizeof msg) != sizeof msg) {
         fprintf(stderr, "Couldn't send local address\n");
         free(rem_dest);
@@ -403,7 +406,6 @@ out:
     close(connfd);
     return rem_dest;
 }
-*/
 
 static int pp_connect_ctx(struct pingpong_context *ctx, 
                         int my_psn,
