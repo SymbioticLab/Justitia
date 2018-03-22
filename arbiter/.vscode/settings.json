@@ -1,0 +1,18 @@
+{
+    "files.associations": {
+        "pingpong.h": "c",
+        "pacer.h": "c",
+        "algorithm": "c",
+        "__functional_base": "c",
+        "memory": "c",
+        "tuple": "c",
+        "utility": "c",
+        "iterator": "c",
+        "inttypes.h": "c",
+        "__bit_reference": "c",
+        "__split_buffer": "c",
+        "deque": "c",
+        "vector": "c",
+        "string.h": "c"
+    }
+}

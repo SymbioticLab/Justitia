@@ -1,0 +1,4 @@
+See documentation in RDMA Performance Isolation folder on Google Drive:
+https://drive.google.com/open?id=0ByV9XfNkUsEIZnRiNWh2dUliblU
+
+This branch test letting application itself check if credits are enough and pacer only distribute credits.
