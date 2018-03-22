@@ -53,4 +53,6 @@ struct pingpong_dest {
 	union ibv_gid gid;
 };
 
+struct pingpong_context *init_ctx_and_build_conn(const char *, int, struct host_info *);
+
 #endif
