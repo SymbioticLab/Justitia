@@ -177,29 +177,41 @@ int main(int argc, char **argv)
     char line[64];
     int num_hosts = 0;
     int i = 0;
+    while (fgets(line, sizeof(line), fp)) {
+        ++num_hosts;
+    }
+    rewind(fp);
+    printf("NUM_HOSTS = %d\n", num_hosts);
+
     char **ip = (char **)malloc(num_hosts * sizeof(char *));
-    char *gid_idx_char;
+    for (i = 0; i < num_hosts; ++i) {
+        ip[i] = (char *)calloc(64, sizeof(char));
+    }
+    char *gid_idx_char, *token;
     int *gid_idx = (int *)malloc(num_hosts * sizeof(int));
     for (i = 0; i < num_hosts; ++i) {
         gid_idx[i] = -1;
     }
+
+    i = 0;
     while (fgets(line, sizeof(line), fp)) {
-        printf("DEBUG: LINE: %s\n", line);
-        ip[num_hosts] = strtok(line, " ");
-        gid_idx_char = strtok(line, " ");
+        token = strtok(line, " ");
+        strcpy(ip[i], token);
+        printf("HOST%d = %s", i + 1, ip[i]);
+        gid_idx_char = strtok(NULL, " ");
         if (gid_idx_char != NULL) {
-            gid_idx[num_hosts] = strtol(strtok(line, " "), NULL, 10);
+            gid_idx[i] = strtol(gid_idx_char, NULL, 10);
+            printf("HOST%d gid_idx = %d", i + 1, gid_idx[i]);
         }
-        ++num_hosts;
+        ++i;
     }
     fclose(fp);
 
     /* initialize control structure */ 
     cluster.num_hosts = num_hosts;
     cluster.hosts = (struct host_info *)calloc(num_hosts, sizeof(struct host_info));
-    printf("DEBUG: NUM_HOSTS = %d\n", num_hosts);
     for (i = 0; i < num_hosts; ++i) {
-        printf("DEBUG: IP ADDR: %s\n", ip[i]);
+        printf("LOOP #%d\n", i + 1);
         /* init ctx, mr, and connect to each host via RDMA RC */
         cluster.hosts[i].host_req = (struct host_request *)calloc(1, sizeof(struct host_request));
         cluster.hosts[i].ctx = init_ctx_and_build_conn(ip[i], 1, gid_idx[i], &cluster.hosts[i]);
