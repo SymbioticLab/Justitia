@@ -24,32 +24,26 @@ void monitor_latency(void *arg)
 
     int lat; // in nanoseconds
     cycles_t start_cycle, end_cycle;
-    cycles_t prev_start_cycle = 0;
+    //cycles_t prev_start_cycle = 0;
     // cycles_t cmh_start, cmh_end;
     int no_cpu_freq_warn = 1;
     double cpu_mhz = get_cpu_mhz(no_cpu_freq_warn);
 
     uint64_t seq = 0;
-    struct pingpong_context *ctx = NULL;
-    struct ibv_send_wr wr, send_wr, *bad_wr = NULL;
-    struct ibv_recv_wr recv_wr, *bad_recv_wr = NULL;
-    struct ibv_sge sge, send_sge, recv_sge;
-    struct ibv_wc wc, recv_wc, send_wc;
-    const char *servername = ((struct monitor_param *)arg)->addr;
-    int isclient = ((struct monitor_param *)arg)->isclient;
-    int gid_idx = ((struct monitor_param *)arg)->gid_idx;
-    int num_comp;
-    int num_remote_big_reads = 0;
-    uint32_t received_read_rate;
-    uint32_t temp, new_remote_read_rate;
+    struct pingpong_context *ctx = (struct pingpong_context *)arg;
+    //struct ibv_send_wr wr, send_wr, *bad_wr = NULL;
+    struct ibv_send_wr wr, *bad_wr = NULL;
+    //struct ibv_recv_wr recv_wr, *bad_recv_wr = NULL;
+    //struct ibv_sge sge, send_sge, recv_sge;
+    struct ibv_sge sge;
+    //struct ibv_wc wc, recv_wc, send_wc;
+    struct ibv_wc wc;
+    int num_comp = 0;
+    //int num_remote_big_reads = 0;
+    //uint32_t received_read_rate;
+    uint32_t temp;
+    //uint32_t temp, new_remote_read_rate;
 
-    ctx = init_monitor_chan(servername, isclient, gid_idx);
-    if (!ctx)
-    {
-        fprintf(stderr, "failed to allocate pingpong context. exiting monitor_latency\n");
-        exit(1);
-    }
-    cb.ctx = ctx;
     cpu_mhz = get_cpu_mhz(no_cpu_freq_warn);
 
     /* SEND WR */
@@ -59,14 +53,15 @@ void monitor_latency(void *arg)
     wr.num_sge = 1;
     wr.send_flags = (IBV_SEND_SIGNALED | IBV_SEND_INLINE);
     wr.wr_id = seq;
-    wr.wr.rdma.rkey = ctx->rem_dest->rkey;
-    wr.wr.rdma.remote_addr = ctx->rem_dest->vaddr;
+    wr.wr.rdma.rkey = ctx->rem_dest->rkey_rmf;
+    wr.wr.rdma.remote_addr = ctx->rem_dest->vaddr_rmf;
 
-    sge.addr = (uintptr_t)ctx->send_buf;
+    sge.addr = (uintptr_t)ctx->rmf_buf;
     sge.length = BUF_SIZE;
-    sge.lkey = ctx->send_mr->lkey;
+    sge.lkey = ctx->rmf_mr->lkey;
 
     /* READ SEND WR */
+    /*
     memset(&send_wr, 0, sizeof send_wr);
     send_wr.opcode = IBV_WR_SEND;
     send_wr.sg_list = &send_sge;
@@ -78,8 +73,10 @@ void monitor_latency(void *arg)
     send_sge.addr = (uintptr_t)((char *)ctx->local_read_buf + BUF_READ_SIZE);
     send_sge.length = BUF_READ_SIZE;
     send_sge.lkey = ctx->local_read_mr->lkey;
+    */
 
     /* READ RECV WR */
+    /*
     memset(&recv_wr, 0, sizeof recv_wr);
     recv_wr.num_sge = 1;
     recv_wr.sg_list = &recv_sge;
@@ -90,6 +87,7 @@ void monitor_latency(void *arg)
     recv_sge.length = BUF_READ_SIZE;
     recv_sge.lkey = ctx->remote_read_mr->lkey;
     ibv_post_recv(ctx->qp_read, &recv_wr, &bad_recv_wr);
+    */
 
     cmh = CMH_Init(WIDTH, DEPTH, U, GRAN, WINDOW_SIZE);
     if (!cmh)
@@ -105,7 +103,7 @@ void monitor_latency(void *arg)
     while (1)
     {
         start_cycle = get_cycles();
-        if (ibv_post_send(ctx->qp, &wr, &bad_wr))
+        if (ibv_post_send(ctx->qp_rmf, &wr, &bad_wr))
         {
             perror("ibv_post_send");
             break;
@@ -113,7 +111,7 @@ void monitor_latency(void *arg)
 
         do
         {
-            num_comp = ibv_poll_cq(ctx->cq, 1, &wc);
+            num_comp = ibv_poll_cq(ctx->cq_rmf, 1, &wc);
         } while (num_comp == 0);
 
         if (num_comp < 0 || wc.status != IBV_WC_SUCCESS)
@@ -143,6 +141,7 @@ void monitor_latency(void *arg)
         wr.wr_id = seq;
 
         /* check if any remote read is registered or if read rate is received */
+        /*
         num_comp = ibv_poll_cq(ctx->cq_recv, 1, &recv_wc);
         if (num_comp == 1) {
             if (recv_wc.status != IBV_WC_SUCCESS) {
@@ -166,18 +165,25 @@ void monitor_latency(void *arg)
             perror("ibv_poll_cq: recv_wc");
             break;
         }
+        */
 
 
         num_active_big_flows = __atomic_load_n(&cb.sb->num_active_big_flows, __ATOMIC_RELAXED);
         num_active_small_flows = __atomic_load_n(&cb.sb->num_active_small_flows, __ATOMIC_RELAXED);
         // printf("num_active_big_flows = %d\n", num_active_big_flows);
         // printf("num_active_small_flows = %d\n", num_active_small_flows);
-        if (num_active_big_flows + num_remote_big_reads)
+
+        //if (num_active_big_flows + num_remote_big_reads)
+        if (num_active_big_flows)
         {
             if (num_active_small_flows)
             {
+                /*
                 min_virtual_link_cap = round((double)(num_active_big_flows + num_remote_big_reads) 
                     / (num_active_big_flows + num_active_small_flows + num_remote_big_reads) * LINE_RATE_MB);
+                */
+                min_virtual_link_cap = round((double)(num_active_big_flows) 
+                    / (num_active_big_flows + num_active_small_flows) * LINE_RATE_MB);
                 temp = __atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED);
                 if (tail_99 > TAIL)
                 {
@@ -193,6 +199,7 @@ void monitor_latency(void *arg)
                     /* Additive Increase */
                     temp++;
                 }
+                /*
                 if (num_remote_big_reads) {
                     new_remote_read_rate = round((double)num_remote_big_reads
                         / (num_remote_big_reads + num_active_big_flows) * temp);
@@ -218,11 +225,14 @@ void monitor_latency(void *arg)
                     }
                     temp -= new_remote_read_rate;
                 }
+                */
+
                 __atomic_store_n(&cb.virtual_link_cap, temp, __ATOMIC_RELAXED);
             }
             else if (__atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED) != LINE_RATE_MB)
-            {   
+            {
                 temp = LINE_RATE_MB;
+                /*
                 if (num_remote_big_reads) {
                     new_remote_read_rate = round((double)num_remote_big_reads
                         / (num_remote_big_reads + num_active_big_flows) * temp);
@@ -248,6 +258,7 @@ void monitor_latency(void *arg)
                     }
                     temp -= new_remote_read_rate;
                 }
+                */
                 __atomic_store_n(&cb.virtual_link_cap, temp, __ATOMIC_RELAXED);
             }
             //printf(">>>> virtual link cap: %" PRIu32 "\n", __atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED));

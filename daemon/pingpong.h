@@ -24,8 +24,19 @@
 static const int BUF_SIZE = 10;
 static const int BUF_READ_SIZE = 5;
 
-struct host_request;
-struct host_info;
+/* host request message definition shared between the arbiter and the pacer */
+enum host_request_type {
+    QUERY_FLOW_JOIN = 0,
+    QUERY_FLOW_EXIT = 1
+};
+
+struct host_request {                       /* request sent from host pacer */
+    enum host_request_type req_type;
+    uint8_t dest_qp_num;
+    uint8_t is_read;
+    uint32_t request_id;                    /* TODO: handle overflow later */
+};
+/* end of host request message definition */
 
 struct pingpong_context {
 	struct ibv_context		*context;
@@ -53,6 +64,6 @@ struct pingpong_dest {
 	union ibv_gid gid;
 };
 
-struct pingpong_context *init_ctx_and_build_conn(const char *, int, int, struct host_info *);
+struct pingpong_context *init_ctx_and_build_conn(const char *addr, int is_arbiter, int gidx, struct host_request *host_req);
 
 #endif

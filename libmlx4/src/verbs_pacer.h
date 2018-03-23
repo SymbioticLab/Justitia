@@ -63,7 +63,7 @@ static void contact_pacer(int join) {
         exit(1);
     }
 
-    if (!join) {
+    if (!join) {    // Note: contact_pacer(0) is only used by big read flow to tell pacer to send notification . Other big write flows directly subtract cnt.
         strcpy(str, "exit");
         if (send(s, str, strlen(str), 0) == -1) {
             perror("send: exit");

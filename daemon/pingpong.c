@@ -5,17 +5,18 @@ static const int port = 18515;
 static const int ib_port = 1;
 static const int mtu = IBV_MTU_2048;
 
-static struct pingpong_context * alloc_qps(struct host_info *);
+static struct pingpong_context * alloc_qps(struct host_request *);
 static struct pingpong_dest * pp_client_exch_dest(const char *, struct pingpong_dest *);
 static struct pingpong_dest * pp_server_exch_dest(struct pingpong_context *, const struct pingpong_dest *, int);
 static int pp_connect_ctx(struct pingpong_context *, int, struct pingpong_dest *, int);
-struct pingpong_context *init_ctx_and_build_conn(const char *, int, int, struct host_info *);
+struct pingpong_context *init_ctx_and_build_conn(const char *, int, int, struct host_request *);
 
-struct pingpong_context *init_ctx_and_build_conn(const char *addr, int is_aribter, int gidx, struct host_info *host) {
+struct pingpong_context *init_ctx_and_build_conn(const char *addr, int is_arbiter, int gidx, struct host_request *host_req) {
     struct pingpong_context *ctx;
     struct pingpong_dest my_dest;
 
-    ctx = alloc_qps(host);
+    ctx = alloc_qps(host_req);
+
     if (!ctx)
         return NULL;
     
@@ -39,9 +40,9 @@ struct pingpong_context *init_ctx_and_build_conn(const char *addr, int is_aribte
     my_dest.rkey_rmf = ctx->rmf_mr->rkey;
     my_dest.rkey_req = ctx->req_mr->rkey;
     my_dest.vaddr_rmf = (uintptr_t)ctx->rmf_buf;
-    my_dest.vaddr_req = (uintptr_t)&host->host_req;
+    my_dest.vaddr_req = (uintptr_t)host_req;
 
-    if (is_aribter)
+    if (is_arbiter)
         ctx->rem_dest = pp_client_exch_dest(addr, &my_dest);
     else
         ctx->rem_dest = pp_server_exch_dest(ctx, &my_dest, gidx);
@@ -59,7 +60,7 @@ struct pingpong_context *init_ctx_and_build_conn(const char *addr, int is_aribte
     return ctx;
 }
 
-static struct pingpong_context *alloc_qps(struct host_info *host) {
+static struct pingpong_context *alloc_qps(struct host_request *host_req) {
     struct ibv_device **dev_list;
     struct ibv_device *ib_dev;
     struct pingpong_context *ctx;
@@ -109,7 +110,7 @@ static struct pingpong_context *alloc_qps(struct host_info *host) {
         goto clean_rmf_mr;
     }
 
-    ctx->req_mr = ibv_reg_mr(ctx->pd, &host->host_req, sizeof(struct host_info), IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_WRITE);
+    ctx->req_mr = ibv_reg_mr(ctx->pd, host_req, sizeof(struct host_request), IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_WRITE);
     if (!ctx->rmf_mr) {
         fprintf(stderr, "Couldn't register REQ_MR\n");
         goto clean_req_mr;

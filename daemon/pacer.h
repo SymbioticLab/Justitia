@@ -44,7 +44,8 @@ struct shared_block {
 
 struct control_block {
     struct shared_block *sb;
-
+    
+    struct host_request *host_req;
     struct pingpong_context *ctx;
     uint64_t tokens;                       /* number of available tokens */
     uint64_t tokens_read;

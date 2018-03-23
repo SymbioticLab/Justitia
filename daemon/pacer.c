@@ -25,7 +25,7 @@ static void error(char *msg)
 
 static void usage()
 {
-    printf("Usage: program remote-addr isclient [gid_idx]\n");
+    printf("Usage: ./pacer [gid_idx]\n");
 }
 
 static inline void cpu_relax() __attribute__((always_inline));
@@ -169,6 +169,8 @@ static void flow_handler()
     char buf[MSG_LEN];
     char *sock_path = get_sock_path();
 
+    /* no longer need to handle read rate update from pacer */
+    /*
     struct ibv_send_wr send_wr, *bad_wr = NULL;
     struct ibv_sge send_sge;
 
@@ -179,6 +181,7 @@ static void flow_handler()
     send_wr.send_flags = IBV_SEND_INLINE;
 
     memset(&send_sge, 0, sizeof send_sge);
+    */
 
     /* get a socket descriptor */
     if ((s = socket(AF_UNIX, SOCK_STREAM, 0)) == -1)
@@ -225,6 +228,10 @@ static void flow_handler()
         }
         else if (strcmp(buf, "read") == 0)
         {
+            printf("READ detected\n");
+
+            //TODO: include read verb as the FLOW_JOIN request sent to the centralized arbiter
+            /*
             send_sge.addr = (uintptr_t)cb.ctx->local_read_buf;
             send_sge.length = BUF_READ_SIZE;
             send_sge.lkey = cb.ctx->local_read_mr->lkey;
@@ -232,12 +239,16 @@ static void flow_handler()
             strcpy(cb.ctx->local_read_buf, buf);
             ibv_post_send(cb.ctx->qp_read, &send_wr, &bad_wr);
             __atomic_fetch_add(&cb.num_big_read_flows, 1, __ATOMIC_RELAXED);
+            */
         }
-        else if (strcmp(buf, "exit") == 0)
+        else if (strcmp(buf, "exit") == 0)  // Note: contact_pacer(0) is only used by big read flow to tell pacer to send notification . Other big write flows directly subtract cnt.
         {
+            //TODO: include read verb as the FLOW_EXIT request sent to the centralized arbiter
+            /*
             strcpy(cb.ctx->local_read_buf, buf);
             ibv_post_send(cb.ctx->qp_read, &send_wr, &bad_wr);
             __atomic_fetch_sub(&cb.num_big_read_flows, 1, __ATOMIC_RELAXED);
+            */
         }
     }
 }
@@ -395,20 +406,12 @@ int main(int argc, char **argv)
     int fd_shm, i;
     pthread_t th1, th2, th3, th4;
     //pthread_t th1, th2, th3, th4, th5;
-    struct monitor_param param;
-    char *endPtr;
-    param.addr = argv[1];
-    param.gid_idx = -1;
-    if (argc == 3)
+    int gid_idx = -1;
+    if (argc == 2)
     {
-        param.isclient = strtol(argv[2], &endPtr, 10);
+        gid_idx = strtol(argv[3], NULL, 10);
     }
-    else if (argc == 4)
-    {
-        param.isclient = strtol(argv[2], &endPtr, 10);
-        param.gid_idx = strtol(argv[3], NULL, 10);
-    }
-    else
+    else if (argc != 1)
     {
         usage();
         exit(1);
@@ -442,6 +445,9 @@ int main(int argc, char **argv)
         cb.sb->flows[i].pending = 0;
         cb.sb->flows[i].active = 0;
     }
+    //TODO: later consider to use buffer instead of single request slot
+    cb.host_req = (struct host_request *)calloc(1, sizeof(struct host_request));
+    cb.ctx = init_ctx_and_build_conn(NULL, 0, gid_idx, cb.host_req);
 
     /* start thread handling incoming flows */
     printf("starting thread for flow handling...\n");
@@ -452,7 +458,7 @@ int main(int argc, char **argv)
 
     /* start monitoring thread */
     printf("starting thread for latency monitoring...\n");
-    if (pthread_create(&th2, NULL, (void *(*)(void *)) & monitor_latency, (void *)&param))
+    if (pthread_create(&th2, NULL, (void *(*)(void *)) & monitor_latency, (void *)cb.ctx))
     {
         error("pthread_create: monitor_latency");
     }

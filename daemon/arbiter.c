@@ -202,6 +202,7 @@ int main(int argc, char **argv)
     cluster.hosts = (struct host_info *)calloc(num_hosts, sizeof(struct host_info));
     for (i = 0; i < num_hosts; ++i) {
         /* init ctx, mr, and connect to each host via RDMA RC */
+        cluster.hosts[i].host_req = (struct host_request *)calloc(1, sizeof(struct host_request));
         cluster.hosts[i].ctx = init_ctx_and_build_conn(ip[i], 1, gid_idx[i], &cluster.hosts[i]);
         if (cluster.hosts[i].ctx == NULL) {
             fprintf(stderr, "init_ctx_and_build_conn failed, exit\n");
@@ -234,6 +235,7 @@ int main(int argc, char **argv)
 
         }
     }
+
 
     return 0;
 }
