@@ -4,10 +4,10 @@
 //#include <immintrin.h> /* For _mm_pause */
 #include "countmin.h"
 
-#define DEFAULT_CHUNK_SIZE 10000000
-//#define DEFAULT_CHUNK_SIZE 1000000
-#define DEFAULT_BATCH_OPS 667
-//#define DEFAULT_BATCH_OPS 1500
+//#define DEFAULT_CHUNK_SIZE 10000000
+#define DEFAULT_CHUNK_SIZE 1000000
+//#define DEFAULT_BATCH_OPS 667
+#define DEFAULT_BATCH_OPS 1500
 #define MAX_TOKEN 5
 #define HOSTNAME_PATH "/proc/sys/kernel/hostname"
 

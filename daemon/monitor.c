@@ -18,7 +18,7 @@ CMH_type *cmh = NULL;
 
 void monitor_latency(void *arg)
 {
-    printf(">>>starting monitor_latency...\n");
+    printf(">>>Starting monitor_latency...\n");
 
     double tail_99;
 

@@ -396,6 +396,7 @@ static struct pingpong_dest * pp_server_exch_dest(struct pingpong_context *ctx,
         goto out;
     }
 
+    printf("before pp_connect_ctx\n");
     if (pp_connect_ctx(ctx, my_dest->psn, rem_dest, sgid_idx)) {
         fprintf(stderr, "Couldn't connect to remote QP\n");
         free(rem_dest);
