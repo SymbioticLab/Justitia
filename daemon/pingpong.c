@@ -50,8 +50,9 @@ struct pingpong_context *init_ctx_and_build_conn(const char *addr, int is_arbite
     if (!ctx->rem_dest)
         return NULL;
 
-    if (pp_connect_ctx(ctx, my_dest.psn, ctx->rem_dest, gidx))
-        return NULL;
+    if (is_arbiter)
+        if (pp_connect_ctx(ctx, my_dest.psn, ctx->rem_dest, gidx))
+            return NULL;
 
     printf("my rmf qp qp_num=%d\n", my_dest.qpn_rmf);
     printf("my req qp qp_num=%d\n", my_dest.qpn_req);
@@ -111,7 +112,7 @@ static struct pingpong_context *alloc_qps(struct host_request *host_req) {
     }
 
     ctx->req_mr = ibv_reg_mr(ctx->pd, host_req, sizeof(struct host_request), IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_WRITE);
-    if (!ctx->rmf_mr) {
+    if (!ctx->req_mr) {
         fprintf(stderr, "Couldn't register REQ_MR\n");
         goto clean_req_mr;
     }
@@ -164,6 +165,7 @@ static struct pingpong_context *alloc_qps(struct host_request *host_req) {
             goto clean_qp_req;
         }
     }
+
 
     {
         struct ibv_qp_attr attr = {
@@ -280,11 +282,12 @@ static struct pingpong_dest * pp_client_exch_dest(const char *servername,
         goto out;
     }
 
-    rem_dest = malloc(sizeof *rem_dest);
+    //rem_dest = malloc(sizeof *rem_dest);
+    rem_dest = malloc(sizeof rem_dest);
     if (!rem_dest)
         goto out;
 
-    sscanf(msg, "%x:%x:%x:%x:%x:%x:%Lx:%Lx:%s", &rem_dest->lid, &rem_dest->qpn_req, &rem_dest->qpn_req,
+    sscanf(msg, "%x:%x:%x:%x:%x:%x:%Lx:%Lx:%s", &rem_dest->lid, &rem_dest->qpn_rmf, &rem_dest->qpn_req,
                             &rem_dest->psn, &rem_dest->rkey_rmf, &rem_dest->rkey_req, &rem_dest->vaddr_rmf, &rem_dest->vaddr_req, gid);
     wire_gid_to_gid(gid, &rem_dest->gid);
 
@@ -358,11 +361,12 @@ static struct pingpong_dest * pp_server_exch_dest(struct pingpong_context *ctx,
         goto out;
     }
 
-    rem_dest = malloc(sizeof *rem_dest);
+    //rem_dest = malloc(sizeof *rem_dest);
+    rem_dest = malloc(sizeof rem_dest);
     if (!rem_dest)
         goto out;
 
-    sscanf(msg, "%x:%x:%x:%x:%x:%x:%Lx:%Lx:%s", &rem_dest->lid, &rem_dest->qpn_req, &rem_dest->qpn_req,
+    sscanf(msg, "%x:%x:%x:%x:%x:%x:%Lx:%Lx:%s", &rem_dest->lid, &rem_dest->qpn_rmf, &rem_dest->qpn_req,
                             &rem_dest->psn, &rem_dest->rkey_rmf, &rem_dest->rkey_req, &rem_dest->vaddr_rmf, &rem_dest->vaddr_req, gid);
     wire_gid_to_gid(gid, &rem_dest->gid);
 
@@ -396,7 +400,6 @@ static struct pingpong_dest * pp_server_exch_dest(struct pingpong_context *ctx,
         goto out;
     }
 
-    printf("before pp_connect_ctx\n");
     if (pp_connect_ctx(ctx, my_dest->psn, rem_dest, sgid_idx)) {
         fprintf(stderr, "Couldn't connect to remote QP\n");
         free(rem_dest);
@@ -444,7 +447,7 @@ static int pp_connect_ctx(struct pingpong_context *ctx,
         IBV_QP_RQ_PSN             |
         IBV_QP_MAX_DEST_RD_ATOMIC |
         IBV_QP_MIN_RNR_TIMER)) {
-        fprintf(stderr, "Failed to modify RMF QP to RTR\n");
+        fprintf(stderr, "Failed to modify RMF QP to RTR: %s\n", strerror(errno));
         return 1;
     }
 

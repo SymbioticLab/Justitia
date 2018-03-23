@@ -448,28 +448,32 @@ int main(int argc, char **argv)
     //TODO: later consider to use buffer instead of single request slot
     cb.host_req = (struct host_request *)calloc(1, sizeof(struct host_request));
     cb.ctx = init_ctx_and_build_conn(NULL, 0, gid_idx, cb.host_req);
-
-    /* start thread handling incoming flows */
+    if (cb.ctx == NULL) {
+        printf("PUPUPU: cb.ctx is NULL\n");
+    }
+    /*
     printf("starting thread for flow handling...\n");
     if (pthread_create(&th1, NULL, (void *(*)(void *)) & flow_handler, NULL))
     {
         error("pthread_create: flow_handler");
     }
+    */
 
-    /* start monitoring thread */
     printf("starting thread for latency monitoring...\n");
-    if (pthread_create(&th2, NULL, (void *(*)(void *)) & monitor_latency, (void *)cb.ctx))
+    if (pthread_create(&th2, NULL, (void *(*)(void *)) &monitor_latency, (void *)cb.ctx))
     {
         error("pthread_create: monitor_latency");
     }
 
-    /* start token generating thread */
+    /*
     printf("starting thread for token generating...\n");
     if (pthread_create(&th3, NULL, (void *(*)(void *)) & generate_tokens, NULL))
     {
         error("pthread_create: generate_tokens");
     }
+    */
 
+    /*
     printf("starting thread for token generating for read...\n");
     if (pthread_create(&th4, NULL, (void *(*)(void *)) & generate_tokens_read, NULL))
     {
@@ -481,6 +485,7 @@ int main(int argc, char **argv)
     {
         error("pthread_create: generate_tokens_read");
     }
+    */
 
     /* logging thread */
     /*

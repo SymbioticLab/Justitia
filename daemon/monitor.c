@@ -96,6 +96,7 @@ void monitor_latency(void *arg)
         exit(1);
     }
 
+
     /* monitor loop */
     uint32_t min_virtual_link_cap;
     uint16_t num_active_big_flows;
