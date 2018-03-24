@@ -11,7 +11,6 @@ static struct pingpong_dest * pp_client_exch_dest(const char *, struct pingpong_
 static struct pingpong_dest * pp_server_exch_dest(struct pingpong_context *, const struct pingpong_dest *, int);
 static int pp_connect_ctx(struct pingpong_context *, int, struct pingpong_dest *, int);
 struct pingpong_context *init_ctx_and_build_conn(const char *, int, int, struct host_request *);
-int host_conn_cnt = 0;
 
 struct pingpong_context *init_ctx_and_build_conn(const char *addr, int is_arbiter, int gidx, struct host_request *host_req) {
     struct pingpong_context *ctx;
