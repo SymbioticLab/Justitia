@@ -21,20 +21,30 @@
 
 #include "pingpong_utils.h"
 
+#define RING_BUFFER_SIZE 128		// number of requests the ring can hold
+
 static const int BUF_SIZE = 10;
 static const int BUF_READ_SIZE = 5;
 
 /* host request message definition shared between the arbiter and the pacer */
 enum host_request_type {
-    QUERY_FLOW_JOIN = 0,
-    QUERY_FLOW_EXIT = 1
+    FLOW_JOIN = 0,
+    FLOW_EXIT = 1,
+	RMF_EXCEED_TARGET = 2
 };
 
 struct host_request {                       /* request sent from host pacer */
-    enum host_request_type req_type;
-    uint8_t dest_qp_num;
-    uint8_t is_read;
     uint32_t request_id;                    /* TODO: handle overflow later */
+    enum host_request_type req_type;
+    uint8_t is_read;
+    uint8_t dest_qp_num;
+};
+
+struct request_ring_buffer {
+	struct host_request host_req[RING_BUFFER_SIZE];
+	uint16_t head;					/* where CA polls */
+	uint16_t tail;					/* where sender writes */
+	uint16_t sender_head;			/* where sender stops writing */
 };
 /* end of host request message definition */
 

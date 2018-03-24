@@ -5,8 +5,7 @@ static const int port = 18515;
 static const int ib_port = 1;
 static const int mtu = IBV_MTU_2048;
 
-//static struct pingpong_context * alloc_qps(struct host_request *, int);
-static struct pingpong_context * alloc_qps(struct host_request *);
+static struct pingpong_context * alloc_qps(struct host_request *, int);
 static struct pingpong_dest * pp_client_exch_dest(const char *, struct pingpong_dest *);
 static struct pingpong_dest * pp_server_exch_dest(struct pingpong_context *, const struct pingpong_dest *, int);
 static int pp_connect_ctx(struct pingpong_context *, int, struct pingpong_dest *, int);
@@ -17,7 +16,10 @@ struct pingpong_context *init_ctx_and_build_conn(const char *addr, int is_arbite
     struct pingpong_dest my_dest;
 
     //ctx = alloc_qps(host_req, is_arbiter);
-    ctx = alloc_qps(host_req);
+    if (is_arbiter)
+        ctx = alloc_qps(host_req, RING_BUFFER_SIZE);
+    else
+        ctx = alloc_qps(host_req, 1);   //TODO: construct buffer on host side
 
     if (!ctx)
         return NULL;
@@ -63,11 +65,7 @@ struct pingpong_context *init_ctx_and_build_conn(const char *addr, int is_arbite
     return ctx;
 }
 
-//static struct pingpong_context *alloc_qps(struct host_request *host_req, int is_arbiter) {
-static struct pingpong_context *alloc_qps(struct host_request *host_req) {
-    //static int arbiter_first_conn = 1;
-    //static struct ibv_context *unique_ibv_context = NULL;
-    //static struct ibv_pd *unique_ibv_pd = NULL;
+static struct pingpong_context *alloc_qps(struct host_request *host_req, int req_buf_size) {
     struct ibv_device **dev_list;
     struct ibv_device *ib_dev;
     struct pingpong_context *ctx;
@@ -89,29 +87,6 @@ static struct pingpong_context *alloc_qps(struct host_request *host_req) {
         fprintf(stderr, "Couldn't allocate pingpong_context.\n");
         return NULL;
     }
-
-    /*
-    if (is_arbiter && arbiter_first_conn) {
-        arbiter_first_conn = 0;
-        ctx->context = ibv_open_device(ib_dev);
-        if (!ctx->context) {
-            fprintf(stderr, "Couldn't get context for %s\n",
-                ibv_get_device_name(ib_dev));
-            goto clean_device;
-        }
-        unique_ibv_context = ctx->context;
-
-        ctx->pd = ibv_alloc_pd(ctx->context);
-        if (!ctx->pd) {
-            fprintf(stderr, "Couldn't allocate PD\n");
-            goto clean_pd;
-        }
-        unique_ibv_pd = ctx->pd;
-    } else {
-        ctx->context = unique_ibv_context;
-        ctx->pd = unique_ibv_pd;
-    }
-    */
 
     ctx->context = ibv_open_device(ib_dev);
     if (!ctx->context) {
@@ -139,7 +114,7 @@ static struct pingpong_context *alloc_qps(struct host_request *host_req) {
         goto clean_rmf_mr;
     }
 
-    ctx->req_mr = ibv_reg_mr(ctx->pd, host_req, sizeof(struct host_request), IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_WRITE);
+    ctx->req_mr = ibv_reg_mr(ctx->pd, host_req, req_buf_size * sizeof(struct host_request), IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_WRITE);
     if (!ctx->req_mr) {
         fprintf(stderr, "Couldn't register REQ_MR\n");
         goto clean_req_mr;

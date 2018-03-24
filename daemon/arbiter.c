@@ -208,8 +208,8 @@ int main(int argc, char **argv)
     for (i = 0; i < num_hosts; ++i) {
         printf("HOST LOOP #%d\n", i + 1);
         /* init ctx, mr, and connect to each host via RDMA RC */
-        cluster.hosts[i].host_req = (struct host_request *)calloc(1, sizeof(struct host_request));
-        cluster.hosts[i].ctx = init_ctx_and_build_conn(ip[i], 1, gid_idx[i], cluster.hosts[i].host_req);
+        cluster.hosts[i].ring = (struct request_ring_buffer *)calloc(1, sizeof(struct request_ring_buffer));
+        cluster.hosts[i].ctx = init_ctx_and_build_conn(ip[i], 1, gid_idx[i], cluster.hosts[i].ring->host_req);
         if (cluster.hosts[i].ctx == NULL) {
             fprintf(stderr, "init_ctx_and_build_conn failed, exit\n");
             exit(EXIT_FAILURE);
@@ -245,7 +245,7 @@ int main(int argc, char **argv)
     free(gid_idx);
     for (i = 0; i < num_hosts; ++i) {
         free(ip[i]);
-        free(cluster.hosts[i].host_req);
+        free(cluster.hosts[i].ring);
         free(&cluster.hosts[i]);
     }
 

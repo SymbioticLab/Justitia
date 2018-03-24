@@ -28,8 +28,7 @@
 #define TABLE_SIZE 7
 
 struct host_info {
-    struct host_request *host_req;          /* points to the *MR* for each host to update info via specific request using an RDMA verb; defined in pingpong.h*/ 
-    // some other info go here...
+    struct request_ring_buffer *ring;         /* points to the ring buffer containing the *MR* for hosts to update info via RDMA; defined in pingpong.h*/ 
     uint16_t *flow_map;                     /* an array keeping track of flows sending to other host in the cluster */
     struct pingpong_context *ctx;           /* other rdma related ctx goes here */
 };
@@ -40,5 +39,3 @@ struct cluster_info {                       /* global knowledge of CA */
 };
 
 extern struct cluster_info cluster;
-//extern struct control_block cb;            /* declaration */
-//extern uint32_t chunk_size_table[TABLE_SIZE];
