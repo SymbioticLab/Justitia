@@ -5,11 +5,6 @@
 struct cluster_info cluster;
 
 /* utility fuctions */
-static void error(char *msg)
-{
-    perror(msg);
-    exit(1);
-}
 
 static void usage()
 {

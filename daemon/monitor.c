@@ -132,6 +132,7 @@ void monitor_latency(void *arg)
 
         //cmh_start = get_cycles();
         tail_99 = round(CMH_Quantile(cmh, 0.99)/100.0)/10;
+        printf("tail_99: %.1f us\n", tail_99);
         //cmh_end = get_cycles();
         //printf("CMH_Quantile 99th takes %.2f us\n", (cmh_end - cmh_start)/cpu_mhz);
         // if (prev_start_cycle)
