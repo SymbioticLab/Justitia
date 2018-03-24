@@ -211,10 +211,10 @@ int main(int argc, char **argv)
     cluster.num_hosts = num_hosts;
     cluster.hosts = (struct host_info *)calloc(num_hosts, sizeof(struct host_info));
     for (i = 0; i < num_hosts; ++i) {
-        printf("LOOP #%d\n", i + 1);
+        printf("HOST LOOP #%d\n", i + 1);
         /* init ctx, mr, and connect to each host via RDMA RC */
         cluster.hosts[i].host_req = (struct host_request *)calloc(1, sizeof(struct host_request));
-        cluster.hosts[i].ctx = init_ctx_and_build_conn(ip[i], 1, gid_idx[i], &cluster.hosts[i]);
+        cluster.hosts[i].ctx = init_ctx_and_build_conn(ip[i], 1, gid_idx[i], cluster.hosts[i].host_req);
         if (cluster.hosts[i].ctx == NULL) {
             fprintf(stderr, "init_ctx_and_build_conn failed, exit\n");
             exit(EXIT_FAILURE);
@@ -247,6 +247,12 @@ int main(int argc, char **argv)
         }
     }
 
+    free(gid_idx);
+    for (i = 0; i < num_hosts; ++i) {
+        free(ip[i]);
+        free(cluster.hosts[i].host_req);
+        free(&cluster.hosts[i]);
+    }
 
     return 0;
 }
