@@ -74,6 +74,6 @@ struct pingpong_dest {
 	union ibv_gid gid;
 };
 
-struct pingpong_context *init_ctx_and_build_conn(const char *addr, int is_arbiter, int gidx, struct host_request *host_req);
+struct pingpong_context *init_ctx_and_build_conn(const char *, int, int, struct host_request *);
 
 #endif

@@ -178,12 +178,12 @@ int main(int argc, char **argv)
     rewind(fp);
     printf("NUM_HOSTS = %d\n", num_hosts);
 
-    char **ip = (char **)malloc(num_hosts * sizeof(char *));
+    char **ip = malloc(num_hosts * sizeof(char *));
     for (i = 0; i < num_hosts; ++i) {
-        ip[i] = (char *)calloc(64, sizeof(char));
+        ip[i] = calloc(64, sizeof(char));
     }
     char *gid_idx_char, *token;
-    int *gid_idx = (int *)malloc(num_hosts * sizeof(int));
+    int *gid_idx = malloc(num_hosts * sizeof(int));
     for (i = 0; i < num_hosts; ++i) {
         gid_idx[i] = -1;
     }
@@ -204,11 +204,11 @@ int main(int argc, char **argv)
 
     /* initialize control structure */ 
     cluster.num_hosts = num_hosts;
-    cluster.hosts = (struct host_info *)calloc(num_hosts, sizeof(struct host_info));
+    cluster.hosts = calloc(num_hosts, sizeof(struct host_info));
     for (i = 0; i < num_hosts; ++i) {
         printf("HOST LOOP #%d\n", i + 1);
         /* init ctx, mr, and connect to each host via RDMA RC */
-        cluster.hosts[i].ring = (struct request_ring_buffer *)calloc(1, sizeof(struct request_ring_buffer));
+        cluster.hosts[i].ring = calloc(1, sizeof(struct request_ring_buffer));
         cluster.hosts[i].ctx = init_ctx_and_build_conn(ip[i], 1, gid_idx[i], cluster.hosts[i].ring->host_req);
         if (cluster.hosts[i].ctx == NULL) {
             fprintf(stderr, "init_ctx_and_build_conn failed, exit\n");

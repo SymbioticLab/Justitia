@@ -3,6 +3,7 @@
 #include "get_clock.h"
 //#include <immintrin.h> /* For _mm_pause */
 #include "countmin.h"
+#include "ringbuf.h"
 
 //#define DEFAULT_CHUNK_SIZE 10000000
 #define DEFAULT_CHUNK_SIZE 1000000
@@ -65,7 +66,7 @@ char *get_sock_path() {
 
     char hostname[60];
     if (fgets(hostname, 60, fp) != NULL) {
-        char *sock_path = (char *)malloc(108 * sizeof(char));
+        char *sock_path = malloc(108 * sizeof(char));
         printf("DE hostname:%s\n", hostname);
         int len = strlen(hostname);
         if (len > 0 && hostname[len-1] == '\n') hostname[len-1] = '\0';
@@ -445,12 +446,19 @@ int main(int argc, char **argv)
         cb.sb->flows[i].pending = 0;
         cb.sb->flows[i].active = 0;
     }
-    //TODO: later consider to use buffer instead of single request slot
-    cb.host_req = (struct host_request *)calloc(1, sizeof(struct host_request));
+
+    /* setup host side ring buffer for request buffering */
+    size_t ring_buf_size = 0;
+    ringbuf_get_sizes(2, &ring_buf_size, NULL);
+    ringbuf_t *ring = malloc(ring_buf_size);
+    ringbuf_setup(ring, 2, RING_BUFFER_SIZE);
+
+    cb.host_req = calloc(1, sizeof(struct host_request));
+
     cb.ctx = init_ctx_and_build_conn(NULL, 0, gid_idx, cb.host_req);
-    if (cb.ctx == NULL) {
-        printf("PUPUPU: cb.ctx is NULL\n");
-    }
+
+
+
     /*
     printf("starting thread for flow handling...\n");
     if (pthread_create(&th1, NULL, (void *(*)(void *)) & flow_handler, NULL))

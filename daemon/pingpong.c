@@ -82,7 +82,7 @@ static struct pingpong_context *alloc_qps(struct host_request *host_req, int req
         return NULL;
     }
 
-    ctx = (struct pingpong_context *)calloc(1, sizeof(struct pingpong_context));
+    ctx = calloc(1, sizeof(struct pingpong_context));
     if (!ctx) {
         fprintf(stderr, "Couldn't allocate pingpong_context.\n");
         return NULL;
@@ -285,7 +285,7 @@ static struct pingpong_dest * pp_client_exch_dest(const char *servername,
         goto out;
     }
 
-    rem_dest = (struct pingpong_dest *)malloc(sizeof(struct pingpong_dest));
+    rem_dest = malloc(sizeof(struct pingpong_dest));
     if (!rem_dest)
         goto out;
 
@@ -363,7 +363,7 @@ static struct pingpong_dest * pp_server_exch_dest(struct pingpong_context *ctx,
         goto out;
     }
 
-    rem_dest = (struct pingpong_dest *)malloc(sizeof(struct pingpong_dest));
+    rem_dest = malloc(sizeof(struct pingpong_dest));
     if (!rem_dest)
         goto out;
 
