@@ -3,7 +3,6 @@
 #include "get_clock.h"
 //#include <immintrin.h> /* For _mm_pause */
 #include "countmin.h"
-#include "ringbuf.h"
 
 //#define DEFAULT_CHUNK_SIZE 10000000
 #define DEFAULT_CHUNK_SIZE 1000000
@@ -146,7 +145,7 @@ void logging_tokens()
     //cbuf_push_back(&token_cbuf, &cb.tokens)
     FILE *f = fopen("token_log.txt", "w");
     fprintf(f, "Time(us)\tnum_tokens\n");
-    cycles_t start_cycle, curr_cycle;
+    cycles_t start_cycle, curr_cycle = 0;
     start_cycle = get_cycles();
     double cpu_mhz = get_cpu_mhz(1);
     while (1) {
@@ -159,6 +158,44 @@ void logging_tokens()
 
 }
 /* end */
+
+/* submit a host request to the ring buffer; also used in monitor.c */
+int submit_request(enum host_request_type type, uint8_t is_read, uint32_t dest_qp_num, unsigned int worker_id)
+{
+    ssize_t offset = 0;
+    struct host_request request;
+    request.type = type;
+    if (type == FLOW_JOIN || type == FLOW_EXIT) {
+        request.is_read = is_read;
+        request.dest_qp_num = dest_qp_num;
+        request.check_byte = 1;
+    } else if (type == RMF_EXCEED_TARGET) {
+        request.is_read = 0;
+        request.dest_qp_num = 0;
+        request.check_byte = 1;
+    }
+
+    if (worker_id == 0) {
+        offset = ringbuf_acquire(cb.ring, cb.flow_handler_worker, sizeof(struct host_request));
+    } else if (worker_id == 1) {
+        offset = ringbuf_acquire(cb.ring, cb.latency_monitor_worker, sizeof(struct host_request));
+    }
+    if (offset == -1) {
+        fprintf(stderr, "Error acquiring ring buffer space.\n");
+        return -1;
+    }
+
+    memcpy(&cb.host_req[offset], &request, sizeof(struct host_request));
+
+    if (worker_id == 0) {
+        ringbuf_produce(cb.ring, cb.flow_handler_worker);
+    } else if (worker_id == 1) {
+        ringbuf_produce(cb.ring, cb.latency_monitor_worker);
+    }
+    
+    printf("done submiting a request\n");
+    return 0;
+}
 
 /* handle incoming flows one by one; assign a slot to an incoming flow */
 static void flow_handler()
@@ -226,6 +263,10 @@ static void flow_handler()
             {
                 cb.next_slot = (cb.next_slot + 1) % MAX_FLOWS;
             }
+
+            //TODO:
+            /* submit update to CA */
+
         }
         else if (strcmp(buf, "read") == 0)
         {
@@ -447,28 +488,30 @@ int main(int argc, char **argv)
         cb.sb->flows[i].active = 0;
     }
 
-    /* setup host side ring buffer for request buffering */
+    /* initialize data buffer for the ring buffer for requests issued from the host pacer */
+    cb.host_req = calloc(RING_BUFFER_SIZE, sizeof(struct host_request));
+
+    /* setup host side ring buffer manager */
     size_t ring_buf_size = 0;
     ringbuf_get_sizes(2, &ring_buf_size, NULL);
-    ringbuf_t *ring = malloc(ring_buf_size);
-    ringbuf_setup(ring, 2, RING_BUFFER_SIZE);
+    cb.ring = malloc(ring_buf_size);
+    ringbuf_setup(cb.ring, 2, RING_BUFFER_SIZE);
 
-    cb.host_req = calloc(1, sizeof(struct host_request));
+    /* register worker for host request ring buffer */
+    cb.flow_handler_worker = ringbuf_register(cb.ring, 0);
+    cb.latency_monitor_worker = ringbuf_register(cb.ring, 1);
 
+    /* initialize RDMA context and build connection with CA (2 QPs) */
     cb.ctx = init_ctx_and_build_conn(NULL, 0, gid_idx, cb.host_req);
 
-
-
-    /*
     printf("starting thread for flow handling...\n");
     if (pthread_create(&th1, NULL, (void *(*)(void *)) & flow_handler, NULL))
     {
         error("pthread_create: flow_handler");
     }
-    */
 
     printf("starting thread for latency monitoring...\n");
-    if (pthread_create(&th2, NULL, (void *(*)(void *)) &monitor_latency, (void *)cb.ctx))
+    if (pthread_create(&th2, NULL, (void *(*)(void *)) & monitor_latency, (void *)cb.ctx))
     {
         error("pthread_create: monitor_latency");
     }

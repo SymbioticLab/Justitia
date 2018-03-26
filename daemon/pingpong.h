@@ -34,10 +34,11 @@ enum host_request_type {
 };
 
 struct host_request {                       /* request sent from host pacer */
-    uint32_t request_id;                    /* TODO: handle overflow later */
-    enum host_request_type req_type;
+    //uint32_t request_id;                    /* TODO: handle overflow later */
+    enum host_request_type type;
     uint8_t is_read;
-    uint8_t dest_qp_num;
+    uint32_t dest_qp_num;
+	uint8_t check_byte;						/* checked by CA */
 };
 
 struct request_ring_buffer {

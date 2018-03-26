@@ -17,6 +17,7 @@
 #include <pthread.h>
 #include <signal.h>
 #include "pingpong.h"
+#include "ringbuf.h"
 
 #define SHARED_MEM_NAME "/rdma-fairness"
 #define MAX_FLOWS 512
@@ -38,19 +39,22 @@ struct shared_block {
     uint32_t active_chunk_size;
     uint32_t active_chunk_size_read;
     uint32_t active_batch_ops;
-    uint16_t num_active_big_flows;         /* incremented when an elephant first sends a message */
-    uint16_t num_active_small_flows;       /* incremented when a mouse first sends a message */
+    uint16_t num_active_big_flows;              /* incremented when an elephant first sends a message */
+    uint16_t num_active_small_flows;            /* incremented when a mouse first sends a message */
 };
 
 struct control_block {
     struct shared_block *sb;
     
-    struct host_request *host_req;
+    ringbuf_t *ring;                            /* meta data for the ring buffer */
+    ringbuf_worker_t *flow_handler_worker;      /* ringbuf worker handling flow update request */
+    ringbuf_worker_t *latency_monitor_worker;   /* ringbuf worker handling RMF latency update request */
+    struct host_request *host_req;              /* actual data buffer for the ring */
     struct pingpong_context *ctx;
-    uint64_t tokens;                       /* number of available tokens */
+    uint64_t tokens;                            /* number of available tokens */
     uint64_t tokens_read;
-    uint32_t virtual_link_cap;             /* capacity of the virtual link that elephants go through */
-    uint32_t remote_read_rate;             /* remote read rate */
+    uint32_t virtual_link_cap;                  /* capacity of the virtual link that elephants go through */
+    uint32_t remote_read_rate;                  /* remote read rate */
     uint32_t local_read_rate;    
     uint16_t next_slot;
     uint16_t num_big_read_flows;
@@ -58,3 +62,5 @@ struct control_block {
 
 extern struct control_block cb;            /* declaration */
 extern uint32_t chunk_size_table[TABLE_SIZE];
+
+int submit_request(enum host_request_type, uint8_t, uint32_t, unsigned int);
