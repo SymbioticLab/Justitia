@@ -30,7 +30,8 @@ static const int BUF_READ_SIZE = 5;
 enum host_request_type {
     FLOW_JOIN = 0,
     FLOW_EXIT = 1,
-	RMF_EXCEED_TARGET = 2
+	RMF_ABOVE_TARGET = 2,	/* ABOVE means worse (larger) tail */
+	RMF_BELOW_TARGET = 3
 };
 
 struct host_request {                       /* request sent from host pacer */

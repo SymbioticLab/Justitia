@@ -165,15 +165,9 @@ int submit_request(enum host_request_type type, uint8_t is_read, uint32_t dest_q
     ssize_t offset = 0;
     struct host_request request;
     request.type = type;
-    if (type == FLOW_JOIN || type == FLOW_EXIT) {
-        request.is_read = is_read;
-        request.dest_qp_num = dest_qp_num;
-        request.check_byte = 1;
-    } else if (type == RMF_EXCEED_TARGET) {
-        request.is_read = 0;
-        request.dest_qp_num = 0;
-        request.check_byte = 1;
-    }
+    request.is_read = is_read;
+    request.dest_qp_num = dest_qp_num;
+    request.check_byte = 1;
 
     if (worker_id == 0) {
         offset = ringbuf_acquire(cb.ring, cb.flow_handler_worker, sizeof(struct host_request));

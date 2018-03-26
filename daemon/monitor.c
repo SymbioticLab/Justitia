@@ -20,7 +20,7 @@ void monitor_latency(void *arg)
 {
     printf(">>>Starting monitor_latency...\n");
 
-    double tail_99;
+    double tail_99 = 0, prev_tail = 0;
 
     int lat; // in nanoseconds
     cycles_t start_cycle, end_cycle;
@@ -131,6 +131,7 @@ void monitor_latency(void *arg)
         }
 
         //cmh_start = get_cycles();
+        prev_tail = tail_99;
         tail_99 = round(CMH_Quantile(cmh, 0.99)/100.0)/10;
         printf("tail_99: %.1f us\n", tail_99);
         //cmh_end = get_cycles();
@@ -141,6 +142,17 @@ void monitor_latency(void *arg)
         // printf("median %.1f us 99th %.1f us\n", median, tail_99);
         seq++;
         wr.wr_id = seq;
+
+        /* send an update to CA only at the transition of tail_99 exceeds target or tail_99 go below target */
+        if (tail_99 > TAIL && prev_tail <= TAIL) {
+            if (submit_request(RMF_ABOVE_TARGET, 0, 0, 1)) {
+                fprintf(stderr, "Failed to submit a 'latency above target' update to CA\n");
+            }
+        } else if (tail_99 <= TAIL && prev_tail > TAIL) {
+            if (submit_request(RMF_BELOW_TARGET, 0, 0, 1)) {
+                fprintf(stderr, "Failed to submit a 'latency below target' update to CA\n");
+            }
+        }
 
         /* check if any remote read is registered or if read rate is received */
         /*
@@ -170,6 +182,7 @@ void monitor_latency(void *arg)
         */
 
 
+        //TODO: move the following rate computation logic to the CA side
         num_active_big_flows = __atomic_load_n(&cb.sb->num_active_big_flows, __ATOMIC_RELAXED);
         num_active_small_flows = __atomic_load_n(&cb.sb->num_active_small_flows, __ATOMIC_RELAXED);
         // printf("num_active_big_flows = %d\n", num_active_big_flows);
