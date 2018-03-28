@@ -191,6 +191,40 @@ int submit_request(enum host_request_type type, uint8_t is_read, uint32_t dest_q
     return 0;
 }
 
+static void send_out_request()
+{
+    struct ibv_sge sge;
+    struct ibv_send_wr wr;
+    struct ibv_send_wr *bad_wr;
+
+    memset(&sge, 0, sizeof(sge));
+    sge.length = sizeof(struct host_request);
+    sge.lkey = cb.ctx->req_mr->lkey;
+
+    memset(&wr, 0, sizeof(wr));
+    wr.wr_id = 0;
+    wr.sg_list = &sge;
+    wr.num_sge = 1;
+    wr.opcode = IBV_WR_SEND;
+    wr.send_flags = IBV_SEND_SIGNALED | IBV_SEND_INLINE;
+
+    size_t offset = 0, len = 0, rem = 0;
+    while (1) {
+        if (len = ringbuf_consume(cb.ring, offset) != 0) {
+            rem = len;
+            while (rem) {
+                sge.addr = (uintptr_t)&cb.host_req[offset++];
+                --rem;
+
+                if (ibv_post_send(cb.ctx->qp_req, &wr, &bad_wr)) {
+                    fprintf(stderr, "DEBUG POST SEND: REALLY BAD!!, errno = %d\n", errno);
+                }
+            }
+            ringbuf_release(cb.ring, len);
+        }
+    }
+}
+
 /* handle incoming flows one by one; assign a slot to an incoming flow */
 static void flow_handler()
 {
@@ -440,8 +474,7 @@ int main(int argc, char **argv)
     atexit(rm_shmem_on_exit);
 
     int fd_shm, i;
-    pthread_t th1, th2, th3, th4;
-    //pthread_t th1, th2, th3, th4, th5;
+    pthread_t th1, th2, th3, th4, th5;
     int gid_idx = -1;
     if (argc == 2)
     {
@@ -508,6 +541,12 @@ int main(int argc, char **argv)
     if (pthread_create(&th2, NULL, (void *(*)(void *)) & monitor_latency, (void *)cb.ctx))
     {
         error("pthread_create: monitor_latency");
+    }
+
+    printf("starting thread for sending out requests...\n");
+    if (pthread_create(&th5, NULL, (void *(*)(void *)) & send_out_request, NULL))
+    {
+        error("pthread_create: send_out_request");
     }
 
     /*
