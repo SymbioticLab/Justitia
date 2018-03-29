@@ -377,7 +377,7 @@ static struct pingpong_dest * pp_server_exch_dest(struct pingpong_context *ctx,
     if (!rem_dest)
         goto out;
 
-    sscanf(msg, "%x:%x:%x:%x:%x:%x:%Lx:%Lx:%s", &rem_dest->lid, &rem_dest->qpn_rmf, &rem_dest->qpn_req,
+    sscanf(msg, "%x:%x:%x:%x:%x:%x:%x:%Lx:%Lx:%Lx:%s", &rem_dest->lid, &rem_dest->qpn_rmf, &rem_dest->qpn_req,
                             &rem_dest->psn, &rem_dest->rkey_rmf, &rem_dest->rkey_req, &rem_dest->rkey_resp, &rem_dest->vaddr_rmf, &rem_dest->vaddr_req, &rem_dest->vaddr_resp, gid);
     wire_gid_to_gid(gid, &rem_dest->gid);
 

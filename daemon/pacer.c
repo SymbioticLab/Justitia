@@ -211,8 +211,8 @@ static void send_out_request()
 
     size_t offset = 0, len = 0, rem = 0;
     while (1) {
-
-        if (len = ringbuf_consume(cb.ring, offset) != 0) {
+        len = ringbuf_consume(cb.ring, &offset);
+        if (len != 0) {
             rem = len;
             /* check sender's head updates from arbiter */
             /* send update */
@@ -225,6 +225,7 @@ static void send_out_request()
                     fprintf(stderr, "DEBUG POST SEND: REALLY BAD!!, errno = %d\n", errno);
                     exit(EXIT_FAILURE);
                 }
+
                 ++cb.sender_tail;
                 if (cb.sender_tail == RING_BUFFER_SIZE)
                     cb.sender_tail = 0;
@@ -373,9 +374,12 @@ static void generate_tokens()
             temp = cb.ca_resp.rate;
             prev_id = cb.ca_resp.id;
             printf("received a new response from central arbiter [%d]\n", prev_id);
-        } else {
+        } 
+        /*
+        else {
             fprintf(stderr, "Error receiving responses, prev_id: %d, new_id: %d\n", prev_id, cb.ca_resp.id);
         }
+        */
         //TODO: change locally calculated link cap to the one updated from arbiter
         if ((temp = __atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED)))
         {
