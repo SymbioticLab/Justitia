@@ -45,4 +45,37 @@ static void contact_pacer_read() {
 
     close(s);
 }
+
+/* used in post_send to inform central arbiter that a big write/send flow joins*/
+static void contact_pacer_BIG_join() {
+    /* prepare unix domain socket */
+    char *sock_path = get_sock_path();
+    unsigned int s, len;
+    struct sockaddr_un remote;
+    char str[MSG_LEN];
+
+    if ((s = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) {
+        perror("socket");
+        exit(1);
+    }
+
+    printf("Contacting pacer for BIG flow JOIN...\n");
+
+    remote.sun_family = AF_UNIX;
+    strcpy(remote.sun_path, sock_path);
+    free(sock_path);
+    len = strlen(remote.sun_path) + sizeof(remote.sun_family);
+    if (connect(s, (struct sockaddr *)&remote, len) == -1) {
+        perror("connect");
+        exit(1);
+    }
+   
+    strcpy(str, "BIGjoin");
+    if (send(s, str, strlen(str), 0) == -1) {
+        perror("send: BIGjoin");
+        exit(1);
+    }
+
+    close(s);
+}
 #endif

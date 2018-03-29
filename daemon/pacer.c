@@ -304,11 +304,12 @@ static void flow_handler()
             {
                 cb.next_slot = (cb.next_slot + 1) % MAX_FLOWS;
             }
-
+        }
+        else if (strcmp(buf, "BIGjoin") == 0)
+        {
             /* submit update to CA */
             submit_request(FLOW_JOIN, 0, cb.sb->flows[cb.next_slot].dest_qp_num, 0);
-            printf("sending FLOW JOIN message\n");
-
+            printf("sending WRITE/SEND FLOW JOIN message\n");
         }
         else if (strcmp(buf, "read") == 0)
         {
@@ -326,7 +327,7 @@ static void flow_handler()
 
             /* submit update to CA */
             submit_request(FLOW_JOIN, 1, cb.sb->flows[cb.next_slot].dest_qp_num, 0);
-            printf("sending FLOW JOIN message\n");
+            printf("sending READ FLOW JOIN message\n");
         }
         else if (strcmp(buf, "exit") == 0)
         {

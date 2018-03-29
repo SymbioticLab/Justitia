@@ -1240,6 +1240,7 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 				}
 				else
 				{
+					contact_pacer_BIG_join();
 					num_active_big_flows++;
 					printf("DEBUG POST SEND: INDEED increment BIG flow counter\n");
 					__atomic_fetch_add(&sb->num_active_big_flows, 1, __ATOMIC_RELAXED);
