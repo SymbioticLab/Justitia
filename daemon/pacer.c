@@ -305,8 +305,9 @@ static void flow_handler()
                 cb.next_slot = (cb.next_slot + 1) % MAX_FLOWS;
             }
 
-            //TODO:
             /* submit update to CA */
+            submit_request(FLOW_JOIN, 0, cb.sb->flows[cb.next_slot].dest_qp_num, 0);
+            printf("sending FLOW JOIN message\n");
 
         }
         else if (strcmp(buf, "read") == 0)
@@ -323,6 +324,10 @@ static void flow_handler()
             ibv_post_send(cb.ctx->qp_read, &send_wr, &bad_wr);
             __atomic_fetch_add(&cb.num_big_read_flows, 1, __ATOMIC_RELAXED);
             */
+
+            /* submit update to CA */
+            submit_request(FLOW_JOIN, 1, cb.sb->flows[cb.next_slot].dest_qp_num, 0);
+            printf("sending FLOW JOIN message\n");
         }
         else if (strcmp(buf, "exit") == 0)  // Note: contact_pacer(0) is only used by big read flow to tell pacer to send notification . Other big write flows directly subtract cnt.
         {
@@ -332,6 +337,10 @@ static void flow_handler()
             ibv_post_send(cb.ctx->qp_read, &send_wr, &bad_wr);
             __atomic_fetch_sub(&cb.num_big_read_flows, 1, __ATOMIC_RELAXED);
             */
+
+            /* submit update to CA */
+            submit_request(FLOW_EXIT, 0, cb.sb->flows[cb.next_slot].dest_qp_num, 0);
+            printf("sending FLOW EXIT message\n");
         }
     }
 }

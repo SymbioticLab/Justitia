@@ -76,12 +76,23 @@ static void handle_host_updates()
             uint32_t rate = 0;
             while (cluster.hosts[i].ring->host_req[head].check_byte == 1) {
                 printf("Getting new request from Host%d\n", i);
+                if (cluster.hosts[i].ring->host_req[head].type == RMF_ABOVE_TARGET) {
+                    printf("indeed RMF_EXCEED_TARGET message\n", cluster.hosts[i].ring->host_req[head].type);
+                } else if (cluster.hosts[i].ring->host_req[head].type == RMF_BELOW_TARGET) {
+                    printf("indeed RMF_BELOW_TARGET message\n", cluster.hosts[i].ring->host_req[head].type);
+                } else if (cluster.hosts[i].ring->host_req[head].type == FLOW_JOIN) {
+                    printf("indeed FLOW_JOIN message\n", cluster.hosts[i].ring->host_req[head].type);
+                } else if (cluster.hosts[i].ring->host_req[head].type == FLOW_EXIT) {
+                    printf("indeed FLOW_EXIT message\n", cluster.hosts[i].ring->host_req[head].type);
+                }
                 rate = compute_rate(&cluster.hosts[i].ring->host_req[head]);
                 cluster.hosts[i].ring->host_req[head].check_byte = 0;
                 ++head;
                 if (head == RING_BUFFER_SIZE)
                     head = 0;
             }
+            /* update head pointer */
+            cluster.hosts[i].ring->head = head;
 
             /* send out responses (rate updates, sender's copy of head) */ 
             if (rate) {    /* if ever computed a rate */
