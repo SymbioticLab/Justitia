@@ -314,7 +314,6 @@ static void flow_handler()
         {
             printf("READ detected\n");
 
-            //TODO: include read verb as the FLOW_JOIN request sent to the centralized arbiter
             /*
             send_sge.addr = (uintptr_t)cb.ctx->local_read_buf;
             send_sge.length = BUF_READ_SIZE;
@@ -329,7 +328,7 @@ static void flow_handler()
             submit_request(FLOW_JOIN, 1, cb.sb->flows[cb.next_slot].dest_qp_num, 0);
             printf("sending FLOW JOIN message\n");
         }
-        else if (strcmp(buf, "exit") == 0)  // Note: contact_pacer(0) is only used by big read flow to tell pacer to send notification . Other big write flows directly subtract cnt.
+        else if (strcmp(buf, "exit") == 0)
         {
             //TODO: include read verb as the FLOW_EXIT request sent to the centralized arbiter
             /*

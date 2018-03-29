@@ -63,7 +63,7 @@ static void contact_pacer(int join) {
         exit(1);
     }
 
-    if (!join) {    // Note: contact_pacer(0) is only used by big read flow to tell pacer to send notification . Other big write flows directly subtract cnt.
+    if (!join) {
         strcpy(str, "exit");
         if (send(s, str, strlen(str), 0) == -1) {
             perror("send: exit");
@@ -103,6 +103,8 @@ static void set_inactive_on_exit() {
         } else {
             __atomic_fetch_sub(&sb->num_active_big_flows, num_active_big_flows, __ATOMIC_RELAXED);
             printf("DEBUG decrement BIG counter by %d\n", num_active_big_flows);
+            /* also contact pacer when BIG flows leave */
+            contact_pacer(0);
         }
         __atomic_store_n(&flow->pending, 0, __ATOMIC_RELAXED);
         __atomic_store_n(&flow->active, 0, __ATOMIC_RELAXED);
