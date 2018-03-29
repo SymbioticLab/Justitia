@@ -170,9 +170,9 @@ int submit_request(enum host_request_type type, uint8_t is_read, uint32_t dest_q
     request.check_byte = 1;
 
     if (worker_id == 0) {
-        offset = ringbuf_acquire(cb.ring, cb.flow_handler_worker, sizeof(struct host_request));
+        offset = ringbuf_acquire(cb.ring, cb.flow_handler_worker, 1);
     } else if (worker_id == 1) {
-        offset = ringbuf_acquire(cb.ring, cb.latency_monitor_worker, sizeof(struct host_request));
+        offset = ringbuf_acquire(cb.ring, cb.latency_monitor_worker, 1);
     }
     if (offset == -1) {
         fprintf(stderr, "Error acquiring ring buffer space.\n");
@@ -220,11 +220,14 @@ static void send_out_request()
                 sge.addr = (uintptr_t)&cb.host_req[offset++];
                 --rem;
 
-                wr.wr.rdma.remote_addr = cb.ctx->rem_dest->vaddr_req + cb.sender_tail;
+                printf("cb.sender_tail = %d\n", cb.sender_tail);
+                printf("cb.host_req[0].check_byte = %d\n", cb.host_req[0].check_byte);
+                wr.wr.rdma.remote_addr = cb.ctx->rem_dest->vaddr_req + cb.sender_tail * sizeof(struct host_request);
                 if (ibv_post_send(cb.ctx->qp_req, &wr, &bad_wr)) {
                     fprintf(stderr, "DEBUG POST SEND: REALLY BAD!!, errno = %d\n", errno);
                     exit(EXIT_FAILURE);
                 }
+                printf("done sending out one request\n");
 
                 ++cb.sender_tail;
                 if (cb.sender_tail == RING_BUFFER_SIZE)

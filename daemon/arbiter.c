@@ -70,32 +70,34 @@ static void handle_host_updates()
 
     /* checking ring buffer for each host */
     unsigned int i, head;
-    uint32_t rate = 0;
-    for (i = 0; i < cluster.num_hosts; ++i) {
-        head = cluster.hosts[i].ring->head;
-        while (cluster.hosts[i].ring->host_req[head].check_byte == 1) {
-            printf("Getting new request from Host%d\n", i);
-            rate = compute_rate(&cluster.hosts[i].ring->host_req[head]);
-            cluster.hosts[i].ring->host_req[head].check_byte = 0;
-            ++head;
-            if (head == RING_BUFFER_SIZE)
-                head = 0;
-        }
+    while (1) {
+        for (i = 0; i < cluster.num_hosts; ++i) {
+            head = cluster.hosts[i].ring->head;
+            uint32_t rate = 0;
+            while (cluster.hosts[i].ring->host_req[head].check_byte == 1) {
+                printf("Getting new request from Host%d\n", i);
+                rate = compute_rate(&cluster.hosts[i].ring->host_req[head]);
+                cluster.hosts[i].ring->host_req[head].check_byte = 0;
+                ++head;
+                if (head == RING_BUFFER_SIZE)
+                    head = 0;
+            }
 
-        /* send out responses (rate updates, sender's copy of head) */ 
-        if (rate) {    /* if ever computed a rate */
-            cluster.hosts[i].ca_resp.rate = rate;
-            cluster.hosts[i].ca_resp.sender_head = head;
-            ++cluster.hosts[i].ca_resp.id;
+            /* send out responses (rate updates, sender's copy of head) */ 
+            if (rate) {    /* if ever computed a rate */
+                cluster.hosts[i].ca_resp.rate = rate;
+                cluster.hosts[i].ca_resp.sender_head = head;
+                ++cluster.hosts[i].ca_resp.id;
 
-            sge.lkey = cluster.hosts[i].ctx->resp_mr->lkey;
-            sge.addr = (uintptr_t)&cluster.hosts[i].ca_resp;
+                sge.lkey = cluster.hosts[i].ctx->resp_mr->lkey;
+                sge.addr = (uintptr_t)&cluster.hosts[i].ca_resp;
 
-            wr.wr.rdma.rkey = cluster.hosts[i].ctx->rem_dest->rkey_resp;
-            wr.wr.rdma.remote_addr = cluster.hosts[i].ctx->rem_dest->vaddr_resp;
+                wr.wr.rdma.rkey = cluster.hosts[i].ctx->rem_dest->rkey_resp;
+                wr.wr.rdma.remote_addr = cluster.hosts[i].ctx->rem_dest->vaddr_resp;
 
-            ibv_post_send(cluster.hosts[i].ctx->qp_req, &wr, &bad_wr);
-            printf("send out new response [%d]\n", cluster.hosts[i].ca_resp.id);
+                ibv_post_send(cluster.hosts[i].ctx->qp_req, &wr, &bad_wr);
+                //printf("sending out new response [%d]\n", cluster.hosts[i].ca_resp.id);
+            }
         }
     }
 
@@ -125,6 +127,7 @@ int main(int argc, char **argv)
 
     //int fd_shm, i;
     //pthread_t th1, th2, th3, th4, th5;
+    pthread_t th1;
 
     /* input args check */
     if (argc != 2) {
@@ -218,12 +221,12 @@ int main(int argc, char **argv)
 
 
 
-    /* start thread handling incoming flows */
-    //printf("starting thread for flow handling...\n");
-    //if (pthread_create(&th1, NULL, (void *(*)(void *)) & flow_handler, NULL))
-    //{
-    //    error("pthread_create: flow_handler");
-    //}
+    /* start thread handling host updates */
+    printf("starting thread handling host updates...\n");
+    if (pthread_create(&th1, NULL, (void *(*)(void *)) & handle_host_updates, NULL))
+    {
+        error("pthread_create: host_updates_handler");
+    }
 
     /* start monitoring thread */
     //printf("starting thread for latency monitoring...\n");

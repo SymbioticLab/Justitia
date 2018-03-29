@@ -6,7 +6,7 @@
 #include <inttypes.h>
 #include <math.h>
 
-#define TAIL 3
+#define TAIL 1
 
 #define WIDTH 32768
 #define DEPTH 16
@@ -133,7 +133,7 @@ void monitor_latency(void *arg)
         //cmh_start = get_cycles();
         prev_tail = tail_99;
         tail_99 = round(CMH_Quantile(cmh, 0.99)/100.0)/10;
-        printf("tail_99: %.1f us\n", tail_99);
+        //printf("tail_99: %.1f us\n", tail_99);
         //cmh_end = get_cycles();
         //printf("CMH_Quantile 99th takes %.2f us\n", (cmh_end - cmh_start)/cpu_mhz);
         // if (prev_start_cycle)

@@ -46,7 +46,7 @@ struct pingpong_context *init_ctx_and_build_conn(const char *addr, int is_arbite
     my_dest.rkey_resp = ctx->resp_mr->rkey;
     my_dest.vaddr_rmf = (uintptr_t)ctx->rmf_buf;
     my_dest.vaddr_req = (uintptr_t)host_req;
-    my_dest.vaddr_req = (uintptr_t)ca_resp;
+    my_dest.vaddr_resp = (uintptr_t)ca_resp;
 
     if (is_arbiter)
         ctx->rem_dest = pp_client_exch_dest(addr, &my_dest);
