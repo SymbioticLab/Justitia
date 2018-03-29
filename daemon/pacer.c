@@ -205,20 +205,29 @@ static void send_out_request()
     wr.wr_id = 0;
     wr.sg_list = &sge;
     wr.num_sge = 1;
-    wr.opcode = IBV_WR_SEND;
+    wr.opcode = IBV_WR_RDMA_WRITE;
     wr.send_flags = IBV_SEND_SIGNALED | IBV_SEND_INLINE;
+    wr.wr.rdma.rkey = cb.ctx->rem_dest->rkey_req;
 
     size_t offset = 0, len = 0, rem = 0;
     while (1) {
+
         if (len = ringbuf_consume(cb.ring, offset) != 0) {
             rem = len;
-            while (rem) {
+            /* check sender's head updates from arbiter */
+            /* send update */
+            while (rem && ((cb.sender_tail - __atomic_load_n(&cb.sender_head, __ATOMIC_RELAXED)) < RING_BUFFER_SIZE))  {
                 sge.addr = (uintptr_t)&cb.host_req[offset++];
                 --rem;
 
+                wr.wr.rdma.remote_addr = cb.ctx->rem_dest->vaddr_req + cb.sender_tail;
                 if (ibv_post_send(cb.ctx->qp_req, &wr, &bad_wr)) {
                     fprintf(stderr, "DEBUG POST SEND: REALLY BAD!!, errno = %d\n", errno);
+                    exit(EXIT_FAILURE);
                 }
+                ++cb.sender_tail;
+                if (cb.sender_tail == RING_BUFFER_SIZE)
+                    cb.sender_tail = 0;
             }
             ringbuf_release(cb.ring, len);
         }
@@ -355,9 +364,19 @@ static void generate_tokens()
      */
     uint32_t temp, chunk_size;
     uint16_t num_big;
+    uint32_t prev_id = 0;
     while (1)
     {
-        // temp = 4999; // for testing
+        /* update sender's copy of head at arbiter's ring buffer, and get new rate*/
+        if (cb.ca_resp.id > prev_id) {
+            __atomic_store_n(&cb.sender_head, cb.ca_resp.sender_head, __ATOMIC_RELAXED);
+            temp = cb.ca_resp.rate;
+            prev_id = cb.ca_resp.id;
+            printf("received a new response from central arbiter [%d]\n", prev_id);
+        } else {
+            fprintf(stderr, "Error receiving responses, prev_id: %d, new_id: %d\n", prev_id, cb.ca_resp.id);
+        }
+        //TODO: change locally calculated link cap to the one updated from arbiter
         if ((temp = __atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED)))
         {
             if ((num_big = __atomic_load_n(&cb.sb->num_active_big_flows, __ATOMIC_RELAXED)))
@@ -508,7 +527,11 @@ int main(int argc, char **argv)
     cb.sb->active_chunk_size_read = DEFAULT_CHUNK_SIZE;
     cb.sb->active_batch_ops = DEFAULT_BATCH_OPS;
     cb.sb->num_active_big_flows = 0;
-    cb.sb->num_active_small_flows = 0; /* cancel out pacer's monitor flow */
+    cb.sb->num_active_small_flows = 0;
+    cb.sender_head = 0;
+    cb.sender_tail = 0;
+    cb.ca_resp.id = 0;
+    memset(&cb.ca_resp, 0, sizeof(struct arbiter_response));
     for (i = 0; i < MAX_FLOWS; i++)
     {
         cb.sb->flows[i].pending = 0;
@@ -529,7 +552,7 @@ int main(int argc, char **argv)
     cb.latency_monitor_worker = ringbuf_register(cb.ring, 1);
 
     /* initialize RDMA context and build connection with CA (2 QPs) */
-    cb.ctx = init_ctx_and_build_conn(NULL, 0, gid_idx, cb.host_req);
+    cb.ctx = init_ctx_and_build_conn(NULL, 0, gid_idx, cb.host_req, &cb.ca_resp);
 
     printf("starting thread for flow handling...\n");
     if (pthread_create(&th1, NULL, (void *(*)(void *)) & flow_handler, NULL))
@@ -543,19 +566,17 @@ int main(int argc, char **argv)
         error("pthread_create: monitor_latency");
     }
 
-    printf("starting thread for sending out requests...\n");
-    if (pthread_create(&th5, NULL, (void *(*)(void *)) & send_out_request, NULL))
-    {
-        error("pthread_create: send_out_request");
-    }
-
-    /*
     printf("starting thread for token generating...\n");
     if (pthread_create(&th3, NULL, (void *(*)(void *)) & generate_tokens, NULL))
     {
         error("pthread_create: generate_tokens");
     }
-    */
+
+    printf("starting thread for sending out requests...\n");
+    if (pthread_create(&th5, NULL, (void *(*)(void *)) & send_out_request, NULL))
+    {
+        error("pthread_create: send_out_request");
+    }
 
     /*
     printf("starting thread for token generating for read...\n");

@@ -35,18 +35,17 @@ enum host_request_type {
 };
 
 struct host_request {                       /* request sent from host pacer */
-    //uint32_t request_id;                    /* TODO: handle overflow later */
     enum host_request_type type;
     uint8_t is_read;
     uint32_t dest_qp_num;
-	uint8_t check_byte;						/* checked by CA */
+	uint8_t check_byte;						/* indicates completion */
 };
 
-struct request_ring_buffer {
-	struct host_request host_req[RING_BUFFER_SIZE];
-	uint16_t head;					/* where CA polls */
-	uint16_t tail;					/* where sender writes */
-	uint16_t sender_head;			/* where sender stops writing */
+/* response that arbiter WRITEs to host pacer */
+struct arbiter_response {
+	uint16_t sender_head;					/* where host pacer stops writing */
+	uint32_t rate;							/* link bandwidth a host pacer should enforce */
+	uint32_t id;							/* indicates completion */
 };
 /* end of host request message definition */
 
@@ -55,6 +54,7 @@ struct pingpong_context {
 	struct ibv_pd			*pd;
 	struct ibv_mr			*rmf_mr;
 	struct ibv_mr			*req_mr;
+	struct ibv_mr			*resp_mr;
 	struct ibv_cq			*cq_rmf;
 	struct ibv_cq			*cq_req;
 	struct ibv_qp			*qp_rmf;
@@ -71,11 +71,13 @@ struct pingpong_dest {
 	int psn;
 	unsigned rkey_rmf;
 	unsigned rkey_req;
+	unsigned rkey_resp;
 	unsigned long long vaddr_rmf;
 	unsigned long long vaddr_req;
+	unsigned long long vaddr_resp;
 	union ibv_gid gid;
 };
 
-struct pingpong_context *init_ctx_and_build_conn(const char *, int, int, struct host_request *);
+struct pingpong_context *init_ctx_and_build_conn(const char *, int, int, struct host_request *, struct arbiter_response *);
 
 #endif

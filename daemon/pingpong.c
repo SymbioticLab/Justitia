@@ -5,21 +5,21 @@ static const int port = 18515;
 static const int ib_port = 1;
 static const int mtu = IBV_MTU_2048;
 
-static struct pingpong_context * alloc_qps(struct host_request *, int);
+static struct pingpong_context * alloc_qps(struct host_request *, struct arbiter_response *, int);
 static struct pingpong_dest * pp_client_exch_dest(const char *, struct pingpong_dest *);
 static struct pingpong_dest * pp_server_exch_dest(struct pingpong_context *, const struct pingpong_dest *, int);
 static int pp_connect_ctx(struct pingpong_context *, int, struct pingpong_dest *, int);
-struct pingpong_context *init_ctx_and_build_conn(const char *, int, int, struct host_request *);
+struct pingpong_context *init_ctx_and_build_conn(const char *, int, int, struct host_request *, struct arbiter_response *);
 
-struct pingpong_context *init_ctx_and_build_conn(const char *addr, int is_arbiter, int gidx, struct host_request *host_req) {
+struct pingpong_context *init_ctx_and_build_conn(const char *addr, int is_arbiter, int gidx, struct host_request *host_req, struct arbiter_response *ca_resp) {
     struct pingpong_context *ctx;
     struct pingpong_dest my_dest;
 
-    //ctx = alloc_qps(host_req, is_arbiter);
-    if (is_arbiter)
-        ctx = alloc_qps(host_req, RING_BUFFER_SIZE);
-    else
-        ctx = alloc_qps(host_req, 1);   //TODO: construct buffer on host side
+    ctx = alloc_qps(host_req, ca_resp, RING_BUFFER_SIZE);
+    //if (is_arbiter)
+        //ctx = alloc_qps(host_req, ca_resp, RING_BUFFER_SIZE);
+    //else
+        //ctx = alloc_qps(host_req, 1);   //TODO: construct buffer on host side
 
     if (!ctx)
         return NULL;
@@ -43,8 +43,10 @@ struct pingpong_context *init_ctx_and_build_conn(const char *addr, int is_arbite
     my_dest.psn = lrand48() & 0xffffff;
     my_dest.rkey_rmf = ctx->rmf_mr->rkey;
     my_dest.rkey_req = ctx->req_mr->rkey;
+    my_dest.rkey_resp = ctx->resp_mr->rkey;
     my_dest.vaddr_rmf = (uintptr_t)ctx->rmf_buf;
     my_dest.vaddr_req = (uintptr_t)host_req;
+    my_dest.vaddr_req = (uintptr_t)ca_resp;
 
     if (is_arbiter)
         ctx->rem_dest = pp_client_exch_dest(addr, &my_dest);
@@ -65,7 +67,7 @@ struct pingpong_context *init_ctx_and_build_conn(const char *addr, int is_arbite
     return ctx;
 }
 
-static struct pingpong_context *alloc_qps(struct host_request *host_req, int req_buf_size) {
+static struct pingpong_context *alloc_qps(struct host_request *host_req, struct arbiter_response *ca_resp, int req_buf_size) {
     struct ibv_device **dev_list;
     struct ibv_device *ib_dev;
     struct pingpong_context *ctx;
@@ -118,6 +120,12 @@ static struct pingpong_context *alloc_qps(struct host_request *host_req, int req
     if (!ctx->req_mr) {
         fprintf(stderr, "Couldn't register REQ_MR\n");
         goto clean_req_mr;
+    }
+
+    ctx->resp_mr = ibv_reg_mr(ctx->pd, ca_resp, sizeof(struct arbiter_response), IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_WRITE);
+    if (!ctx->resp_mr) {
+        fprintf(stderr, "Couldn't register RESP_MR\n");
+        goto clean_resp_mr;
     }
 
     ctx->cq_rmf = ibv_create_cq(ctx->context, 2, NULL, NULL, 0);
@@ -205,10 +213,12 @@ clean_cq_rmf:
     ibv_destroy_cq(ctx->cq_rmf);
 clean_cq_req:
     ibv_destroy_cq(ctx->cq_req);
-clean_rmf_mr:
-    ibv_dereg_mr(ctx->rmf_mr);
+clean_resp_mr:
+    ibv_dereg_mr(ctx->resp_mr);
 clean_req_mr:
     ibv_dereg_mr(ctx->req_mr);
+clean_rmf_mr:
+    ibv_dereg_mr(ctx->rmf_mr);
 clean_rmf_buf:
     free(ctx->rmf_buf);
 clean_pd:
@@ -230,7 +240,7 @@ static struct pingpong_dest * pp_client_exch_dest(const char *servername,
         .ai_socktype = SOCK_STREAM
     };
     char *service;
-    char msg[sizeof "0000:000000:000000:000000:00000000:00000000:0000000000000000:0000000000000000:00000000000000000000000000000000"];
+    char msg[sizeof "0000:000000:000000:000000:00000000:00000000:00000000:0000000000000000:0000000000000000:0000000000000000:00000000000000000000000000000000"];
     int n;
     int sockfd = -1;
     struct pingpong_dest *rem_dest = NULL;
@@ -267,8 +277,8 @@ static struct pingpong_dest * pp_client_exch_dest(const char *servername,
     }
 
     gid_to_wire_gid(&my_dest->gid, gid);
-    sprintf(msg, "%04x:%06x:%06x:%06x:%08x:%08x:%016Lx:%016Lx:%s", my_dest->lid, my_dest->qpn_rmf, my_dest->qpn_req,
-                            my_dest->psn, my_dest->rkey_rmf, my_dest->rkey_req, my_dest->vaddr_rmf, my_dest->vaddr_req, gid);
+    sprintf(msg, "%04x:%06x:%06x:%06x:%08x:%08x:%08x:%016Lx:%016Lx:%016Lx:%s", my_dest->lid, my_dest->qpn_rmf, my_dest->qpn_req,
+                            my_dest->psn, my_dest->rkey_rmf, my_dest->rkey_req, my_dest->rkey_resp, my_dest->vaddr_rmf, my_dest->vaddr_req, my_dest->vaddr_resp, gid);
     if (write(sockfd, msg, sizeof msg) != sizeof msg) {
         fprintf(stderr, "Couldn't send local address\n");
         goto out;
@@ -289,8 +299,8 @@ static struct pingpong_dest * pp_client_exch_dest(const char *servername,
     if (!rem_dest)
         goto out;
 
-    sscanf(msg, "%x:%x:%x:%x:%x:%x:%Lx:%Lx:%s", &rem_dest->lid, &rem_dest->qpn_rmf, &rem_dest->qpn_req,
-                            &rem_dest->psn, &rem_dest->rkey_rmf, &rem_dest->rkey_req, &rem_dest->vaddr_rmf, &rem_dest->vaddr_req, gid);
+    sscanf(msg, "%x:%x:%x:%x:%x:%x:%x:%Lx:%Lx:%Lx:%s", &rem_dest->lid, &rem_dest->qpn_rmf, &rem_dest->qpn_req,
+                            &rem_dest->psn, &rem_dest->rkey_rmf, &rem_dest->rkey_req, &rem_dest->rkey_resp, &rem_dest->vaddr_rmf, &rem_dest->vaddr_req, &rem_dest->vaddr_resp, gid);
     wire_gid_to_gid(gid, &rem_dest->gid);
 
 out:
@@ -308,7 +318,7 @@ static struct pingpong_dest * pp_server_exch_dest(struct pingpong_context *ctx,
         .ai_socktype = SOCK_STREAM
     };
     char *service;
-    char msg[sizeof "0000:000000:000000:000000:00000000:00000000:0000000000000000:0000000000000000:00000000000000000000000000000000"];
+    char msg[sizeof "0000:000000:000000:000000:00000000:00000000:00000000:0000000000000000:00000000000000000:000000000000000:00000000000000000000000000000000"];
     int n;
     int sockfd = -1, connfd;
     struct pingpong_dest *rem_dest = NULL;
@@ -368,7 +378,7 @@ static struct pingpong_dest * pp_server_exch_dest(struct pingpong_context *ctx,
         goto out;
 
     sscanf(msg, "%x:%x:%x:%x:%x:%x:%Lx:%Lx:%s", &rem_dest->lid, &rem_dest->qpn_rmf, &rem_dest->qpn_req,
-                            &rem_dest->psn, &rem_dest->rkey_rmf, &rem_dest->rkey_req, &rem_dest->vaddr_rmf, &rem_dest->vaddr_req, gid);
+                            &rem_dest->psn, &rem_dest->rkey_rmf, &rem_dest->rkey_req, &rem_dest->rkey_resp, &rem_dest->vaddr_rmf, &rem_dest->vaddr_req, &rem_dest->vaddr_resp, gid);
     wire_gid_to_gid(gid, &rem_dest->gid);
 
     ////
@@ -384,8 +394,8 @@ static struct pingpong_dest * pp_server_exch_dest(struct pingpong_context *ctx,
 
 
     gid_to_wire_gid(&my_dest->gid, gid);
-    sprintf(msg, "%04x:%06x:%06x:%06x:%08x:%08x:%016Lx:%016Lx:%s", my_dest->lid, my_dest->qpn_rmf, my_dest->qpn_req,
-                            my_dest->psn, my_dest->rkey_rmf, my_dest->rkey_req, my_dest->vaddr_rmf, my_dest->vaddr_req, gid);
+    sprintf(msg, "%04x:%06x:%06x:%06x:%08x:%08x:%08x:%016Lx:%016Lx:%016Lx:%s", my_dest->lid, my_dest->qpn_rmf, my_dest->qpn_req,
+                            my_dest->psn, my_dest->rkey_rmf, my_dest->rkey_req, my_dest->rkey_resp, my_dest->vaddr_rmf, my_dest->vaddr_req, my_dest->vaddr_resp, gid);
     if (write(connfd, msg, sizeof msg) != sizeof msg) {
         fprintf(stderr, "Couldn't send local address\n");
         free(rem_dest);

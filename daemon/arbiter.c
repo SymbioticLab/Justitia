@@ -43,64 +43,63 @@ static void rm_shmem_on_exit()
     //remove("/dev/shm/rdma-fairness");
 }
 
-/* circular buffer for future logging */
-struct circular_buffer {
-    void *buffer;     // data buffer
-    void *buffer_end; // end of data buffer
-    size_t capacity;  // maximum number of items in the buffer
-    size_t count;     // number of items in the buffer
-    size_t sz;        // size of each item in the buffer
-    void *head;       // pointer to head
-    void *tail;       // pointer to tail
-};
-
-//struct circular_buffer token_cbuf;
-
-int cbuf_init(struct circular_buffer *buf, size_t capacity, size_t sz)
+//TODO: compute rate 
+// don't assign 0 to rate -- 0 value assumed somewhere else
+uint32_t compute_rate(struct host_request *host_req)
 {
-    buf->buffer = malloc(capacity * sz);
-    if (buf->buffer == NULL)
-        return -1;
-    buf->buffer_end = (char *)buf->buffer + capacity * sz;
-    buf->capacity = capacity;
-    buf->count = 0;
-    buf->sz = sz;
-    buf->head = buf->buffer;
-    buf->tail = buf->buffer;
-    return 0;
+    uint32_t rate = LINE_RATE_MB;
+    return rate;
 }
 
-void cbuf_free(struct circular_buffer *buf)
+/* read host updates and send out response (rate, ringbuf_info, etc) */
+static void handle_host_updates()
 {
-    free(buf->buffer);
+    struct ibv_sge sge;
+    struct ibv_send_wr wr;
+    struct ibv_send_wr *bad_wr;
+
+    memset(&sge, 0, sizeof(sge));
+    sge.length = sizeof(struct arbiter_response);
+
+    memset(&wr, 0, sizeof(wr));
+    wr.wr_id = 0;
+    wr.sg_list = &sge;
+    wr.num_sge = 1;
+    wr.opcode = IBV_WR_RDMA_WRITE;
+    wr.send_flags = IBV_SEND_SIGNALED | IBV_SEND_INLINE;
+
+    /* checking ring buffer for each host */
+    unsigned int i, head;
+    uint32_t rate = 0;
+    for (i = 0; i < cluster.num_hosts; ++i) {
+        head = cluster.hosts[i].ring->head;
+        while (cluster.hosts[i].ring->host_req[head].check_byte == 1) {
+            printf("Getting new request from Host%d\n", i);
+            rate = compute_rate(&cluster.hosts[i].ring->host_req[head]);
+            cluster.hosts[i].ring->host_req[head].check_byte = 0;
+            ++head;
+            if (head == RING_BUFFER_SIZE)
+                head = 0;
+        }
+
+        /* send out responses (rate updates, sender's copy of head) */ 
+        if (rate) {    /* if ever computed a rate */
+            cluster.hosts[i].ca_resp.rate = rate;
+            cluster.hosts[i].ca_resp.sender_head = head;
+            ++cluster.hosts[i].ca_resp.id;
+
+            sge.lkey = cluster.hosts[i].ctx->resp_mr->lkey;
+            sge.addr = (uintptr_t)&cluster.hosts[i].ca_resp;
+
+            wr.wr.rdma.rkey = cluster.hosts[i].ctx->rem_dest->rkey_resp;
+            wr.wr.rdma.remote_addr = cluster.hosts[i].ctx->rem_dest->vaddr_resp;
+
+            ibv_post_send(cluster.hosts[i].ctx->qp_req, &wr, &bad_wr);
+            printf("send out new response [%d]\n", cluster.hosts[i].ca_resp.id);
+        }
+    }
+
 }
-
-int cbuf_push_back(struct circular_buffer *buf, const void *item)
-{
-    if (buf->count == buf->capacity)
-        return -1;
-    memcpy(buf->head, item, buf->sz);
-    buf->head = (char*)buf->head + buf->sz;
-    if (buf->head == buf->buffer_end)
-        buf->head = buf->buffer;
-    buf->count++;
-    return 0;
-}
-
-int cbuf_pop_front(struct circular_buffer *buf, void *item)
-{
-    if (buf->count == 0)
-        return -1;
-    memcpy(item, buf->tail, buf->sz);
-    buf->tail = (char*)buf->tail + buf->sz;
-    if (buf->tail == buf->buffer_end)
-        buf->tail = buf->buffer;
-    buf->count--;
-    return 0;
-}
-
-/* end */
-
 
 int main(int argc, char **argv)
 {
@@ -209,7 +208,7 @@ int main(int argc, char **argv)
         printf("HOST LOOP #%d\n", i + 1);
         /* init ctx, mr, and connect to each host via RDMA RC */
         cluster.hosts[i].ring = calloc(1, sizeof(struct request_ring_buffer));
-        cluster.hosts[i].ctx = init_ctx_and_build_conn(ip[i], 1, gid_idx[i], cluster.hosts[i].ring->host_req);
+        cluster.hosts[i].ctx = init_ctx_and_build_conn(ip[i], 1, gid_idx[i], cluster.hosts[i].ring->host_req, &cluster.hosts[i].ca_resp);
         if (cluster.hosts[i].ctx == NULL) {
             fprintf(stderr, "init_ctx_and_build_conn failed, exit\n");
             exit(EXIT_FAILURE);

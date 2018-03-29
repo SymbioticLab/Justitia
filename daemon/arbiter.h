@@ -27,8 +27,14 @@
 #define ELEPHANT_HAS_LOWER_BOUND 1  /* whether elephant has a minimum virtual link cap set by AIMD */
 #define TABLE_SIZE 7
 
+struct request_ring_buffer {
+	uint16_t head;					/* where CA polls */
+	struct host_request host_req[RING_BUFFER_SIZE];
+};
+
 struct host_info {
-    struct request_ring_buffer *ring;         /* points to the ring buffer containing the *MR* for hosts to update info via RDMA; defined in pingpong.h*/ 
+    struct request_ring_buffer *ring;       /* points to the ring buffer containing the *MR* for hosts to update info via RDMA; defined in pingpong.h*/ 
+    struct arbiter_response ca_resp;       /* pinned for response send back to the host */
     uint16_t *flow_map;                     /* an array keeping track of flows sending to other host in the cluster */
     struct pingpong_context *ctx;           /* other rdma related ctx goes here */
 };
