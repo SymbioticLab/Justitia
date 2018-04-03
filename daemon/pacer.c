@@ -11,6 +11,8 @@
 #define MAX_TOKEN 5
 #define HOSTNAME_PATH "/proc/sys/kernel/hostname"
 
+//cycles_t start = 0, end = 0;
+
 extern CMH_type *cmh;
 struct control_block cb;
 //uint32_t chunk_size_table[] = {4096, 8192, 16384, 32768, 65536, 1048576, 1048576};
@@ -308,6 +310,8 @@ static void flow_handler()
         else if (strcmp(buf, "BIGjoin") == 0)
         {
             /* submit update to CA */
+
+            //start = get_cycles();
             submit_request(FLOW_JOIN, 0, cb.sb->flows[cb.next_slot].dest_qp_num, 0);
             printf("sending WRITE/SEND FLOW JOIN message\n");
         }
@@ -382,6 +386,8 @@ static void generate_tokens()
     {
         /* update sender's copy of head at arbiter's ring buffer, and get new rate*/
         if (cb.ca_resp.id > prev_id) {
+            //end = get_cycles();
+            //printf("lat = %.2f\n", (double)(end - start) / cpu_mhz * 1000000);
             __atomic_store_n(&cb.sender_head, cb.ca_resp.sender_head, __ATOMIC_RELAXED);
             temp = cb.ca_resp.rate;
             prev_id = cb.ca_resp.id;
@@ -568,7 +574,8 @@ int main(int argc, char **argv)
     cb.latency_monitor_worker = ringbuf_register(cb.ring, 1);
 
     /* initialize RDMA context and build connection with CA (2 QPs) */
-    cb.ctx = init_ctx_and_build_conn(NULL, 0, gid_idx, cb.host_req, &cb.ca_resp);
+    //TODO: fix input arg later
+    cb.ctx = init_ctx_and_build_conn(NULL, NULL, 0, gid_idx, cb.host_req, &cb.ca_resp, '0');    /* last arg is don't-care for pacer */
 
     printf("starting thread for flow handling...\n");
     if (pthread_create(&th1, NULL, (void *(*)(void *)) & flow_handler, NULL))

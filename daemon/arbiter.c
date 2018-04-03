@@ -75,15 +75,18 @@ static void handle_host_updates()
             head = cluster.hosts[i].ring->head;
             uint32_t rate = 0;
             while (cluster.hosts[i].ring->host_req[head].check_byte == 1) {
-                printf("Getting new request from Host%d\n", i);
+                fprintf(stderr, "Getting new request from Host%d\n", i);
                 if (cluster.hosts[i].ring->host_req[head].type == RMF_ABOVE_TARGET) {
-                    printf("indeed RMF_EXCEED_TARGET message\n", cluster.hosts[i].ring->host_req[head].type);
+                    fprintf(stderr, "received RMF_EXCEED_TARGET message\n");
                 } else if (cluster.hosts[i].ring->host_req[head].type == RMF_BELOW_TARGET) {
-                    printf("indeed RMF_BELOW_TARGET message\n", cluster.hosts[i].ring->host_req[head].type);
+                    fprintf(stderr, "received RMF_BELOW_TARGET message\n");
                 } else if (cluster.hosts[i].ring->host_req[head].type == FLOW_JOIN) {
-                    printf("indeed FLOW_JOIN message\n", cluster.hosts[i].ring->host_req[head].type);
+                    fprintf(stderr, "received FLOW_JOIN message\n");
                 } else if (cluster.hosts[i].ring->host_req[head].type == FLOW_EXIT) {
-                    printf("indeed FLOW_EXIT message\n", cluster.hosts[i].ring->host_req[head].type);
+                    fprintf(stderr, "received FLOW_EXIT message\n");
+                } else {
+                    fprintf(stderr, "unrecognized message\n");
+                    exit(EXIT_FAILURE);
                 }
                 rate = compute_rate(&cluster.hosts[i].ring->host_req[head]);
                 cluster.hosts[i].ring->host_req[head].check_byte = 0;
@@ -215,14 +218,27 @@ int main(int argc, char **argv)
     }
     fclose(fp);
 
-    /* initialize control structure */ 
+    /* initialize control structure */
     cluster.num_hosts = num_hosts;
     cluster.hosts = calloc(num_hosts, sizeof(struct host_info));
     for (i = 0; i < num_hosts; ++i) {
         printf("HOST LOOP #%d\n", i + 1);
         /* init ctx, mr, and connect to each host via RDMA RC */
         cluster.hosts[i].ring = calloc(1, sizeof(struct request_ring_buffer));
-        cluster.hosts[i].ctx = init_ctx_and_build_conn(ip[i], 1, gid_idx[i], cluster.hosts[i].ring->host_req, &cluster.hosts[i].ca_resp);
+        //TODO: add input arg later
+        if (num_hosts % 2 == 0) {
+            if (i % 2 == 0)
+                cluster.hosts[i].ctx = init_ctx_and_build_conn(ip[i], NULL, 1, gid_idx[i], cluster.hosts[i].ring->host_req, &cluster.hosts[i].ca_resp, '0');
+            else
+                cluster.hosts[i].ctx = init_ctx_and_build_conn(ip[i], ip[i-1], 1, gid_idx[i], cluster.hosts[i].ring->host_req, &cluster.hosts[i].ca_resp, '1');
+        } else {
+            if (i == num_hosts - 1)
+                cluster.hosts[i].ctx = init_ctx_and_build_conn(ip[i], NULL, 1, gid_idx[i], cluster.hosts[i].ring->host_req, &cluster.hosts[i].ca_resp, '2');
+            else if (i % 2 == 0)
+                cluster.hosts[i].ctx = init_ctx_and_build_conn(ip[i], NULL, 1, gid_idx[i], cluster.hosts[i].ring->host_req, &cluster.hosts[i].ca_resp, '0');
+            else 
+                cluster.hosts[i].ctx = init_ctx_and_build_conn(ip[i], ip[i-1], 1, gid_idx[i], cluster.hosts[i].ring->host_req, &cluster.hosts[i].ca_resp, '1');
+        }
         if (cluster.hosts[i].ctx == NULL) {
             fprintf(stderr, "init_ctx_and_build_conn failed, exit\n");
             exit(EXIT_FAILURE);

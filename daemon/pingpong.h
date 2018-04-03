@@ -60,6 +60,7 @@ struct pingpong_context {
 	struct ibv_qp			*qp_rmf;
 	struct ibv_qp			*qp_req;
 	struct pingpong_dest 	*rem_dest;
+	struct pingpong_dest 	*rem_host_dest;		/* used by host to for conn with another host (for rmf) */
 	void			    	*rmf_buf;
 	struct ibv_port_attr	portinfo;
 };
@@ -78,6 +79,6 @@ struct pingpong_dest {
 	union ibv_gid gid;
 };
 
-struct pingpong_context *init_ctx_and_build_conn(const char *, int, int, struct host_request *, struct arbiter_response *);
+struct pingpong_context *init_ctx_and_build_conn(const char *, const char *, int, int, struct host_request *, struct arbiter_response *, char);
 
 #endif
