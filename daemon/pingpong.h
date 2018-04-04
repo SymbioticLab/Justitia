@@ -61,6 +61,7 @@ struct pingpong_context {
 	struct ibv_qp			*qp_req;
 	struct pingpong_dest 	*rem_dest;
 	struct pingpong_dest 	*rem_host_dest;		/* used by host to for conn with another host (for rmf) */
+	int						rmf_choice;
 	void			    	*rmf_buf;
 	struct ibv_port_attr	portinfo;
 };

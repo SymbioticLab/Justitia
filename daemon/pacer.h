@@ -59,7 +59,7 @@ struct control_block {
     uint64_t tokens_read;
     uint32_t virtual_link_cap;                  /* capacity of the virtual link that elephants go through */
     uint32_t remote_read_rate;                  /* remote read rate */
-    uint32_t local_read_rate;    
+    uint32_t local_read_rate;
     uint16_t next_slot;
     uint16_t num_big_read_flows;
 };

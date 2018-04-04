@@ -53,8 +53,13 @@ void monitor_latency(void *arg)
     wr.num_sge = 1;
     wr.send_flags = (IBV_SEND_SIGNALED | IBV_SEND_INLINE);
     wr.wr_id = seq;
-    wr.wr.rdma.rkey = ctx->rem_dest->rkey_rmf;
-    wr.wr.rdma.remote_addr = ctx->rem_dest->vaddr_rmf;
+    if (ctx->rmf_choice == 0 || ctx->rmf_choice == 1) {
+        wr.wr.rdma.rkey = ctx->rem_host_dest->rkey_rmf;
+        wr.wr.rdma.remote_addr = ctx->rem_host_dest->vaddr_rmf;
+    } else {
+        wr.wr.rdma.rkey = ctx->rem_dest->rkey_rmf;
+        wr.wr.rdma.remote_addr = ctx->rem_dest->vaddr_rmf;
+    }
 
     sge.addr = (uintptr_t)ctx->rmf_buf;
     sge.length = BUF_SIZE;
@@ -117,6 +122,8 @@ void monitor_latency(void *arg)
 
         if (num_comp < 0 || wc.status != IBV_WC_SUCCESS)
         {
+            printf("num_comp = %d\n", num_comp);
+            printf("wc.status = %d\n", wc.status);
             perror("ibv_poll_cq");
             break;
         }
@@ -133,7 +140,7 @@ void monitor_latency(void *arg)
         //cmh_start = get_cycles();
         prev_tail = tail_99;
         tail_99 = round(CMH_Quantile(cmh, 0.99)/100.0)/10;
-        printf("tail_99: %.1f us\n", tail_99);
+        //printf("tail_99: %.1f us\n", tail_99);
         //cmh_end = get_cycles();
         //printf("CMH_Quantile 99th takes %.2f us\n", (cmh_end - cmh_start)/cpu_mhz);
         // if (prev_start_cycle)

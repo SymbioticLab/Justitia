@@ -46,10 +46,13 @@ struct pingpong_context *init_ctx_and_build_conn(const char *addr, const char *a
     my_dest.vaddr_req = (uintptr_t)host_req;
     my_dest.vaddr_resp = (uintptr_t)ca_resp;
 
-    if (is_arbiter)
+    if (is_arbiter) {
         ctx->rem_dest = pp_client_exch_dest(addr, addr2, &my_dest, rmf_choice);
-    else
+        ctx->rmf_choice = 2;
+    } else {
         ctx->rem_dest = pp_server_exch_dest(ctx, &my_dest, gidx);
+        printf("done calling pp_server_exch_dest\n");
+    }
 
     if (!ctx->rem_dest)
         return NULL;
@@ -58,11 +61,12 @@ struct pingpong_context *init_ctx_and_build_conn(const char *addr, const char *a
         if (pp_connect_ctx(ctx, my_dest.psn, ctx->rem_dest, NULL, gidx, '2'))
             return NULL;
 
-    //TODO: fix printf
-    printf("my rmf qp qp_num=%d\n", my_dest.qpn_rmf);
     printf("my req qp qp_num=%d\n", my_dest.qpn_req);
-    printf("remote rmf qp qp_num=%d\n", ctx->rem_dest->qpn_rmf);
     printf("remote req qp qp_num=%d\n", ctx->rem_dest->qpn_req);
+    if (rmf_choice == '2') {
+        printf("my rmf qp qp_num=%d\n", my_dest.qpn_rmf);
+        printf("remote rmf qp qp_num=%d\n", ctx->rem_dest->qpn_rmf);
+    }
     return ctx;
 }
 
@@ -240,7 +244,9 @@ static struct pingpong_dest * pp_client_exch_dest(const char *servername, const 
     char msg[sizeof "0000:000000:000000:000000:00000000:00000000:00000000:0000000000000000:0000000000000000:0000000000000000:00000000000000000000000000000000"];
     char msg2[sizeof "0000:000000:000000:00000000:00000000:0000000000000000:0000000000000000:00000000000000000000000000000000"];
     char rmf_server_ip[16];
-    strcpy(rmf_server_ip, servername2);
+    if (rmf_choice == '1') {
+        strcpy(rmf_server_ip, servername2);
+    }
     int n;
     int sockfd = -1;
     struct pingpong_dest *rem_dest = NULL;
@@ -279,7 +285,7 @@ static struct pingpong_dest * pp_client_exch_dest(const char *servername, const 
     gid_to_wire_gid(&my_dest->gid, gid);
 
     if (write(sockfd, &rmf_choice, 1) != 1) {
-        fprintf(stderr, "Couldn't send local address\n");
+        fprintf(stderr, "(rmf_choice) Couldn't send local address\n");
         goto out;
     }
 
@@ -287,12 +293,14 @@ static struct pingpong_dest * pp_client_exch_dest(const char *servername, const 
     if (!rem_dest)
         goto out;
 
-    if (strcmp(&rmf_choice, "2") == 0) {
+    printf("(arbiter) my psn is %d\n", my_dest->psn);
+    printf("(arbiter) my qpn_req is %d\n", my_dest->qpn_req);
+    if (rmf_choice == '2') {
         sprintf(msg, "%04x:%06x:%06x:%06x:%08x:%08x:%08x:%016Lx:%016Lx:%016Lx:%s", my_dest->lid, my_dest->qpn_rmf, my_dest->qpn_req,
                     my_dest->psn, my_dest->rkey_rmf, my_dest->rkey_req, my_dest->rkey_resp, my_dest->vaddr_rmf, my_dest->vaddr_req, my_dest->vaddr_resp, gid);
 
         if (write(sockfd, msg, sizeof msg) != sizeof msg) {
-            fprintf(stderr, "Couldn't send local address\n");
+            fprintf(stderr, "(msg) Couldn't send local address\n");
             goto out;
         }
 
@@ -310,7 +318,7 @@ static struct pingpong_dest * pp_client_exch_dest(const char *servername, const 
         sscanf(msg, "%x:%x:%x:%x:%x:%x:%x:%Lx:%Lx:%Lx:%s", &rem_dest->lid, &rem_dest->qpn_rmf, &rem_dest->qpn_req,
                     &rem_dest->psn, &rem_dest->rkey_rmf, &rem_dest->rkey_req, &rem_dest->rkey_resp, &rem_dest->vaddr_rmf, &rem_dest->vaddr_req, &rem_dest->vaddr_resp, gid);
     } else {
-        if (strcmp(&rmf_choice, "1") == 0) {
+        if (rmf_choice == '1') {
             if (write(sockfd, rmf_server_ip, sizeof rmf_server_ip) != sizeof rmf_server_ip) {
                 fprintf(stderr, "Couldn't send pairing host ip address\n");
                 goto out;
@@ -321,7 +329,7 @@ static struct pingpong_dest * pp_client_exch_dest(const char *servername, const 
                     my_dest->psn, my_dest->rkey_req, my_dest->rkey_resp, my_dest->vaddr_req, my_dest->vaddr_resp, gid);
 
         if (write(sockfd, msg2, sizeof msg2) != sizeof msg2) {
-            fprintf(stderr, "Couldn't send local address\n");
+            fprintf(stderr, "(msg2) Couldn't send local address\n");
             goto out;
         }
 
@@ -347,6 +355,7 @@ out:
     return rem_dest;
 }
 
+/* Used by all the host pacers */
 static struct pingpong_dest * pp_server_exch_dest(struct pingpong_context *ctx,
                                             const struct pingpong_dest *my_dest,
                                             int sgid_idx) {
@@ -363,7 +372,7 @@ static struct pingpong_dest * pp_server_exch_dest(struct pingpong_context *ctx,
     char msg3[sizeof "0000:000000:000000:00000000:0000000000000000:00000000000000000000000000000000"];
     char rmf_server_ip[16];
     int n;
-    int sockfd = -1, connfd, connfd2;
+    int sockfd = -1, connfd = -1, connfd2 = -1;
     struct pingpong_dest *rem_dest = NULL;
     char gid[33];
     struct pingpong_dest *rem_host_dest = malloc(sizeof(struct pingpong_dest));
@@ -417,9 +426,11 @@ static struct pingpong_dest * pp_server_exch_dest(struct pingpong_context *ctx,
         goto out;
     }
 
+    ctx->rmf_choice = rmf_choice - '0';      /* assume ASCII */
+
     rem_dest = malloc(sizeof(struct pingpong_dest));
 
-    if (strcmp(&rmf_choice, "2") == 0) {
+    if (rmf_choice == '2') {
         n = recv(connfd, msg, sizeof msg, MSG_WAITALL);
         if (n != sizeof msg) {
             perror("server read");
@@ -430,7 +441,7 @@ static struct pingpong_dest * pp_server_exch_dest(struct pingpong_context *ctx,
         sscanf(msg, "%x:%x:%x:%x:%x:%x:%x:%Lx:%Lx:%Lx:%s", &rem_dest->lid, &rem_dest->qpn_rmf, &rem_dest->qpn_req,
                     &rem_dest->psn, &rem_dest->rkey_rmf, &rem_dest->rkey_req, &rem_dest->rkey_resp, &rem_dest->vaddr_rmf, &rem_dest->vaddr_req, &rem_dest->vaddr_resp, gid);
     } else {
-        if (strcmp(&rmf_choice, "1") == 0) {
+        if (rmf_choice == '1') {
             n = recv(connfd, rmf_server_ip, sizeof rmf_server_ip, MSG_WAITALL);
             if (n != sizeof rmf_server_ip) {
                 perror("server read");
@@ -447,7 +458,7 @@ static struct pingpong_dest * pp_server_exch_dest(struct pingpong_context *ctx,
             goto out;
         }
 
-        sscanf(msg, "%x:%x:%x:%x:%x:%Lx:%Lx:%s", &rem_dest->lid, &rem_dest->qpn_req,
+        sscanf(msg2, "%x:%x:%x:%x:%x:%Lx:%Lx:%s", &rem_dest->lid, &rem_dest->qpn_req,
                     &rem_dest->psn, &rem_dest->rkey_req, &rem_dest->rkey_resp, &rem_dest->vaddr_req, &rem_dest->vaddr_resp, gid);
     }
 
@@ -466,12 +477,12 @@ static struct pingpong_dest * pp_server_exch_dest(struct pingpong_context *ctx,
 
     gid_to_wire_gid(&my_dest->gid, gid);
 
-    if (strcmp(&rmf_choice, "2") == 0) {
+    if (rmf_choice == '2') {
         sprintf(msg, "%04x:%06x:%06x:%06x:%08x:%08x:%08x:%016Lx:%016Lx:%016Lx:%s", my_dest->lid, my_dest->qpn_rmf, my_dest->qpn_req,
                     my_dest->psn, my_dest->rkey_rmf, my_dest->rkey_req, my_dest->rkey_resp, my_dest->vaddr_rmf, my_dest->vaddr_req, my_dest->vaddr_resp, gid);
 
         if (write(connfd, msg, sizeof msg) != sizeof msg) {
-            fprintf(stderr, "Couldn't send local address\n");
+            fprintf(stderr, "(msg) Couldn't send local address\n");
             free(rem_dest);
             rem_dest = NULL;
             goto out;
@@ -479,9 +490,10 @@ static struct pingpong_dest * pp_server_exch_dest(struct pingpong_context *ctx,
     } else {
         sprintf(msg2, "%04x:%06x:%06x:%08x:%08x:%016Lx:%016Lx:%s", my_dest->lid, my_dest->qpn_req,
                     my_dest->psn, my_dest->rkey_req, my_dest->rkey_resp, my_dest->vaddr_req, my_dest->vaddr_resp, gid);
+        printf("host pacer: my psn is %d\n", my_dest->psn);
 
-        if (write(sockfd, msg2, sizeof msg2) != sizeof msg2) {
-            fprintf(stderr, "Couldn't send local address\n");
+        if (write(connfd, msg2, sizeof msg2) != sizeof msg2) {
+            fprintf(stderr, "(msg2) Couldn't send local address\n");
             goto out;
         }
     }
@@ -493,9 +505,10 @@ static struct pingpong_dest * pp_server_exch_dest(struct pingpong_context *ctx,
         rem_dest = NULL;
         goto out;
     }
+    printf("Done sending msg/msg2 to arbiter; Received done message from arbiter. \n");
 
     /* extra info exchange for rmf_qp if not sending rmf to the arbiter */
-    if (strcmp(&rmf_choice, "0") == 0) {
+    if (rmf_choice == '0') {
         /* server in ip conn*/
         if (asprintf(&service, "%d", port2) < 0)
             return NULL;
@@ -545,8 +558,9 @@ static struct pingpong_dest * pp_server_exch_dest(struct pingpong_context *ctx,
             goto out;
         }
 
-        sscanf(msg, "%x:%x:%x:%x:%Lx:%s", &rem_host_dest->lid, &rem_host_dest->qpn_rmf,
+        sscanf(msg3, "%x:%x:%x:%x:%Lx:%s", &rem_host_dest->lid, &rem_host_dest->qpn_rmf,
                     &rem_host_dest->psn, &rem_host_dest->rkey_rmf, &rem_host_dest->vaddr_rmf, gid);
+        printf("(server) the psn received from remote pacer is %d\n", rem_host_dest->psn);
 
         wire_gid_to_gid(gid, &rem_host_dest->gid);
 
@@ -554,9 +568,9 @@ static struct pingpong_dest * pp_server_exch_dest(struct pingpong_context *ctx,
 
         struct pingpong_dest my_host_dest;
         my_host_dest.lid = ctx->portinfo.lid;
-        memcpy(&my_host_dest.gid, &my_dest->gid, sizeof my_dest->gid);
+        memcpy(&my_host_dest, my_dest, sizeof(struct pingpong_dest));
+        /* keep psn the same is the easier hack */
         my_host_dest.qpn_rmf = ctx->qp_rmf->qp_num;
-        my_host_dest.psn = lrand48() & 0xffffff;
         my_host_dest.rkey_rmf = ctx->rmf_mr->rkey;
         my_host_dest.vaddr_rmf = (uintptr_t)ctx->rmf_buf;
 
@@ -565,21 +579,25 @@ static struct pingpong_dest * pp_server_exch_dest(struct pingpong_context *ctx,
         sprintf(msg3, "%04x:%06x:%06x:%08x:%016Lx:%s", my_host_dest.lid, my_host_dest.qpn_rmf, 
                     my_host_dest.psn, my_host_dest.rkey_rmf, my_host_dest.vaddr_rmf, gid);
 
-        if (write(connfd, msg3, sizeof msg3) != sizeof msg3) {
-            fprintf(stderr, "Couldn't send local address\n");
+        if (write(connfd2, msg3, sizeof msg3) != sizeof msg3) {
+            fprintf(stderr, "(msg3) Couldn't send local address\n");
             free(rem_dest);
             rem_dest = NULL;
             goto out;
         }
 
-        if (read(connfd, msg, sizeof msg) <= 0) {
+        if (read(connfd2, msg, sizeof msg) <= 0) {
             fprintf(stderr, "Couldn't read \"done\" msg\n");
             free(rem_dest);
             rem_dest = NULL;
             goto out;
         }
+
+        printf("(server) Done exchanging msg3 to another host\n");
+        printf("my rmf qp qp_num=%d\n", my_host_dest.qpn_rmf);
+        printf("remote host (pacer) rmf qp qp_num=%d\n", rem_host_dest->qpn_rmf);
         
-    } else if (strcmp(&rmf_choice, "1") == 0) {
+    } else if (rmf_choice == '1') {
         /* client in ip conn*/
         if (asprintf(&service, "%d", port2) < 0)
             return NULL;
@@ -612,9 +630,9 @@ static struct pingpong_dest * pp_server_exch_dest(struct pingpong_context *ctx,
 
         struct pingpong_dest my_host_dest;
         my_host_dest.lid = ctx->portinfo.lid;
-        memcpy(&my_host_dest.gid, &my_dest->gid, sizeof my_dest->gid);
+        memcpy(&my_host_dest, my_dest, sizeof(struct pingpong_dest));
+        /* keep psn the same is the easier hack */
         my_host_dest.qpn_rmf = ctx->qp_rmf->qp_num;
-        my_host_dest.psn = lrand48() & 0xffffff;
         my_host_dest.rkey_rmf = ctx->rmf_mr->rkey;
         my_host_dest.vaddr_rmf = (uintptr_t)ctx->rmf_buf;
 
@@ -623,16 +641,16 @@ static struct pingpong_dest * pp_server_exch_dest(struct pingpong_context *ctx,
         sprintf(msg3, "%04x:%06x:%06x:%08x:%016Lx:%s", my_host_dest.lid, my_host_dest.qpn_rmf, 
                     my_host_dest.psn, my_host_dest.rkey_rmf, my_host_dest.vaddr_rmf, gid);
 
-        if (write(connfd, msg3, sizeof msg3) != sizeof msg3) {
-            fprintf(stderr, "Couldn't send local address\n");
+        if (write(sockfd, msg3, sizeof msg3) != sizeof msg3) {
+            fprintf(stderr, "(msg3) Couldn't send local address\n");
             free(rem_dest);
             rem_dest = NULL;
             goto out;
         }
 
-        if (recv(sockfd, msg, sizeof msg, MSG_WAITALL) != sizeof msg) {
+        if (recv(sockfd, msg3, sizeof msg3, MSG_WAITALL) != sizeof msg3) {
             perror("client read");
-            fprintf(stderr, "Couldn't read remote address\n");
+            fprintf(stderr, "(msg3) Couldn't read remote address\n");
             goto out;
         }
 
@@ -641,12 +659,17 @@ static struct pingpong_dest * pp_server_exch_dest(struct pingpong_context *ctx,
             goto out;
         }
 
-        sscanf(msg, "%x:%x:%x:%x:%Lx:%s", &rem_host_dest->lid, &rem_host_dest->qpn_rmf,
+        sscanf(msg3, "%x:%x:%x:%x:%Lx:%s", &rem_host_dest->lid, &rem_host_dest->qpn_rmf,
                     &rem_host_dest->psn, &rem_host_dest->rkey_rmf, &rem_host_dest->vaddr_rmf, gid);
+        printf("(client) the psn received from remote pacer is %d\n", rem_host_dest->psn);
 
         ctx->rem_host_dest = rem_host_dest;
 
         wire_gid_to_gid(gid, &rem_host_dest->gid);
+
+        printf("(client) Done exchanging msg3 to another host\n");
+        printf("my rmf qp qp_num=%d\n", my_host_dest.qpn_rmf);
+        printf("remote host (pacer) rmf qp qp_num=%d\n", ctx->rem_host_dest->qpn_rmf);
     }
 
     if (pp_connect_ctx(ctx, my_dest->psn, rem_dest, rem_host_dest, sgid_idx, rmf_choice)) {
@@ -658,7 +681,7 @@ static struct pingpong_dest * pp_server_exch_dest(struct pingpong_context *ctx,
 
 out:
     close(connfd);
-    if (strcmp(&rmf_choice, "2") != 0)
+    if (rmf_choice == '0')
         close(connfd2);
     return rem_dest;
 }
@@ -683,15 +706,20 @@ static int pp_connect_ctx(struct pingpong_context *ctx,
         }
     };
 
-    if (strcmp(&rmf_choice, "2") != 0) {
+    if (rmf_choice != '2') {
         attr.dest_qp_num    = dest2->qpn_rmf;
         attr.rq_psn         = dest2->psn;
+        attr.ah_attr.dlid   = dest2->lid;
     }
 
     if (dest->gid.global.interface_id) {
 		attr.ah_attr.is_global = 1;
 		attr.ah_attr.grh.hop_limit = 1;
-		attr.ah_attr.grh.dgid = dest->gid;
+        if (rmf_choice != '2') {
+		    attr.ah_attr.grh.dgid = dest2->gid;
+        } else {
+		    attr.ah_attr.grh.dgid = dest->gid;
+        }
 		attr.ah_attr.grh.sgid_index = sgid_idx;
 	}
 
@@ -746,6 +774,9 @@ static int pp_connect_ctx(struct pingpong_context *ctx,
         fprintf(stderr, "Failed to modify REQ QP to RTS\n");
         return 1;
     }
+    printf("DDD: attr.rq_psn: %d\n", attr.rq_psn);
+    printf("DDD: attr.sq_psn: %d\n", attr.sq_psn);
+
 
     return 0;
 }
