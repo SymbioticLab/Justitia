@@ -18,7 +18,7 @@
 #include <pthread.h>
 
 #define SHARED_MEM_NAME "/rdma-fairness"
-#define SOCK_PATH "/users/yuetan/rdma_socket"
+#define SOCK_PATH "/users/yiwenzhg/rdma_socket"
 #define MSG_LEN 8
 #define MAX_FLOWS 512
 #define HOSTNAME_PATH "/proc/sys/kernel/hostname"

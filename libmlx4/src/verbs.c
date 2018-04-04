@@ -1369,8 +1369,10 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 	}
 
 	//// Get dest_qp_num info
-	if (qp->state == IBV_QPS_INIT && attr->qp_state == IBV_QPS_RTR) {
-		__atomic_store_n(&flow->dest_qp_num, &attr->dest_qp_num, __ATOMIC_RELAXED);
+	if (flow) {
+		if (qp->state == IBV_QPS_INIT && attr->qp_state == IBV_QPS_RTR) {
+			__atomic_store_n(&flow->dest_qp_num, &attr->dest_qp_num, __ATOMIC_RELAXED);
+		}
 	}
 
 	if (MANUAL_SPLIT_QPN_DIFF) {
