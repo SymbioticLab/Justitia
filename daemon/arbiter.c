@@ -66,7 +66,8 @@ static void handle_host_updates()
     wr.sg_list = &sge;
     wr.num_sge = 1;
     wr.opcode = IBV_WR_RDMA_WRITE;
-    wr.send_flags = IBV_SEND_SIGNALED | IBV_SEND_INLINE;
+    //wr.send_flags = IBV_SEND_SIGNALED | IBV_SEND_INLINE;
+    wr.send_flags = IBV_SEND_INLINE;
 
     /* checking ring buffer for each host */
     unsigned int i, head;
@@ -75,17 +76,17 @@ static void handle_host_updates()
             head = cluster.hosts[i].ring->head;
             uint32_t rate = 0;
             while (cluster.hosts[i].ring->host_req[head].check_byte == 1) {
-                fprintf(stderr, "Getting new request from Host%d\n", i);
+                printf("Getting new request from Host%d\n", i);
                 if (cluster.hosts[i].ring->host_req[head].type == RMF_ABOVE_TARGET) {
-                    fprintf(stderr, "received RMF_EXCEED_TARGET message\n");
+                    printf("received RMF_EXCEED_TARGET message\n");
                 } else if (cluster.hosts[i].ring->host_req[head].type == RMF_BELOW_TARGET) {
-                    fprintf(stderr, "received RMF_BELOW_TARGET message\n");
+                    printf("received RMF_BELOW_TARGET message\n");
                 } else if (cluster.hosts[i].ring->host_req[head].type == FLOW_JOIN) {
-                    fprintf(stderr, "received FLOW_JOIN message\n");
+                    printf("received FLOW_JOIN message\n");
                 } else if (cluster.hosts[i].ring->host_req[head].type == FLOW_EXIT) {
-                    fprintf(stderr, "received FLOW_EXIT message\n");
+                    printf("received FLOW_EXIT message\n");
                 } else {
-                    fprintf(stderr, "unrecognized message\n");
+                    printf("unrecognized message\n");
                     exit(EXIT_FAILURE);
                 }
                 rate = compute_rate(&cluster.hosts[i].ring->host_req[head]);
@@ -110,7 +111,7 @@ static void handle_host_updates()
                 wr.wr.rdma.remote_addr = cluster.hosts[i].ctx->rem_dest->vaddr_resp;
 
                 ibv_post_send(cluster.hosts[i].ctx->qp_req, &wr, &bad_wr);
-                //printf("sending out new response [%d]\n", cluster.hosts[i].ca_resp.id);
+                printf("sending out new response [%d]\n", cluster.hosts[i].ca_resp.id);
             }
         }
     }
@@ -225,19 +226,22 @@ int main(int argc, char **argv)
         printf("HOST LOOP #%d\n", i + 1);
         /* init ctx, mr, and connect to each host via RDMA RC */
         cluster.hosts[i].ring = calloc(1, sizeof(struct request_ring_buffer));
-        //TODO: add input arg later
-        if (num_hosts % 2 == 0) {
-            if (i % 2 == 0)
-                cluster.hosts[i].ctx = init_ctx_and_build_conn(ip[i], NULL, 1, gid_idx[i], cluster.hosts[i].ring->host_req, &cluster.hosts[i].ca_resp, '0');
-            else
-                cluster.hosts[i].ctx = init_ctx_and_build_conn(ip[i], ip[i-1], 1, gid_idx[i], cluster.hosts[i].ring->host_req, &cluster.hosts[i].ca_resp, '1');
+        if (!RMF_DISTRIBUTE_AMONG_HOSTS) {
+            cluster.hosts[i].ctx = init_ctx_and_build_conn(ip[i], NULL, 1, gid_idx[i], cluster.hosts[i].ring->host_req, &cluster.hosts[i].ca_resp, '2');
         } else {
-            if (i == num_hosts - 1)
-                cluster.hosts[i].ctx = init_ctx_and_build_conn(ip[i], NULL, 1, gid_idx[i], cluster.hosts[i].ring->host_req, &cluster.hosts[i].ca_resp, '2');
-            else if (i % 2 == 0)
-                cluster.hosts[i].ctx = init_ctx_and_build_conn(ip[i], NULL, 1, gid_idx[i], cluster.hosts[i].ring->host_req, &cluster.hosts[i].ca_resp, '0');
-            else 
-                cluster.hosts[i].ctx = init_ctx_and_build_conn(ip[i], ip[i-1], 1, gid_idx[i], cluster.hosts[i].ring->host_req, &cluster.hosts[i].ca_resp, '1');
+            if (num_hosts % 2 == 0) {
+                if (i % 2 == 0)
+                    cluster.hosts[i].ctx = init_ctx_and_build_conn(ip[i], NULL, 1, gid_idx[i], cluster.hosts[i].ring->host_req, &cluster.hosts[i].ca_resp, '0');
+                else
+                    cluster.hosts[i].ctx = init_ctx_and_build_conn(ip[i], ip[i-1], 1, gid_idx[i], cluster.hosts[i].ring->host_req, &cluster.hosts[i].ca_resp, '1');
+            } else {
+                if (i == num_hosts - 1)
+                    cluster.hosts[i].ctx = init_ctx_and_build_conn(ip[i], NULL, 1, gid_idx[i], cluster.hosts[i].ring->host_req, &cluster.hosts[i].ca_resp, '2');
+                else if (i % 2 == 0)
+                    cluster.hosts[i].ctx = init_ctx_and_build_conn(ip[i], NULL, 1, gid_idx[i], cluster.hosts[i].ring->host_req, &cluster.hosts[i].ca_resp, '0');
+                else 
+                    cluster.hosts[i].ctx = init_ctx_and_build_conn(ip[i], ip[i-1], 1, gid_idx[i], cluster.hosts[i].ring->host_req, &cluster.hosts[i].ca_resp, '1');
+            }
         }
         if (cluster.hosts[i].ctx == NULL) {
             fprintf(stderr, "init_ctx_and_build_conn failed, exit\n");

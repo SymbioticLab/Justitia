@@ -208,7 +208,8 @@ static void send_out_request()
     wr.sg_list = &sge;
     wr.num_sge = 1;
     wr.opcode = IBV_WR_RDMA_WRITE;
-    wr.send_flags = IBV_SEND_SIGNALED | IBV_SEND_INLINE;
+    //wr.send_flags = IBV_SEND_SIGNALED | IBV_SEND_INLINE;
+    wr.send_flags = IBV_SEND_INLINE;
     wr.wr.rdma.rkey = cb.ctx->rem_dest->rkey_req;
 
     size_t offset = 0, len = 0, rem = 0;
@@ -223,13 +224,31 @@ static void send_out_request()
                 --rem;
 
                 printf("cb.sender_tail = %d\n", cb.sender_tail);
-                printf("cb.host_req[0].check_byte = %d\n", cb.host_req[0].check_byte);
+                //printf("cb.host_req[0].check_byte = %d\n", cb.host_req[0].check_byte);
                 wr.wr.rdma.remote_addr = cb.ctx->rem_dest->vaddr_req + cb.sender_tail * sizeof(struct host_request);
                 if (ibv_post_send(cb.ctx->qp_req, &wr, &bad_wr)) {
                     fprintf(stderr, "DEBUG POST SEND: REALLY BAD!!, errno = %d\n", errno);
                     exit(EXIT_FAILURE);
                 }
                 printf("done sending out one request\n");
+                /*
+                int num_comp = 0;
+                struct ibv_wc wc;
+                do {
+                    if (cb.host_req[offset-1].type == FLOW_JOIN || cb.host_req[offset-1].type == FLOW_EXIT) 
+                        num_comp = ibv_poll_cq(cb.ctx->cq_req, 1, &wc);
+                    else
+                        num_comp = ibv_poll_cq(cb.ctx->cq_rmf, 1, &wc);
+                } while (num_comp == 0);
+
+                if (num_comp < 0 || wc.status != IBV_WC_SUCCESS) {
+                    printf("num_comp = %d\n", num_comp);
+                    printf("wc.status = %d\n", wc.status);
+                    perror("ibv_poll_cq");
+                    break;
+                }
+                printf("done polling the request\n");
+                */
 
                 ++cb.sender_tail;
                 if (cb.sender_tail == RING_BUFFER_SIZE)
@@ -385,6 +404,7 @@ static void generate_tokens()
     while (1)
     {
         /* update sender's copy of head at arbiter's ring buffer, and get new rate*/
+        //TODO: handle wrap-around
         if (cb.ca_resp.id > prev_id) {
             //end = get_cycles();
             //printf("lat = %.2f\n", (double)(end - start) / cpu_mhz * 1000000);
@@ -577,6 +597,12 @@ int main(int argc, char **argv)
     //TODO: fix input arg later
     cb.ctx = init_ctx_and_build_conn(NULL, NULL, 0, gid_idx, cb.host_req, &cb.ca_resp, '0');    /* last arg is don't-care for pacer */
 
+    printf("starting thread for sending out requests...\n");
+    if (pthread_create(&th5, NULL, (void *(*)(void *)) & send_out_request, NULL))
+    {
+        error("pthread_create: send_out_request");
+    }
+
     printf("starting thread for flow handling...\n");
     if (pthread_create(&th1, NULL, (void *(*)(void *)) & flow_handler, NULL))
     {
@@ -595,11 +621,6 @@ int main(int argc, char **argv)
         error("pthread_create: generate_tokens");
     }
 
-    printf("starting thread for sending out requests...\n");
-    if (pthread_create(&th5, NULL, (void *(*)(void *)) & send_out_request, NULL))
-    {
-        error("pthread_create: send_out_request");
-    }
 
     /*
     printf("starting thread for token generating for read...\n");

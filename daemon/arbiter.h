@@ -18,6 +18,8 @@
 #include <signal.h>
 #include "pingpong.h"
 
+#define RMF_DISTRIBUTE_AMONG_HOSTS 1
+
 #define SHARED_MEM_NAME "/rdma-fairness"
 #define MAX_FLOWS 512
 //#define LINE_RATE_MB 12000 /* MBps */

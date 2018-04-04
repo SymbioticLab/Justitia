@@ -38,13 +38,15 @@ struct pingpong_context *init_ctx_and_build_conn(const char *addr, const char *a
     }
     my_dest.qpn_rmf = ctx->qp_rmf->qp_num;
     my_dest.qpn_req = ctx->qp_req->qp_num;
-    my_dest.psn = lrand48() & 0xffffff;
+    //my_dest.psn = lrand48() & 0xffffff;
+    my_dest.psn = 999;
     my_dest.rkey_rmf = ctx->rmf_mr->rkey;
     my_dest.rkey_req = ctx->req_mr->rkey;
     my_dest.rkey_resp = ctx->resp_mr->rkey;
     my_dest.vaddr_rmf = (uintptr_t)ctx->rmf_buf;
     my_dest.vaddr_req = (uintptr_t)host_req;
     my_dest.vaddr_resp = (uintptr_t)ca_resp;
+    printf("newly fresh my dest psn is %d\n", my_dest.psn);
 
     if (is_arbiter) {
         ctx->rem_dest = pp_client_exch_dest(addr, addr2, &my_dest, rmf_choice);
@@ -347,6 +349,8 @@ static struct pingpong_dest * pp_client_exch_dest(const char *servername, const 
                     &rem_dest->psn, &rem_dest->rkey_req, &rem_dest->rkey_resp, &rem_dest->vaddr_req, &rem_dest->vaddr_resp, gid);
     }
 
+    printf("DEBUG: (arbiter) local vaddr_req:%016Lx\n", my_dest->vaddr_req);
+    printf("DEBUG: (arbiter) remote vaddr_req:%016Lx\n", rem_dest->vaddr_req);
     
     wire_gid_to_gid(gid, &rem_dest->gid);
 
@@ -461,6 +465,8 @@ static struct pingpong_dest * pp_server_exch_dest(struct pingpong_context *ctx,
         sscanf(msg2, "%x:%x:%x:%x:%x:%Lx:%Lx:%s", &rem_dest->lid, &rem_dest->qpn_req,
                     &rem_dest->psn, &rem_dest->rkey_req, &rem_dest->rkey_resp, &rem_dest->vaddr_req, &rem_dest->vaddr_resp, gid);
     }
+    printf("DEBUG: (pacer) local vaddr_req:%016Lx\n", my_dest->vaddr_req);
+    printf("DEBUG: (pacer) remote vaddr_req:%016Lx\n", rem_dest->vaddr_req);
 
     wire_gid_to_gid(gid, &rem_dest->gid);
 
@@ -735,7 +741,9 @@ static int pp_connect_ctx(struct pingpong_context *ctx,
         return 1;
     }
 
-    attr.dest_qp_num = dest->qpn_req;
+    attr.dest_qp_num    = dest->qpn_req;
+    attr.rq_psn         = dest->psn;
+    attr.ah_attr.dlid   = dest->lid;  /* important */
     if (ibv_modify_qp(ctx->qp_req, &attr,
         IBV_QP_STATE              |
         IBV_QP_AV                 |
