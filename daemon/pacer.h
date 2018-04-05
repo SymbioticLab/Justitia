@@ -67,4 +67,4 @@ struct control_block {
 extern struct control_block cb;            /* declaration */
 extern uint32_t chunk_size_table[TABLE_SIZE];
 
-int submit_request(enum host_request_type, uint8_t, uint32_t, unsigned int);
+void submit_request(enum host_request_type, uint8_t, uint32_t, unsigned int);

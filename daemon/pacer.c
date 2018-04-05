@@ -162,23 +162,21 @@ void logging_tokens()
 /* end */
 
 /* submit a host request to the ring buffer; also used in monitor.c */
-int submit_request(enum host_request_type type, uint8_t is_read, uint32_t dest_qp_num, unsigned int worker_id)
+void submit_request(enum host_request_type type, uint8_t is_read, uint32_t dest_qp_num, unsigned int worker_id)
 {
-    ssize_t offset = 0;
+    ssize_t offset = -1;
     struct host_request request;
     request.type = type;
     request.is_read = is_read;
     request.dest_qp_num = dest_qp_num;
     request.check_byte = 1;
 
-    if (worker_id == 0) {
-        offset = ringbuf_acquire(cb.ring, cb.flow_handler_worker, 1);
-    } else if (worker_id == 1) {
-        offset = ringbuf_acquire(cb.ring, cb.latency_monitor_worker, 1);
-    }
-    if (offset == -1) {
-        fprintf(stderr, "Error acquiring ring buffer space.\n");
-        return -1;
+    while (offset == -1) {
+        if (worker_id == 0) {
+            offset = ringbuf_acquire(cb.ring, cb.flow_handler_worker, 1);
+        } else if (worker_id == 1) {
+            offset = ringbuf_acquire(cb.ring, cb.latency_monitor_worker, 1);
+        }
     }
 
     memcpy(&cb.host_req[offset], &request, sizeof(struct host_request));
@@ -190,17 +188,6 @@ int submit_request(enum host_request_type type, uint8_t is_read, uint32_t dest_q
     }
     
     printf("done submiting a request\n");
-    return 0;
-}
-static void submit_fake_request()
-{
-    int i;
-    for (i = 0; i < 100; ++i) {
-        usleep(500);
-        submit_request(FLOW_EXIT, 0, cb.sb->flows[cb.next_slot].dest_qp_num, 0);
-    }
-    printf("ALL fake request sent out.\n");
-
 }
 
 static void send_out_request()
@@ -346,11 +333,7 @@ static void flow_handler()
             /* submit update to CA */
 
             //start = get_cycles();
-            //submit_request(FLOW_JOIN, 0, cb.sb->flows[cb.next_slot].dest_qp_num, 0);
-            int i;
-            for (i = 0; i < 150; i++) {
-                submit_request(FLOW_JOIN, 0, cb.sb->flows[cb.next_slot].dest_qp_num, 0);
-            }
+            submit_request(FLOW_JOIN, 0, cb.sb->flows[cb.next_slot].dest_qp_num, 0);
             printf("sending WRITE/SEND FLOW JOIN message\n");
         }
         else if (strcmp(buf, "read") == 0)

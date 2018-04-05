@@ -32,7 +32,7 @@ static inline void cpu_relax()
 
 static void termination_handler(int sig)
 {
-    printf("signal handler called\n");
+    printf("sig//nal handler called\n");
     //remove("/dev/shm/rdma-fairness");
     //CMH_Destroy(cmh);
     _exit(0);
@@ -70,7 +70,7 @@ static void handle_host_updates()
     wr.send_flags = IBV_SEND_INLINE;
 
     /* checking ring buffer for each host */
-    unsigned int i, head, temp;
+    unsigned int i, head;
     while (1) {
         for (i = 0; i < cluster.num_hosts; ++i) {
             head = cluster.hosts[i].ring->head + 1;
