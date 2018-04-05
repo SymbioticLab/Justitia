@@ -70,13 +70,16 @@ static void handle_host_updates()
     wr.send_flags = IBV_SEND_INLINE;
 
     /* checking ring buffer for each host */
-    unsigned int i, head;
+    unsigned int i, head, temp;
     while (1) {
         for (i = 0; i < cluster.num_hosts; ++i) {
-            head = cluster.hosts[i].ring->head;
+            head = cluster.hosts[i].ring->head + 1;
+            if (head == RING_BUFFER_SIZE)
+                head = 0;
             uint32_t rate = 0;
+            
             while (cluster.hosts[i].ring->host_req[head].check_byte == 1) {
-                printf("Getting new request from Host%d\n", i);
+                printf("Getting new request from Host%d; ", i);
                 if (cluster.hosts[i].ring->host_req[head].type == RMF_ABOVE_TARGET) {
                     printf("received RMF_EXCEED_TARGET message\n");
                 } else if (cluster.hosts[i].ring->host_req[head].type == RMF_BELOW_TARGET) {
@@ -96,12 +99,16 @@ static void handle_host_updates()
                     head = 0;
             }
             /* update head pointer */
-            cluster.hosts[i].ring->head = head;
+            if (head == 0) {
+                cluster.hosts[i].ring->head = RING_BUFFER_SIZE - 1;
+            } else {
+                cluster.hosts[i].ring->head = head - 1;
+            }
 
             /* send out responses (rate updates, sender's copy of head) */ 
             if (rate) {    /* if ever computed a rate */
                 cluster.hosts[i].ca_resp.rate = rate;
-                cluster.hosts[i].ca_resp.sender_head = head;
+                cluster.hosts[i].ca_resp.sender_head = cluster.hosts[i].ring->head;
                 ++cluster.hosts[i].ca_resp.id;
 
                 sge.lkey = cluster.hosts[i].ctx->resp_mr->lkey;
@@ -226,6 +233,7 @@ int main(int argc, char **argv)
         printf("HOST LOOP #%d\n", i + 1);
         /* init ctx, mr, and connect to each host via RDMA RC */
         cluster.hosts[i].ring = calloc(1, sizeof(struct request_ring_buffer));
+        cluster.hosts[i].ring->head = RING_BUFFER_SIZE - 1;
         if (!RMF_DISTRIBUTE_AMONG_HOSTS) {
             cluster.hosts[i].ctx = init_ctx_and_build_conn(ip[i], NULL, 1, gid_idx[i], cluster.hosts[i].ring->host_req, &cluster.hosts[i].ca_resp, '2');
         } else {

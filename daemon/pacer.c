@@ -192,6 +192,16 @@ int submit_request(enum host_request_type type, uint8_t is_read, uint32_t dest_q
     printf("done submiting a request\n");
     return 0;
 }
+static void submit_fake_request()
+{
+    int i;
+    for (i = 0; i < 100; ++i) {
+        usleep(500);
+        submit_request(FLOW_EXIT, 0, cb.sb->flows[cb.next_slot].dest_qp_num, 0);
+    }
+    printf("ALL fake request sent out.\n");
+
+}
 
 static void send_out_request()
 {
@@ -213,17 +223,22 @@ static void send_out_request()
     wr.wr.rdma.rkey = cb.ctx->rem_dest->rkey_req;
 
     size_t offset = 0, len = 0, rem = 0;
+    uint16_t sender_head = 0;
     while (1) {
         len = ringbuf_consume(cb.ring, &offset);
         if (len != 0) {
             rem = len;
             /* check sender's head updates from arbiter */
             /* send update */
-            while (rem && ((cb.sender_tail - __atomic_load_n(&cb.sender_head, __ATOMIC_RELAXED)) < RING_BUFFER_SIZE))  {
+            sender_head = __atomic_load_n(&cb.sender_head, __ATOMIC_RELAXED);
+            while (rem && (cb.sender_tail != sender_head))  {
+            //while (rem && ((cb.sender_tail - __atomic_load_n(&cb.sender_head, __ATOMIC_RELAXED)) < RING_BUFFER_SIZE))  {
+
                 sge.addr = (uintptr_t)&cb.host_req[offset++];
                 --rem;
 
                 printf("cb.sender_tail = %d\n", cb.sender_tail);
+                printf("sender_head = %d\n", sender_head);
                 //printf("cb.host_req[0].check_byte = %d\n", cb.host_req[0].check_byte);
                 wr.wr.rdma.remote_addr = cb.ctx->rem_dest->vaddr_req + cb.sender_tail * sizeof(struct host_request);
                 if (ibv_post_send(cb.ctx->qp_req, &wr, &bad_wr)) {
@@ -331,7 +346,11 @@ static void flow_handler()
             /* submit update to CA */
 
             //start = get_cycles();
-            submit_request(FLOW_JOIN, 0, cb.sb->flows[cb.next_slot].dest_qp_num, 0);
+            //submit_request(FLOW_JOIN, 0, cb.sb->flows[cb.next_slot].dest_qp_num, 0);
+            int i;
+            for (i = 0; i < 150; i++) {
+                submit_request(FLOW_JOIN, 0, cb.sb->flows[cb.next_slot].dest_qp_num, 0);
+            }
             printf("sending WRITE/SEND FLOW JOIN message\n");
         }
         else if (strcmp(buf, "read") == 0)
@@ -386,6 +405,29 @@ static inline void fetch_token_read()
     __atomic_fetch_sub(&cb.tokens_read, 1, __ATOMIC_RELAXED);
 }
 
+static void handle_response()
+{
+    uint32_t prev_id = 0;
+    while (1) {
+        /* update sender's copy of head at arbiter's ring buffer, and get new rate*/
+        //TODO: handle wrap-around
+        if (cb.ca_resp.id > prev_id) {
+            //end = get_cycles();
+            //printf("lat = %.2f\n", (double)(end - start) / cpu_mhz * 1000000);
+            __atomic_store_n(&cb.sender_head, cb.ca_resp.sender_head, __ATOMIC_RELAXED);
+            __atomic_store_n(&cb.virtual_link_cap, cb.ca_resp.rate, __ATOMIC_RELAXED);
+            prev_id = cb.ca_resp.id;
+            printf("received a new response from central arbiter [%d]\n", prev_id);
+        } 
+        /*
+        else {
+            fprintf(stderr, "Error receiving responses, prev_id: %d, new_id: %d\n", prev_id, cb.ca_resp.id);
+        }
+        */
+    }
+}
+
+
 /* generate tokens at some rate
  */
 static void generate_tokens()
@@ -400,24 +442,8 @@ static void generate_tokens()
      */
     uint32_t temp, chunk_size;
     uint16_t num_big;
-    uint32_t prev_id = 0;
     while (1)
     {
-        /* update sender's copy of head at arbiter's ring buffer, and get new rate*/
-        //TODO: handle wrap-around
-        if (cb.ca_resp.id > prev_id) {
-            //end = get_cycles();
-            //printf("lat = %.2f\n", (double)(end - start) / cpu_mhz * 1000000);
-            __atomic_store_n(&cb.sender_head, cb.ca_resp.sender_head, __ATOMIC_RELAXED);
-            temp = cb.ca_resp.rate;
-            prev_id = cb.ca_resp.id;
-            printf("received a new response from central arbiter [%d]\n", prev_id);
-        } 
-        /*
-        else {
-            fprintf(stderr, "Error receiving responses, prev_id: %d, new_id: %d\n", prev_id, cb.ca_resp.id);
-        }
-        */
         //TODO: change locally calculated link cap to the one updated from arbiter
         if ((temp = __atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED)))
         {
@@ -570,7 +596,8 @@ int main(int argc, char **argv)
     cb.sb->active_batch_ops = DEFAULT_BATCH_OPS;
     cb.sb->num_active_big_flows = 0;
     cb.sb->num_active_small_flows = 0;
-    cb.sender_head = 0;
+    //cb.sender_head = 0;
+    cb.sender_head = RING_BUFFER_SIZE;
     cb.sender_tail = 0;
     cb.ca_resp.id = 0;
     memset(&cb.ca_resp, 0, sizeof(struct arbiter_response));
