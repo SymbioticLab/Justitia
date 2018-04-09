@@ -57,6 +57,8 @@ static void handle_host_updates()
     struct ibv_sge sge;
     struct ibv_send_wr wr;
     struct ibv_send_wr *bad_wr;
+    int num_comp = 0;
+    struct ibv_wc wc;
 
     memset(&sge, 0, sizeof(sge));
     sge.length = sizeof(struct arbiter_response);
@@ -70,7 +72,7 @@ static void handle_host_updates()
     wr.send_flags = IBV_SEND_INLINE;
 
     /* checking ring buffer for each host */
-    unsigned int i, head;
+    unsigned int i, head, num_req;
     while (1) {
         for (i = 0; i < cluster.num_hosts; ++i) {
             head = cluster.hosts[i].ring->head + 1;
@@ -78,8 +80,8 @@ static void handle_host_updates()
                 head = 0;
             uint32_t rate = 0;
             
-            //while (cluster.hosts[i].ring->host_req[head].check_byte == 1) {
             while (__atomic_load_n(&cluster.hosts[i].ring->host_req[head].check_byte, __ATOMIC_RELAXED) == 1) {
+            //while ((num_req = __atomic_load_n(&cluster.hosts[i].ring->host_req[head].num_req, __ATOMIC_RELAXED)) != 0) {
                 printf("Getting new request from Host%d; ", i);
                 if (cluster.hosts[i].ring->host_req[head].type == RMF_ABOVE_TARGET) {
                     printf("received RMF_EXCEED_TARGET message\n");
@@ -122,10 +124,7 @@ static void handle_host_updates()
 
                 ibv_post_send(cluster.hosts[i].ctx->qp_req, &wr, &bad_wr);
                 printf("sending out new response (Host<%d>-[%d])\n", i, cluster.hosts[i].ca_resp.id);
-                /*
-                printf("sge length = %d\n", sge.length);
-                int num_comp = 0;
-                struct ibv_wc wc;
+
                 do {
                     num_comp = ibv_poll_cq(cluster.hosts[i].ctx->cq_req, 1, &wc);
                 } while (num_comp == 0);
@@ -136,8 +135,7 @@ static void handle_host_updates()
                     perror("ibv_poll_cq");
                     break;
                 }
-                printf("done polling the request\n");
-                */
+                printf("done polling the wr\n");
             }
         }
     }

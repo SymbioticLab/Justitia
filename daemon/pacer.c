@@ -196,9 +196,11 @@ static void send_out_request()
     struct ibv_sge sge;
     struct ibv_send_wr wr;
     struct ibv_send_wr *bad_wr;
+    int num_comp = 0;
+    struct ibv_wc wc;
 
     memset(&sge, 0, sizeof(sge));
-    sge.length = sizeof(struct host_request);
+    //sge.length = sizeof(struct host_request);
     sge.lkey = cb.ctx->req_mr->lkey;
 
     memset(&wr, 0, sizeof(wr));
@@ -206,23 +208,65 @@ static void send_out_request()
     wr.sg_list = &sge;
     wr.num_sge = 1;
     wr.opcode = IBV_WR_RDMA_WRITE;
-    //wr.send_flags = IBV_SEND_SIGNALED | IBV_SEND_INLINE;
-    wr.send_flags = IBV_SEND_INLINE;
+    wr.send_flags = IBV_SEND_SIGNALED | IBV_SEND_INLINE;
+    //TODO: check if SQ overflow is a problem in unsignalling
+    //wr.send_flags = IBV_SEND_INLINE;
     wr.wr.rdma.rkey = cb.ctx->rem_dest->rkey_req;
 
     size_t offset = 0, len = 0, rem = 0;
     uint16_t sender_head = 0;
     while (1) {
         len = ringbuf_consume(cb.ring, &offset);
-        //cb.host_req[offset].num_req = len;     /* update number of requests send in a batch */
         if (len) {
             printf("LEN = %d\n", len);
             rem = len;
             /* check sender's head updates from arbiter */
             /* send update */
             sender_head = __atomic_load_n(&cb.sender_head, __ATOMIC_RELAXED);
+            
+            /* the logic is fine without considering wrap-around because ringbuf at pacer side guarantees contiguous memory, and tail of both rings are always synchronized */
+            while (rem && (cb.sender_tail != sender_head)) {
+                if ((cb.sender_tail > sender_head && (cb.sender_tail - sender_head) <= (RING_BUFFER_SIZE - rem)) ||
+                    (cb.sender_tail < sender_head && (sender_head - cb.sender_tail) >= rem)) {
+                    sge.length = rem * sizeof(struct host_request);
+                } else {
+                    sge.length = (cb.sender_tail > sender_head) ? (cb.sender_tail - sender_head) * sizeof(struct host_request)
+                                                                : (sender_head - cb.sender_tail) * sizeof(struct host_request);
+                }
+                //cb.host_req[offset].num_req = sge.length;       /* update number of requests send in a batch */
+                sge.addr = (uintptr_t)&cb.host_req[offset];
+
+                printf("cb.sender_tail = %d\n", cb.sender_tail);
+                printf("sender_head = %d\n", sender_head);
+                wr.wr.rdma.remote_addr = cb.ctx->rem_dest->vaddr_req + cb.sender_tail * sizeof(struct host_request);
+                if (ibv_post_send(cb.ctx->qp_req, &wr, &bad_wr)) {
+                    fprintf(stderr, "DEBUG POST SEND: REALLY BAD!!, errno = %d\n", errno);
+                    exit(EXIT_FAILURE);
+                }
+
+                rem -= sge.length;
+                offset += sge.length;
+                cb.sender_tail += sge.length;
+                if (cb.sender_tail >= RING_BUFFER_SIZE) {
+                    cb.sender_tail -= RING_BUFFER_SIZE;
+                }
+
+                do {
+                    if (cb.host_req[offset-1].type == FLOW_JOIN || cb.host_req[offset-1].type == FLOW_EXIT) 
+                        num_comp = ibv_poll_cq(cb.ctx->cq_req, 1, &wc);
+                    else
+                        num_comp = ibv_poll_cq(cb.ctx->cq_rmf, 1, &wc);
+                } while (num_comp == 0);
+                if (num_comp < 0 || wc.status != IBV_WC_SUCCESS) {
+                    break;
+                }
+                printf("done polling the wr\n");
+                
+            }
+
+
+            /* send request one at a time (old)
             while (rem && (cb.sender_tail != sender_head))  {
-            //while (rem && ((cb.sender_tail - __atomic_load_n(&cb.sender_head, __ATOMIC_RELAXED)) < RING_BUFFER_SIZE))  {
                 //printf("OFFSET = %d\n", offset);
                 sge.addr = (uintptr_t)&cb.host_req[offset++];
                 --rem;
@@ -236,7 +280,7 @@ static void send_out_request()
                     exit(EXIT_FAILURE);
                 }
                 printf("done sending out one request\n");
-                /*
+
                 int num_comp = 0;
                 struct ibv_wc wc;
                 do {
@@ -245,7 +289,6 @@ static void send_out_request()
                     else
                         num_comp = ibv_poll_cq(cb.ctx->cq_rmf, 1, &wc);
                 } while (num_comp == 0);
-
                 if (num_comp < 0 || wc.status != IBV_WC_SUCCESS) {
                     printf("num_comp = %d\n", num_comp);
                     printf("wc.status = %d\n", wc.status);
@@ -253,12 +296,12 @@ static void send_out_request()
                     break;
                 }
                 printf("done polling the request\n");
-                */
 
                 ++cb.sender_tail;
                 if (cb.sender_tail == RING_BUFFER_SIZE)
                     cb.sender_tail = 0;
             }
+            */
             ringbuf_release(cb.ring, len);
         }
     }
