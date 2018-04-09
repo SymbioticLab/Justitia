@@ -38,8 +38,8 @@ struct pingpong_context *init_ctx_and_build_conn(const char *addr, const char *a
     }
     my_dest.qpn_rmf = ctx->qp_rmf->qp_num;
     my_dest.qpn_req = ctx->qp_req->qp_num;
-    //my_dest.psn = lrand48() & 0xffffff;
-    my_dest.psn = 999;
+    my_dest.psn = lrand48() & 0xffffff;
+    //my_dest.psn = 999;
     my_dest.rkey_rmf = ctx->rmf_mr->rkey;
     my_dest.rkey_req = ctx->req_mr->rkey;
     my_dest.rkey_resp = ctx->resp_mr->rkey;
@@ -65,7 +65,7 @@ struct pingpong_context *init_ctx_and_build_conn(const char *addr, const char *a
 
     printf("my req qp qp_num=%d\n", my_dest.qpn_req);
     printf("remote req qp qp_num=%d\n", ctx->rem_dest->qpn_req);
-    if (rmf_choice == '2') {
+    if (rmf_choice == '2' || !is_arbiter) {
         printf("my rmf qp qp_num=%d\n", my_dest.qpn_rmf);
         printf("remote rmf qp qp_num=%d\n", ctx->rem_dest->qpn_rmf);
     }
@@ -637,7 +637,7 @@ static struct pingpong_dest * pp_server_exch_dest(struct pingpong_context *ctx,
         struct pingpong_dest my_host_dest;
         my_host_dest.lid = ctx->portinfo.lid;
         memcpy(&my_host_dest, my_dest, sizeof(struct pingpong_dest));
-        /* keep psn the same is the easier hack */
+        /* keep psn the same as the req qp is the easier hack */
         my_host_dest.qpn_rmf = ctx->qp_rmf->qp_num;
         my_host_dest.rkey_rmf = ctx->rmf_mr->rkey;
         my_host_dest.vaddr_rmf = (uintptr_t)ctx->rmf_buf;

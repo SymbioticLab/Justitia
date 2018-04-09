@@ -32,7 +32,7 @@ static inline void cpu_relax()
 
 static void termination_handler(int sig)
 {
-    printf("sig//nal handler called\n");
+    printf("signal handler called\n");
     //remove("/dev/shm/rdma-fairness");
     //CMH_Destroy(cmh);
     _exit(0);
@@ -78,7 +78,8 @@ static void handle_host_updates()
                 head = 0;
             uint32_t rate = 0;
             
-            while (cluster.hosts[i].ring->host_req[head].check_byte == 1) {
+            //while (cluster.hosts[i].ring->host_req[head].check_byte == 1) {
+            while (__atomic_load_n(&cluster.hosts[i].ring->host_req[head].check_byte, __ATOMIC_RELAXED) == 1) {
                 printf("Getting new request from Host%d; ", i);
                 if (cluster.hosts[i].ring->host_req[head].type == RMF_ABOVE_TARGET) {
                     printf("received RMF_EXCEED_TARGET message\n");
@@ -109,7 +110,9 @@ static void handle_host_updates()
             if (rate) {    /* if ever computed a rate */
                 cluster.hosts[i].ca_resp.rate = rate;
                 cluster.hosts[i].ca_resp.sender_head = cluster.hosts[i].ring->head;
-                ++cluster.hosts[i].ca_resp.id;
+                //++cluster.hosts[i].ca_resp.id;
+                cluster.hosts[i].ca_resp.id += 100;
+                //cluster.hosts[i].ca_resp.check = 1;
 
                 sge.lkey = cluster.hosts[i].ctx->resp_mr->lkey;
                 sge.addr = (uintptr_t)&cluster.hosts[i].ca_resp;
@@ -118,7 +121,23 @@ static void handle_host_updates()
                 wr.wr.rdma.remote_addr = cluster.hosts[i].ctx->rem_dest->vaddr_resp;
 
                 ibv_post_send(cluster.hosts[i].ctx->qp_req, &wr, &bad_wr);
-                printf("sending out new response [%d]\n", cluster.hosts[i].ca_resp.id);
+                printf("sending out new response (Host<%d>-[%d])\n", i, cluster.hosts[i].ca_resp.id);
+                /*
+                printf("sge length = %d\n", sge.length);
+                int num_comp = 0;
+                struct ibv_wc wc;
+                do {
+                    num_comp = ibv_poll_cq(cluster.hosts[i].ctx->cq_req, 1, &wc);
+                } while (num_comp == 0);
+
+                if (num_comp < 0 || wc.status != IBV_WC_SUCCESS) {
+                    printf("num_comp = %d\n", num_comp);
+                    printf("wc.status = %d\n", wc.status);
+                    perror("ibv_poll_cq");
+                    break;
+                }
+                printf("done polling the request\n");
+                */
             }
         }
     }
@@ -250,6 +269,10 @@ int main(int argc, char **argv)
                 else 
                     cluster.hosts[i].ctx = init_ctx_and_build_conn(ip[i], ip[i-1], 1, gid_idx[i], cluster.hosts[i].ring->host_req, &cluster.hosts[i].ca_resp, '1');
             }
+
+            /* Alternatively, every host sends rmf to arbiter
+            cluster.hosts[i].ctx = init_ctx_and_build_conn(ip[i], NULL, 1, gid_idx[i], cluster.hosts[i].ring->host_req, &cluster.hosts[i].ca_resp, '2');
+            */
         }
         if (cluster.hosts[i].ctx == NULL) {
             fprintf(stderr, "init_ctx_and_build_conn failed, exit\n");

@@ -35,6 +35,7 @@ enum host_request_type {
 };
 
 struct host_request {                       /* request sent from host pacer */
+	uint8_t num_req;						/* number of requests to come */
     enum host_request_type type;
     uint8_t is_read;
     uint32_t dest_qp_num;
@@ -46,7 +47,9 @@ struct arbiter_response {
 	uint16_t sender_head;					/* where host pacer stops writing */
 	uint32_t rate;							/* link bandwidth a host pacer should enforce */
 	uint32_t id;							/* indicates completion */
+	//int check;
 };
+
 /* end of host request message definition */
 
 struct pingpong_context {
