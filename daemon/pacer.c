@@ -166,7 +166,7 @@ void submit_request(enum host_request_type type, uint8_t is_read, uint32_t dest_
 {
     ssize_t offset = -1;
     struct host_request request;
-    request.num_req = 0;
+    //request.num_req = 0;
     request.type = type;
     request.is_read = is_read;
     request.dest_qp_num = dest_qp_num;
@@ -208,12 +208,13 @@ static void send_out_request()
     wr.sg_list = &sge;
     wr.num_sge = 1;
     wr.opcode = IBV_WR_RDMA_WRITE;
-    wr.send_flags = IBV_SEND_SIGNALED | IBV_SEND_INLINE;
+    wr.send_flags = IBV_SEND_SIGNALED;
+    //wr.send_flags = IBV_SEND_SIGNALED | IBV_SEND_INLINE;
     //TODO: check if SQ overflow is a problem in unsignalling
     //wr.send_flags = IBV_SEND_INLINE;
     wr.wr.rdma.rkey = cb.ctx->rem_dest->rkey_req;
 
-    size_t offset = 0, len = 0, rem = 0;
+    size_t offset = 0, len = 0, rem = 0, num_req = 0;
     uint16_t sender_head = 0;
     while (1) {
         len = ringbuf_consume(cb.ring, &offset);
@@ -228,12 +229,12 @@ static void send_out_request()
             while (rem && (cb.sender_tail != sender_head)) {
                 if ((cb.sender_tail > sender_head && (cb.sender_tail - sender_head) <= (RING_BUFFER_SIZE - rem)) ||
                     (cb.sender_tail < sender_head && (sender_head - cb.sender_tail) >= rem)) {
-                    sge.length = rem * sizeof(struct host_request);
+                    num_req = rem;
                 } else {
-                    sge.length = (cb.sender_tail > sender_head) ? (cb.sender_tail - sender_head) * sizeof(struct host_request)
-                                                                : (sender_head - cb.sender_tail) * sizeof(struct host_request);
+                    num_req = (cb.sender_tail > sender_head) ? (cb.sender_tail - sender_head) : (sender_head - cb.sender_tail);
                 }
-                //cb.host_req[offset].num_req = sge.length;       /* update number of requests send in a batch */
+                sge.length = num_req * sizeof(struct host_request);
+                //cb.host_req[offset].num_req = num_req;       /* update number of requests send in a batch */
                 sge.addr = (uintptr_t)&cb.host_req[offset];
 
                 printf("cb.sender_tail = %d\n", cb.sender_tail);
@@ -244,9 +245,9 @@ static void send_out_request()
                     exit(EXIT_FAILURE);
                 }
 
-                rem -= sge.length;
-                offset += sge.length;
-                cb.sender_tail += sge.length;
+                rem -= num_req;
+                offset += num_req;
+                cb.sender_tail += num_req;
                 if (cb.sender_tail >= RING_BUFFER_SIZE) {
                     cb.sender_tail -= RING_BUFFER_SIZE;
                 }

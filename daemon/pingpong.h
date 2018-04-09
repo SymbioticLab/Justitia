@@ -35,7 +35,7 @@ enum host_request_type {
 };
 
 struct host_request {                       /* request sent from host pacer */
-	uint8_t num_req;						/* number of requests to come */
+	//uint8_t num_req;						/* number of requests to come */
     enum host_request_type type;
     uint8_t is_read;
     uint32_t dest_qp_num;

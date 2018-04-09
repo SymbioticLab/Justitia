@@ -68,11 +68,11 @@ static void handle_host_updates()
     wr.sg_list = &sge;
     wr.num_sge = 1;
     wr.opcode = IBV_WR_RDMA_WRITE;
-    //wr.send_flags = IBV_SEND_SIGNALED | IBV_SEND_INLINE;
-    wr.send_flags = IBV_SEND_INLINE;
+    wr.send_flags = IBV_SEND_SIGNALED | IBV_SEND_INLINE;
+    //wr.send_flags = IBV_SEND_INLINE;
 
     /* checking ring buffer for each host */
-    unsigned int i, head, num_req;
+    unsigned int i, head;
     while (1) {
         for (i = 0; i < cluster.num_hosts; ++i) {
             head = cluster.hosts[i].ring->head + 1;
