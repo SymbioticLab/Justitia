@@ -246,11 +246,13 @@ int main(int argc, char **argv)
     /* initialize control structure */
     cluster.num_hosts = num_hosts;
     cluster.hosts = calloc(num_hosts, sizeof(struct host_info));
+    cluster.lid_table = calloc(num_hosts, sizeof(uint16_t));
     for (i = 0; i < num_hosts; ++i) {
         printf("HOST LOOP #%d\n", i + 1);
         /* init ctx, mr, and connect to each host via RDMA RC */
         cluster.hosts[i].ring = calloc(1, sizeof(struct request_ring_buffer));
         cluster.hosts[i].ring->head = RING_BUFFER_SIZE - 1;
+
         if (!RMF_DISTRIBUTE_AMONG_HOSTS) {
             cluster.hosts[i].ctx = init_ctx_and_build_conn(ip[i], NULL, 1, gid_idx[i], cluster.hosts[i].ring->host_req, &cluster.hosts[i].ca_resp, '2');
         } else {
@@ -267,15 +269,13 @@ int main(int argc, char **argv)
                 else 
                     cluster.hosts[i].ctx = init_ctx_and_build_conn(ip[i], ip[i-1], 1, gid_idx[i], cluster.hosts[i].ring->host_req, &cluster.hosts[i].ca_resp, '1');
             }
-
-            /* Alternatively, every host sends rmf to arbiter
-            cluster.hosts[i].ctx = init_ctx_and_build_conn(ip[i], NULL, 1, gid_idx[i], cluster.hosts[i].ring->host_req, &cluster.hosts[i].ca_resp, '2');
-            */
         }
         if (cluster.hosts[i].ctx == NULL) {
             fprintf(stderr, "init_ctx_and_build_conn failed, exit\n");
             exit(EXIT_FAILURE);
         }
+
+        cluster.lid_table[i] = cluster.hosts[i].ctx->rem_dest->lid;
     }
 
 

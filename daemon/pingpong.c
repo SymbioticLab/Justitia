@@ -28,6 +28,7 @@ struct pingpong_context *init_ctx_and_build_conn(const char *addr, const char *a
     }
 
     my_dest.lid = ctx->portinfo.lid;
+    printf("<<<my LID: %d>>>\n", my_dest.lid);
     if (gidx >= 0) {
 		if (ibv_query_gid(ctx->context, ib_port, gidx, &my_dest.gid)) {
 			fprintf(stderr, "Could not get local gid for gid index %d\n", gidx);
@@ -46,7 +47,6 @@ struct pingpong_context *init_ctx_and_build_conn(const char *addr, const char *a
     my_dest.vaddr_rmf = (uintptr_t)ctx->rmf_buf;
     my_dest.vaddr_req = (uintptr_t)host_req;
     my_dest.vaddr_resp = (uintptr_t)ca_resp;
-    printf("newly fresh my dest psn is %d\n", my_dest.psn);
 
     if (is_arbiter) {
         ctx->rem_dest = pp_client_exch_dest(addr, addr2, &my_dest, rmf_choice);

@@ -36,14 +36,14 @@ struct request_ring_buffer {
 
 struct host_info {
     struct request_ring_buffer *ring;       /* points to the ring buffer containing the *MR* for hosts to update info via RDMA; defined in pingpong.h*/ 
-    struct arbiter_response ca_resp;       /* pinned for response send back to the host */
-    uint16_t *flow_map;                     /* an array keeping track of flows sending to other host in the cluster */
+    struct arbiter_response ca_resp;        /* pinned for response send back to the host */
     struct pingpong_context *ctx;           /* other rdma related ctx goes here */
 };
 
 struct cluster_info {                       /* global knowledge of CA */
     uint16_t num_hosts;
     struct host_info *hosts;                /* array of structures containning info of each host in the cluster */
+    uint16_t *lid_table;                    /* an array of lid for all the hosts in the cluster */
 };
 
 extern struct cluster_info cluster;
