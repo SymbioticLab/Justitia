@@ -1,6 +1,7 @@
 #include "arbiter.h"
 #include "monitor.h"
 #include "get_clock.h"
+#include "vector.h"
 
 struct cluster_info cluster;
 
@@ -43,11 +44,52 @@ static void rm_shmem_on_exit()
     //remove("/dev/shm/rdma-fairness");
 }
 
+static void update_flow_info(struct host_request *req, int src_idx)
+{
+    int i;
+    do {
+        cluster.next_slot = (cluster.next_slot + 1) % MAX_FLOWS;
+    } while (cluster.flows[cluster.next_slot].in_transit;
+    cluster.flows[cluster.next_slot] = ;
+    for (i = 0; i < cluster.num_hosts; i++) {
+        if (req->dlid == cluster.hosts[i].lid) {
+            cluster.flows[cluster.next_slot].in_transit = 1;
+            //cluster.flows[cluster.next_slot].flow_cnt++;
+            if (!req->is_read) {
+                cluster.flows[cluster.next_slot].src = src_idx;
+                cluster.flows[cluster.next_slot].dest = i;
+                vector_add(&cluster.hosts[src_idx].egress_port->flows, &cluster.flows[cluster.next_slot]);
+                cluster.hosts[src_idx].egress_port->unassigned_flows++;
+                vector_add(&cluster.hosts[i].ingress_port->flows, &cluster.flows[cluster.next_slot]);
+                cluster.hosts[i].ingress_port->unassigned_flows++;
+                //cluster.hosts[src_idx].egress_port_flow_cnt++;
+                //cluster.hosts[i].ingress_port_flow_cnt++;
+            } else {
+                cluster.flows[cluster.next_slot].src = i;
+                cluster.flows[cluster.next_slot].dest = src_idx;
+                vector_add(&cluster.hosts[src_idx].ingress_port.flows, &cluster.flows[cluster.next_slot]);
+                cluster.hosts[src_idx].ingress_port->unassigned_flows++;
+                vector_add(&cluster.hosts[i].egress_port.flows, &cluster.flows[cluster.next_slot]);
+                cluster.hosts[i].egress_port->unassigned_flows++;
+                //cluster.hosts[src_idx].ingress_port_flow_cnt++;
+                //cluster.hosts[i].egress_port_flow_cnt++;
+            }
+            break;
+        }
+    }
+
+    fprintf(stderr, "Error in updating flow info\n");
+    exit(EXIT_FAILURE);
+
+}
+
 //TODO: compute rate 
 // don't assign 0 to rate -- 0 value assumed somewhere else
 uint32_t compute_rate(struct host_request *host_req)
 {
     uint32_t rate = LINE_RATE_MB;
+    
+
     return rate;
 }
 
@@ -89,6 +131,8 @@ static void handle_host_updates()
                     printf("received RMF_BELOW_TARGET message\n");
                 } else if (cluster.hosts[i].ring->host_req[head].type == FLOW_JOIN) {
                     printf("received FLOW_JOIN message\n");
+                    update_flow_info(&cluster.hosts[i].ring->host_req[head], i);
+
                 } else if (cluster.hosts[i].ring->host_req[head].type == FLOW_EXIT) {
                     printf("received FLOW_EXIT message\n");
                 } else {
@@ -244,14 +288,29 @@ int main(int argc, char **argv)
     fclose(fp);
 
     /* initialize control structure */
+    for (i = 0; i < MAX_FLOWS; ++i) {
+        cluster.flows.is_assigned = 0;
+        cluster.flows.in_transit = 0;
+        cluster.flows.src = 0;
+        cluster.flows.dest = 0;
+        cluster.flows.flow_cnt = 0;
+        cluster.flows.rate = 0;
+    }
     cluster.num_hosts = num_hosts;
     cluster.hosts = calloc(num_hosts, sizeof(struct host_info));
-    cluster.lid_table = calloc(num_hosts, sizeof(uint16_t));
     for (i = 0; i < num_hosts; ++i) {
         printf("HOST LOOP #%d\n", i + 1);
         /* init ctx, mr, and connect to each host via RDMA RC */
         cluster.hosts[i].ring = calloc(1, sizeof(struct request_ring_buffer));
         cluster.hosts[i].ring->head = RING_BUFFER_SIZE - 1;
+        cluster.hosts[i].ingress_port = calloc(1, sizeof(flow_t));
+        cluster.hosts[i].ingress_port.rate = LINE_RATE_MB;
+        vector_init(&cluster.hosts[i].ingress_port.flows);
+        cluster.hosts[i].egress_port = calloc(1, sizeof(flow_t));
+        cluster.hosts[i].egress_port.rate = LINE_RATE_MB;
+        vector_init(&cluster.hosts[i].egress_port.flows);
+        //cluster.hosts[i].ingress_port.flow_map = calloc(num_hosts, sizeof(uint16_t));
+        //cluster.hosts[i].egress_port.flow_map = calloc(num_hosts, sizeof(uint16_t));
 
         if (!RMF_DISTRIBUTE_AMONG_HOSTS) {
             cluster.hosts[i].ctx = init_ctx_and_build_conn(ip[i], NULL, 1, gid_idx[i], cluster.hosts[i].ring->host_req, &cluster.hosts[i].ca_resp, '2');
@@ -275,7 +334,7 @@ int main(int argc, char **argv)
             exit(EXIT_FAILURE);
         }
 
-        cluster.lid_table[i] = cluster.hosts[i].ctx->rem_dest->lid;
+        cluster.hosts[i].lid = cluster.hosts[i].ctx->rem_dest->lid;
     }
 
 

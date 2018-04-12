@@ -162,14 +162,14 @@ void logging_tokens()
 /* end */
 
 /* submit a host request to the ring buffer; also used in monitor.c */
-void submit_request(enum host_request_type type, uint8_t is_read, uint32_t dest_qp_num, unsigned int worker_id)
+void submit_request(enum host_request_type type, uint8_t is_read, uint16_t dlid, unsigned int worker_id)
 {
     ssize_t offset = -1;
     struct host_request request;
     //request.num_req = 0;
     request.type = type;
     request.is_read = is_read;
-    request.dest_qp_num = dest_qp_num;
+    request.dlid = dlid;
     request.check_byte = 1;
 
     while (offset == -1) {
@@ -380,7 +380,7 @@ static void flow_handler()
             /* submit update to CA */
 
             //start = get_cycles();
-            submit_request(FLOW_JOIN, 0, cb.sb->flows[cb.next_slot].dest_qp_num, 0);
+            submit_request(FLOW_JOIN, 0, cb.sb->flows[cb.next_slot].dlid, 0);
             //int j;
             //for (j = 0; j < 200; j++) {
             //    submit_request(FLOW_JOIN, 0, cb.sb->flows[cb.next_slot].dest_qp_num, 0);
@@ -402,7 +402,7 @@ static void flow_handler()
             */
 
             /* submit update to CA */
-            submit_request(FLOW_JOIN, 1, cb.sb->flows[cb.next_slot].dest_qp_num, 0);
+            submit_request(FLOW_JOIN, 1, cb.sb->flows[cb.next_slot].dlid, 0);
             printf("sending READ FLOW JOIN message\n");
         }
         else if (strcmp(buf, "exit") == 0)
@@ -415,7 +415,7 @@ static void flow_handler()
             */
 
             /* submit update to CA */
-            submit_request(FLOW_EXIT, 0, cb.sb->flows[cb.next_slot].dest_qp_num, 0);
+            submit_request(FLOW_EXIT, 0, cb.sb->flows[cb.next_slot].dlid, 0);
             printf("sending FLOW EXIT message\n");
         }
     }

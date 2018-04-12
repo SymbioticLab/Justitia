@@ -32,7 +32,7 @@ struct flow_info {
     uint8_t pending;
     uint8_t active;
     uint8_t read;
-    uint32_t dest_qp_num;
+    uint16_t dlid;
 };
 
 struct shared_block {

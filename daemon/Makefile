@@ -9,7 +9,7 @@ APPS    := arbiter pacer
 
 all: ${APPS}
 
-arbiter: pingpong_utils.o pingpong.o get_clock.o queue.o massdal.o prng.o countmin.o arbiter.o
+arbiter: pingpong_utils.o pingpong.o get_clock.o queue.o massdal.o prng.o countmin.o arbiter.o vector.c
 	${LD} -o $@ $^ ${LDLIBS}
 
 pacer: pingpong_utils.o pingpong.o get_clock.o queue.o massdal.o prng.o countmin.o monitor.o ringbuf.c pacer.o
