@@ -13,6 +13,7 @@
         "__split_buffer": "c",
         "deque": "c",
         "vector": "c",
-        "string.h": "c"
+        "string.h": "c",
+        "get_clock.h": "c"
     }
 }

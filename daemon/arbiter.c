@@ -1,7 +1,6 @@
 #include "arbiter.h"
 #include "monitor.h"
 #include "get_clock.h"
-#include "vector.h"
 #include "priority_queue.h"
 
 struct cluster_info cluster;
@@ -50,8 +49,7 @@ static void update_flow_info(struct host_request *req, int src_idx)
     int i;
     do {
         cluster.next_slot = (cluster.next_slot + 1) % MAX_FLOWS;
-    } while (cluster.flows[cluster.next_slot].in_transit;
-    cluster.flows[cluster.next_slot] = ;
+    } while (cluster.flows[cluster.next_slot].in_transit);
     for (i = 0; i < cluster.num_hosts; i++) {
         if (req->dlid == cluster.hosts[i].lid) {
             cluster.flows[cluster.next_slot].in_transit = 1;
@@ -68,9 +66,9 @@ static void update_flow_info(struct host_request *req, int src_idx)
             } else {
                 cluster.flows[cluster.next_slot].src = i;
                 cluster.flows[cluster.next_slot].dest = src_idx;
-                vector_add(&cluster.hosts[src_idx].ingress_port.flows, &cluster.flows[cluster.next_slot]);
+                vector_add(&cluster.hosts[src_idx].ingress_port->flows, &cluster.flows[cluster.next_slot]);
                 cluster.hosts[src_idx].ingress_port->unassigned_flows++;
-                vector_add(&cluster.hosts[i].egress_port.flows, &cluster.flows[cluster.next_slot]);
+                vector_add(&cluster.hosts[i].egress_port->flows, &cluster.flows[cluster.next_slot]);
                 cluster.hosts[i].egress_port->unassigned_flows++;
                 //cluster.hosts[src_idx].ingress_port_flow_cnt++;
                 //cluster.hosts[i].egress_port_flow_cnt++;
@@ -108,8 +106,8 @@ uint32_t compute_rate(struct host_request *host_req)
     }
 
     while((port = pq_pop(ports)) != NULL) {
-        for (i = 0; i < vector_count(&port.flows); ++i) {
-            flow = vector_get(&port.flows, i);
+        for (i = 0; i < vector_count(&port->flows); ++i) {
+            flow = vector_get(&port->flows, i);
             if (!port->unassigned_flows) {  /* can happen for ports with low priority after a few pops */
                 continue;
             }
@@ -325,12 +323,12 @@ int main(int argc, char **argv)
 
     /* initialize control structure */
     for (i = 0; i < MAX_FLOWS; ++i) {
-        cluster.flows.is_assigned = 0;
-        cluster.flows.in_transit = 0;
-        cluster.flows.src = 0;
-        cluster.flows.dest = 0;
-        //cluster.flows.flow_cnt = 0;
-        cluster.flows.rate = 0;
+        cluster.flows->is_assigned = 0;
+        cluster.flows->in_transit = 0;
+        cluster.flows->src = 0;
+        cluster.flows->dest = 0;
+        //cluster.flows->flow_cnt = 0;
+        cluster.flows->rate = 0;
     }
     cluster.num_hosts = num_hosts;
     cluster.hosts = calloc(num_hosts, sizeof(struct host_info));
@@ -340,11 +338,11 @@ int main(int argc, char **argv)
         cluster.hosts[i].ring = calloc(1, sizeof(struct request_ring_buffer));
         cluster.hosts[i].ring->head = RING_BUFFER_SIZE - 1;
         cluster.hosts[i].ingress_port = calloc(1, sizeof(flow_t));
-        cluster.hosts[i].ingress_port.rate = LINE_RATE_MB;
-        vector_init(&cluster.hosts[i].ingress_port.flows);
+        cluster.hosts[i].ingress_port->max_rate = LINE_RATE_MB;
+        vector_init(&cluster.hosts[i].ingress_port->flows);
         cluster.hosts[i].egress_port = calloc(1, sizeof(flow_t));
-        cluster.hosts[i].egress_port.rate = LINE_RATE_MB;
-        vector_init(&cluster.hosts[i].egress_port.flows);
+        cluster.hosts[i].egress_port->max_rate = LINE_RATE_MB;
+        vector_init(&cluster.hosts[i].egress_port->flows);
         //cluster.hosts[i].ingress_port.flow_map = calloc(num_hosts, sizeof(uint16_t));
         //cluster.hosts[i].egress_port.flow_map = calloc(num_hosts, sizeof(uint16_t));
 

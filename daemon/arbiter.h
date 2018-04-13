@@ -17,6 +17,7 @@
 #include <pthread.h>
 #include <signal.h>
 #include "pingpong.h"
+#include "vector.h"
 
 #define RMF_DISTRIBUTE_AMONG_HOSTS 1
 

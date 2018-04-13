@@ -4,19 +4,19 @@
 
 #include "vector.h"
 
-void vector_init(vector *v)
+void vector_init(vector_t *v)
 {
     v->data = NULL;
     v->size = 0;
     v->count = 0;
 }
 
-int vector_count(vector *v)
+int vector_count(vector_t *v)
 {
     return v->count;
 }
 
-void vector_add(vector *v, void *e)
+void vector_add(vector_t *v, void *e)
 {
     if (v->size == 0) {
         v->size = 10;
@@ -33,7 +33,7 @@ void vector_add(vector *v, void *e)
     v->count++;
 }
 
-void vector_set(vector *v, int index, void *e)
+void vector_set(vector_t *v, int index, void *e)
 {
     if (index >= v->count) {
         return;
@@ -42,7 +42,7 @@ void vector_set(vector *v, int index, void *e)
     v->data[index] = e;
 }
 
-void *vector_get(vector *v, int index)
+void *vector_get(vector_t *v, int index)
 {
     if (index >= v->count) {
         return NULL;
@@ -51,13 +51,14 @@ void *vector_get(vector *v, int index)
     return v->data[index];
 }
 
-void vector_delete(vector *v, int index)
+void vector_delete(vector_t *v, int index)
 {
     if (index >= v->count) {
         return;
     }
 
-    for (int i = index, j = index; i < v->count; i++) {
+    int i, j;
+    for (i = index, j = index; i < v->count; i++) {
         v->data[j] = v->data[i];
         j++;
     }
@@ -65,7 +66,7 @@ void vector_delete(vector *v, int index)
     v->count--;
 }
 
-void vector_free(vector *v)
+void vector_free(vector_t *v)
 {
     free(v->data);
 }
