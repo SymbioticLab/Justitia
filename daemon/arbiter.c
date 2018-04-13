@@ -2,6 +2,7 @@
 #include "monitor.h"
 #include "get_clock.h"
 #include "vector.h"
+#include "priority_queue.h"
 
 struct cluster_info cluster;
 
@@ -78,17 +79,52 @@ static void update_flow_info(struct host_request *req, int src_idx)
         }
     }
 
+    //TODO: update when flow_exit msg comes
+
     fprintf(stderr, "Error in updating flow info\n");
     exit(EXIT_FAILURE);
 
 }
 
-//TODO: compute rate 
 // don't assign 0 to rate -- 0 value assumed somewhere else
 uint32_t compute_rate(struct host_request *host_req)
 {
     uint32_t rate = LINE_RATE_MB;
-    
+    heap_t *ports = calloc(1, sizeof(heap_t));
+    int i, sort_key;
+    port_t *port = NULL;
+    flow_t *flow = NULL;
+    for (i = 0; i < cluster.num_hosts; ++i) {
+        port = cluster.hosts[i].egress_port;
+        if (port->unassigned_flows) {   /* ports with unassigned_flows = 0 does not get pushed into the the prio queue */
+            sort_key = port->max_rate / port->unassigned_flows;
+            pq_push(ports, sort_key, port);
+        }
+        port = cluster.hosts[i].egress_port;
+        if (port->unassigned_flows) {
+            sort_key = port->max_rate / port->unassigned_flows;
+            pq_push(ports, sort_key, port);
+        }
+    }
+
+    while((port = pq_pop(ports)) != NULL) {
+        for (i = 0; i < vector_count(&port.flows); ++i) {
+            flow = vector_get(&port.flows, i);
+            if (!port->unassigned_flows) {  /* can happen for ports with low priority after a few pops */
+                continue;
+            }
+            flow->rate = (port->max_rate - port->used_rate) / port->unassigned_flows;
+            flow->is_assigned = 1;
+            port->used_rate += flow->rate;
+            port->unassigned_flows--;
+            if (port->unassigned_flows < 0) {
+                fprintf(stderr, "Error computing rates: unassigned_flows can't be negative\n");
+                exit(EXIT_FAILURE);
+            }
+            //port->is_assigned = 1;
+        }
+    }
+
 
     return rate;
 }
@@ -293,7 +329,7 @@ int main(int argc, char **argv)
         cluster.flows.in_transit = 0;
         cluster.flows.src = 0;
         cluster.flows.dest = 0;
-        cluster.flows.flow_cnt = 0;
+        //cluster.flows.flow_cnt = 0;
         cluster.flows.rate = 0;
     }
     cluster.num_hosts = num_hosts;

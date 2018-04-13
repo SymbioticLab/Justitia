@@ -45,17 +45,18 @@ struct flow {
     //uint16_t remote_host;                   /* receiver in egress port; sender in ingress port */
     uint16_t src;                           /* src and dest indicates the direction of the data flow */
     uint16_t dest;
-    uint16_t flow_cnt;
+    //uint16_t flow_cnt;
     uint32_t rate;                          /* aggregate rate */
 };
 
 struct port {
-    uint8_t is_assigned;                    /* whether this port has been assigned by the rate computation algorithm */
+    //uint8_t is_assigned;                    /* whether this port has been assigned by the rate computation algorithm */
     uint32_t unassigned_flows;              /* number of flows that haven't been assigned */
     //flow_t *flows;                          /* a table of flows. size = # of hosts in the cluster. */
     vector_t flows;
     //uint32_t flow_map;                      /* table of flows. value in each slot is flow count. For egress port, idx =: receiver_host; for ingress port, idx =: sender_host */
-    uint32_t rate;                          /* rate of the port. default to line rate */
+    uint32_t max_rate;                      /* max rate of the port. default to line rate */
+    uint32_t used_rate;                     /* rate already assigned at the port. */
 };
 
 struct host_info {
