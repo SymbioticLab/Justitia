@@ -22,6 +22,7 @@
 #include "pingpong_utils.h"
 
 #define RING_BUFFER_SIZE 128		// number of requests the ring can hold
+#define MAX_RATE_UPDATES 128		// maximum number of rate updates in one response
 
 static const int BUF_SIZE = 10;
 static const int BUF_READ_SIZE = 5;
@@ -37,20 +38,25 @@ enum host_request_type {
 struct host_request {                       /* request sent from host pacer */
 	//uint8_t num_req;						/* number of requests to come */
     enum host_request_type type;
-    uint8_t is_read;
     uint32_t dlid;
+	uint16_t flow_idx;						/* idx in the flow array at the host pacer, needed in arbiter's response */
+    uint8_t is_read;
 	uint8_t check_byte;						/* indicates completion */
 };
 
-/* response that arbiter WRITEs to host pacer */
-struct arbiter_response {
-	uint32_t rate;							/* link bandwidth a host pacer should enforce */
-	uint32_t id;							/* indicates completion */
+/* response header that arbiter WRITEs to host pacer, followed by rate updates */
+struct arbiter_response_header {
 	uint16_t sender_head;					/* where host pacer stops writing */
-	//int check;
+	uint16_t num_rate_updates;				/* number of rate updates (per flow) coming in the response */
+	uint32_t id;							/* response id */
 };
 
-/* end of host request message definition */
+struct arbiter_rate_update {
+	uint32_t rate;
+	uint16_t flow_idx;						/* idx in the flow array at the host pacer */
+}
+
+/* end of struct used in arbiter response */
 
 struct pingpong_context {
 	struct ibv_context		*context;
