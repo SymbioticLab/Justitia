@@ -169,6 +169,7 @@ void submit_request(enum host_request_type type, uint8_t is_read, uint16_t dlid,
     //request.num_req = 0;
     request.type = type;
     request.dlid = dlid;
+    request.flow_idx = flow_idx;
     request.is_read = is_read;
     request.check_byte = 1;
 
