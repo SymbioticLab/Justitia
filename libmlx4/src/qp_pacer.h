@@ -13,7 +13,8 @@ static inline void cpu_relax() {
 #endif
 }
 
-static void contact_pacer_read() {
+//static void contact_pacer_read_join(struct flow_info *flow) {
+static void contact_pacer_read_join() {
     /* prepare unix domain socket */
     char *sock_path = get_sock_path();
     unsigned int s, len;
@@ -37,9 +38,15 @@ static void contact_pacer_read() {
     }
    
     printf("Sending read message...\n");
-    strcpy(str, "read");
+    strcpy(str, "READjoin");
     if (send(s, str, strlen(str), 0) == -1) {
-        perror("send: read");
+        perror("send: READjoin");
+        exit(1);
+    }
+
+    len = snprintf(str, MSG_LEN, "%d", flow->slot);
+    if (send(s, str, MSG_LEN, 0) == -1) {
+        perror("send: flow slot");
         exit(1);
     }
 
@@ -47,7 +54,8 @@ static void contact_pacer_read() {
 }
 
 /* used in post_send to inform central arbiter that a big write/send flow joins*/
-static void contact_pacer_BIG_join() {
+//static void contact_pacer_write_join(struct flow_info *flow) {
+static void contact_pacer_write_join() {
     /* prepare unix domain socket */
     char *sock_path = get_sock_path();
     unsigned int s, len;
@@ -70,9 +78,15 @@ static void contact_pacer_BIG_join() {
         exit(1);
     }
    
-    strcpy(str, "BIGjoin");
+    strcpy(str, "WRITEjoin");
     if (send(s, str, strlen(str), 0) == -1) {
-        perror("send: BIGjoin");
+        perror("send: WRITEjoin");
+        exit(1);
+    }
+
+    len = snprintf(str, MSG_LEN, "%d", flow->slot);
+    if (send(s, str, len, 0) == -1) {
+        perror("send: flow slot");
         exit(1);
     }
 

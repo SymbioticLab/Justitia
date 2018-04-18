@@ -162,14 +162,14 @@ void logging_tokens()
 /* end */
 
 /* submit a host request to the ring buffer; also used in monitor.c */
-void submit_request(enum host_request_type type, uint8_t is_read, uint16_t dlid, unsigned int worker_id)
+void submit_request(enum host_request_type type, uint8_t is_read, uint16_t dlid, uint16_t flow_idx, unsigned int worker_id)
 {
     ssize_t offset = -1;
     struct host_request request;
     //request.num_req = 0;
     request.type = type;
-    request.is_read = is_read;
     request.dlid = dlid;
+    request.is_read = is_read;
     request.check_byte = 1;
 
     while (offset == -1) {
@@ -314,6 +314,7 @@ static void flow_handler()
     /* prepare unix domain socket communication */
     printf("starting flow_handler...\n");
     unsigned int s, s2, len;
+    uint16_t slot;
     struct sockaddr_un local, remote;
     char buf[MSG_LEN];
     char *sock_path = get_sock_path();
@@ -375,21 +376,41 @@ static void flow_handler()
                 cb.next_slot = (cb.next_slot + 1) % MAX_FLOWS;
             }
         }
-        else if (strcmp(buf, "BIGjoin") == 0)
+        else if (strcmp(buf, "WRITEjoin") == 0)     /* when receiving WRITEjoin or READjoin, flow has been joined before and is trying to send its first message */
         {
             /* submit update to CA */
+            if ((len = recv(s2, (void *)buf, (size_t)MSG_LEN, 0)) > 0) {
+                printf("receive slot message of length %d.\n", len);
+                buf[len] = '\0';
+                slot = strtol(buf, NULL, 10);
+                printf("flow slot is %d.\n", slot);
+            } else {
+                if (len < 0) perror("recv");
+                else printf("Server closed connection\n");
+                exit(1);
+            }
 
             //start = get_cycles();
-            submit_request(FLOW_JOIN, 0, cb.sb->flows[cb.next_slot].dlid, 0);
+            submit_request(FLOW_JOIN, 0, cb.sb->flows[cb.next_slot].dlid, slot, 0);
             //int j;
             //for (j = 0; j < 200; j++) {
             //    submit_request(FLOW_JOIN, 0, cb.sb->flows[cb.next_slot].dest_qp_num, 0);
             //}
             printf("sending WRITE/SEND FLOW JOIN message\n");
         }
-        else if (strcmp(buf, "read") == 0)
+        else if (strcmp(buf, "READjoin") == 0)
         {
             printf("READ detected\n");
+            if ((len = recv(s2, (void *)buf, (size_t)MSG_LEN, 0)) > 0) {
+                printf("receive slot message of length %d.\n", len);
+                buf[len] = '\0';
+                slot = strtol(buf, NULL, 10);
+                printf("flow slot is %d.\n", slot);
+            } else {
+                if (len < 0) perror("recv");
+                else printf("Server closed connection\n");
+                exit(1);
+            }
 
             /*
             send_sge.addr = (uintptr_t)cb.ctx->local_read_buf;
@@ -402,7 +423,7 @@ static void flow_handler()
             */
 
             /* submit update to CA */
-            submit_request(FLOW_JOIN, 1, cb.sb->flows[cb.next_slot].dlid, 0);
+            submit_request(FLOW_JOIN, 1, cb.sb->flows[cb.next_slot].dlid, slot, 0);
             printf("sending READ FLOW JOIN message\n");
         }
         else if (strcmp(buf, "exit") == 0)
@@ -413,9 +434,22 @@ static void flow_handler()
             ibv_post_send(cb.ctx->qp_read, &send_wr, &bad_wr);
             __atomic_fetch_sub(&cb.num_big_read_flows, 1, __ATOMIC_RELAXED);
             */
+            if ((len = recv(s2, (void *)buf, (size_t)MSG_LEN, 0)) > 0) {
+                printf("receive slot message of length %d.\n", len);
+                buf[len] = '\0';
+                slot = strtol(buf, NULL, 10);
+                printf("flow slot is %d.\n", slot);
+            } else {
+                if (len < 0) perror("recv");
+                else printf("Server closed connection\n");
+                exit(1);
+            }
+
+            /* make flow at this slot inactive */ 
+            cb.sb->flows[slot].active = 0;
 
             /* submit update to CA */
-            submit_request(FLOW_EXIT, 0, cb.sb->flows[cb.next_slot].dlid, 0);
+            submit_request(FLOW_EXIT, 0, cb.sb->flows[cb.next_slot].dlid, slot, 0);
             printf("sending FLOW EXIT message\n");
         }
     }

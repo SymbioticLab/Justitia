@@ -1236,14 +1236,14 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 				if (wr->opcode == IBV_WR_RDMA_READ)
 				{
 					__atomic_store_n(&flow->read, 1, __ATOMIC_RELAXED);
-					contact_pacer_read();
+					contact_pacer_read_join();
 				}
 				else
 				{
-					contact_pacer_BIG_join();
+					contact_pacer_write_join();
 					num_active_big_flows++;
 					printf("DEBUG POST SEND: INDEED increment BIG flow counter\n");
-					__atomic_fetch_add(&sb->num_active_big_flows, 1, __ATOMIC_RELAXED);
+					__atomic_fetch_add(&sb->num_active_big_flows, 1, __ATOMIC_RELAXED);		//TODO: check if we still don't count read flows as active big flows
 				}
 				break;
 			}

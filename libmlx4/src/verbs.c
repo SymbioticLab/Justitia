@@ -1213,6 +1213,7 @@ struct ibv_qp *mlx4_create_qp(struct ibv_pd *pd, struct ibv_qp_init_attr *attr)
 			MAP_SHARED, fd_shm, 0);
 		contact_pacer(1);
 		flow = &sb->flows[slot];
+		flow->slot = slot;
 		printf("@@@At slot %d.\n", slot);
 	}
 	/* end */
@@ -1371,7 +1372,7 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 	//// Get dlid info
 	if (flow) {
 		if (qp->state == IBV_QPS_INIT && attr->qp_state == IBV_QPS_RTR) {
-			__atomic_store_n(&flow->dest_qp_num, &attr->ah_attr.dlid, __ATOMIC_RELAXED);
+			__atomic_store_n(&flow->dlid, &attr->ah_attr.dlid, __ATOMIC_RELAXED);
 		}
 	}
 

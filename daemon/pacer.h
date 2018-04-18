@@ -33,6 +33,7 @@ struct flow_info {
     uint8_t active;
     uint8_t read;
     uint16_t dlid;
+    uint16_t flow_idx;
 };
 
 struct shared_block {
@@ -67,4 +68,4 @@ struct control_block {
 extern struct control_block cb;            /* declaration */
 extern uint32_t chunk_size_table[TABLE_SIZE];
 
-void submit_request(enum host_request_type, uint8_t, uint16_t, unsigned int);
+void submit_request(enum host_request_type, uint8_t, uint16_t, uint16_t, unsigned int);

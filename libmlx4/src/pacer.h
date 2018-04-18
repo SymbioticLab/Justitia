@@ -19,7 +19,7 @@
 
 #define SHARED_MEM_NAME "/rdma-fairness"
 #define SOCK_PATH "/users/yiwenzhg/rdma_socket"
-#define MSG_LEN 8
+#define MSG_LEN 16
 #define MAX_FLOWS 512
 #define HOSTNAME_PATH "/proc/sys/kernel/hostname"
 
@@ -28,6 +28,7 @@ struct flow_info {
     uint8_t active;
     uint8_t read;
     uint16_t dlid;
+    uint16_t slot;
 };
 
 struct shared_block {

@@ -69,6 +69,13 @@ static void contact_pacer(int join) {
             perror("send: exit");
             exit(1);
         }
+        /* send slot number */
+        len = snprintf(str, MSG_LEN, "%d", flow->slot);
+        if (send(s, str, MSG_LEN, 0) == -1) {
+            perror("send: flow slot");
+            exit(1);
+        }
+
     } else {
         /* send join message */
         printf("Sending join message...\n");
