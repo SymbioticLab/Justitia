@@ -391,7 +391,7 @@ static void flow_handler()
             }
 
             //start = get_cycles();
-            submit_request(FLOW_JOIN, 0, cb.sb->flows[cb.next_slot].dlid, slot, 0);
+            submit_request(FLOW_JOIN, 0, cb.sb->flows[slot].dlid, slot, 0);
             //int j;
             //for (j = 0; j < 200; j++) {
             //    submit_request(FLOW_JOIN, 0, cb.sb->flows[cb.next_slot].dest_qp_num, 0);
@@ -423,7 +423,7 @@ static void flow_handler()
             */
 
             /* submit update to CA */
-            submit_request(FLOW_JOIN, 1, cb.sb->flows[cb.next_slot].dlid, slot, 0);
+            submit_request(FLOW_JOIN, 1, cb.sb->flows[slot].dlid, slot, 0);
             printf("sending READ FLOW JOIN message\n");
         }
         else if (strcmp(buf, "exit") == 0)
@@ -449,7 +449,7 @@ static void flow_handler()
             cb.sb->flows[slot].active = 0;
 
             /* submit update to CA */
-            submit_request(FLOW_EXIT, 0, cb.sb->flows[cb.next_slot].dlid, slot, 0);
+            submit_request(FLOW_EXIT, 0, cb.sb->flows[slot].dlid, slot, 0);
             printf("sending FLOW EXIT message\n");
         }
     }

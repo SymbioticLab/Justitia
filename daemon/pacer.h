@@ -33,7 +33,7 @@ struct flow_info {
     uint8_t active;
     uint8_t read;
     uint16_t dlid;
-    uint16_t flow_idx;
+    uint16_t slot;
 };
 
 struct shared_block {
