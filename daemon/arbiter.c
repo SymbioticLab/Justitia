@@ -47,25 +47,24 @@ static void rm_shmem_on_exit()
 static void update_flow_info(struct host_request *req, int src_idx)
 {
     int i;
-    do {
-        cluster.next_slot = (cluster.next_slot + 1) % MAX_FLOWS;
-    } while (cluster.flows[cluster.next_slot].in_transit);
     for (i = 0; i < cluster.num_hosts; i++) {
         if (req->dlid == cluster.hosts[i].lid) {
             cluster.flows[cluster.next_slot].in_transit = 1;
             //cluster.flows[cluster.next_slot].flow_cnt++;
-            if (!req->is_read) {
+            if (!req->is_read) {    /* WRITE/SEND */
                 cluster.flows[cluster.next_slot].src = src_idx;
                 cluster.flows[cluster.next_slot].dest = i;
+                cluster.flows[cluster.next_slot].is_read = 0;
                 vector_add(&cluster.hosts[src_idx].egress_port->flows, &cluster.flows[cluster.next_slot]);
                 cluster.hosts[src_idx].egress_port->unassigned_flows++;
                 vector_add(&cluster.hosts[i].ingress_port->flows, &cluster.flows[cluster.next_slot]);
                 cluster.hosts[i].ingress_port->unassigned_flows++;
                 //cluster.hosts[src_idx].egress_port_flow_cnt++;
                 //cluster.hosts[i].ingress_port_flow_cnt++;
-            } else {
+            } else {                /* READ: src and dest are consistent with data flowing direction */
                 cluster.flows[cluster.next_slot].src = i;
                 cluster.flows[cluster.next_slot].dest = src_idx;
+                cluster.flows[cluster.next_slot].is_read = 1;
                 vector_add(&cluster.hosts[src_idx].ingress_port->flows, &cluster.flows[cluster.next_slot]);
                 cluster.hosts[src_idx].ingress_port->unassigned_flows++;
                 vector_add(&cluster.hosts[i].egress_port->flows, &cluster.flows[cluster.next_slot]);
@@ -77,6 +76,11 @@ static void update_flow_info(struct host_request *req, int src_idx)
         }
     }
 
+    /* update next_slot */
+    do {
+        cluster.next_slot = (cluster.next_slot + 1) % MAX_FLOWS;
+    } while (cluster.flows[cluster.next_slot].in_transit);
+
     //TODO: update when flow_exit msg comes
 
     fprintf(stderr, "Error in updating flow info\n");
@@ -84,7 +88,75 @@ static void update_flow_info(struct host_request *req, int src_idx)
 
 }
 
-// don't assign 0 to rate -- 0 value assumed somewhere else
+static void distribute_rates()
+{
+    return;
+}
+
+/* send out responses (rate updates, sender's copy of head) to the hosts that gets affected */ 
+static void send_out_responses()
+{
+    struct ibv_sge sge;
+    struct ibv_send_wr wr;
+    struct ibv_send_wr *bad_wr;
+    int num_comp = 0;
+    struct ibv_wc wc;
+
+    memset(&sge, 0, sizeof(sge));
+    sge.length = sizeof(struct arbiter_response_header);
+
+    memset(&wr, 0, sizeof(wr));
+    wr.wr_id = 0;
+    wr.sg_list = &sge;
+    wr.num_sge = 1;
+    wr.opcode = IBV_WR_RDMA_WRITE;
+    //wr.send_flags = IBV_SEND_SIGNALED | IBV_SEND_INLINE;
+    //TODO: do inline based on the message size
+    wr.send_flags = IBV_SEND_SIGNALED;
+
+    /* distribute rates back to the sender (both WRITE/SEND and READ) */
+    //TODO: for READ flow, needs to assign rate to ingress ports
+    // assume no READ for now
+    int i, j;
+    int count = 0;
+    for (i = 0; i < cluster.num_hosts; i++) {
+        for (j = 0; j < vector_count(&cluster.hosts[i].egress_port.flows); ++i) {
+            // pack rates. then send them in a batch
+            cluster.hosts[i].egress_port.flows[j]->rate;
+
+        }
+        ++count;
+    }
+    
+    cluster.hosts[i].ca_resp.rate = rate;
+    cluster.hosts[i].ca_resp.sender_head = cluster.hosts[i].ring->head;
+    //++cluster.hosts[i].ca_resp.id;
+    cluster.hosts[i].ca_resp.id += 100;
+    //cluster.hosts[i].ca_resp.check = 1;
+
+    sge.lkey = cluster.hosts[i].ctx->resp_mr->lkey;
+    sge.addr = (uintptr_t)&cluster.hosts[i].ca_resp;
+
+    wr.wr.rdma.rkey = cluster.hosts[i].ctx->rem_dest->rkey_resp;
+    wr.wr.rdma.remote_addr = cluster.hosts[i].ctx->rem_dest->vaddr_resp;
+
+    ibv_post_send(cluster.hosts[i].ctx->qp_req, &wr, &bad_wr);
+    printf("sending out new response (Host<%d>-[%d])\n", i, cluster.hosts[i].ca_resp.id);
+
+    do {
+        num_comp = ibv_poll_cq(cluster.hosts[i].ctx->cq_req, 1, &wc);
+    } while (num_comp == 0);
+
+    if (num_comp < 0 || wc.status != IBV_WC_SUCCESS) {
+        printf("num_comp = %d\n", num_comp);
+        printf("wc.status = %d\n", wc.status);
+        perror("ibv_poll_cq");
+        break;
+    }
+    printf("done polling the wr\n");
+
+}
+
 uint32_t compute_rate(struct host_request *host_req)
 {
     uint32_t rate = LINE_RATE_MB;
@@ -105,48 +177,55 @@ uint32_t compute_rate(struct host_request *host_req)
         }
     }
 
+    //TODO: for READ flow, needs to assign rate to ingress ports
+    /* WRITE/SEND and READ treated differently:
+        For WRITE/SEND flows, the egress port that posts the wr needs to receive rate update.
+        For READ flows, the ingress port that posts the wr needs to receive rate update.
+    */
+    /* both src and dest ports needs to be updated:
+        if a given flow is assigned a rate at an egress port,
+            find the flow's dest port (which is an ingress port) and decrement the unassigned_flows there.
+        if the flow is assigned at an ingress port instead,
+            find the flow's src port (which is an egress port) and decrement the counter there.
+    */
     while((port = pq_pop(ports)) != NULL) {
+        printf("COMPUTE_RATE: @Port[%d], num_flow = %d, num_unassigned_flow = %d\n", port->host_id, vector_count(&port->flows), port->unassigned_flows);
         for (i = 0; i < vector_count(&port->flows); ++i) {
             flow = vector_get(&port->flows, i);
             if (!port->unassigned_flows) {  /* can happen for ports with low priority after a few pops */
+                printf("port->unassigned = 0!!\n");
                 continue;
             }
+
             flow->rate = (port->max_rate - port->used_rate) / port->unassigned_flows;
             flow->is_assigned = 1;
-            port->used_rate += flow->rate;
             port->unassigned_flows--;
+            port->used_rate += flow->rate;
+
+            /* update the port on the other side; the logic also works for READ flows due to the way we set src/dest */
+            if (port->is_egress) {
+                cluster.hosts[flow->dest].ingress_port->unassigned_flows--;
+                cluster.hosts[flow->dest].ingress_port->used_rate += flow->rate;
+            } else {
+                cluster.hosts[flow->src].egress_port->unassigned_flows--;
+                cluster.hosts[flow->src].egress_port->used_reate += flow->rate;
+            }
+
             if (port->unassigned_flows < 0) {
                 fprintf(stderr, "Error computing rates: unassigned_flows can't be negative\n");
                 exit(EXIT_FAILURE);
             }
-            //port->is_assigned = 1;
+            
+
         }
     }
 
-
-    return rate;
+    return 0;
 }
 
 /* read host updates and send out response (rate, ringbuf_info, etc) */
 static void handle_host_updates()
 {
-    struct ibv_sge sge;
-    struct ibv_send_wr wr;
-    struct ibv_send_wr *bad_wr;
-    int num_comp = 0;
-    struct ibv_wc wc;
-
-    memset(&sge, 0, sizeof(sge));
-    sge.length = sizeof(struct arbiter_response);
-
-    memset(&wr, 0, sizeof(wr));
-    wr.wr_id = 0;
-    wr.sg_list = &sge;
-    wr.num_sge = 1;
-    wr.opcode = IBV_WR_RDMA_WRITE;
-    wr.send_flags = IBV_SEND_SIGNALED | IBV_SEND_INLINE;
-    //wr.send_flags = IBV_SEND_INLINE;
-
     /* checking ring buffer for each host */
     unsigned int i, head;
     while (1) {
@@ -154,7 +233,7 @@ static void handle_host_updates()
             head = cluster.hosts[i].ring->head + 1;
             if (head == RING_BUFFER_SIZE)
                 head = 0;
-            uint32_t rate = 0;
+            //uint32_t rate = 0;
             
             while (__atomic_load_n(&cluster.hosts[i].ring->host_req[head].check_byte, __ATOMIC_RELAXED) == 1) {
             //while ((num_req = __atomic_load_n(&cluster.hosts[i].ring->host_req[head].num_req, __ATOMIC_RELAXED)) != 0) {
@@ -166,14 +245,13 @@ static void handle_host_updates()
                 } else if (cluster.hosts[i].ring->host_req[head].type == FLOW_JOIN) {
                     printf("received FLOW_JOIN message\n");
                     update_flow_info(&cluster.hosts[i].ring->host_req[head], i);
-
                 } else if (cluster.hosts[i].ring->host_req[head].type == FLOW_EXIT) {
                     printf("received FLOW_EXIT message\n");
                 } else {
                     printf("unrecognized message\n");
                     exit(EXIT_FAILURE);
                 }
-                rate = compute_rate(&cluster.hosts[i].ring->host_req[head]);
+                compute_rate(&cluster.hosts[i].ring->host_req[head]);
                 cluster.hosts[i].ring->host_req[head].check_byte = 0;
                 ++head;
                 if (head == RING_BUFFER_SIZE)
@@ -186,35 +264,8 @@ static void handle_host_updates()
                 cluster.hosts[i].ring->head = head - 1;
             }
 
-            /* send out responses (rate updates, sender's copy of head) */ 
-            if (rate) {    /* if ever computed a rate */
-                cluster.hosts[i].ca_resp.rate = rate;
-                cluster.hosts[i].ca_resp.sender_head = cluster.hosts[i].ring->head;
-                //++cluster.hosts[i].ca_resp.id;
-                cluster.hosts[i].ca_resp.id += 100;
-                //cluster.hosts[i].ca_resp.check = 1;
-
-                sge.lkey = cluster.hosts[i].ctx->resp_mr->lkey;
-                sge.addr = (uintptr_t)&cluster.hosts[i].ca_resp;
-
-                wr.wr.rdma.rkey = cluster.hosts[i].ctx->rem_dest->rkey_resp;
-                wr.wr.rdma.remote_addr = cluster.hosts[i].ctx->rem_dest->vaddr_resp;
-
-                ibv_post_send(cluster.hosts[i].ctx->qp_req, &wr, &bad_wr);
-                printf("sending out new response (Host<%d>-[%d])\n", i, cluster.hosts[i].ca_resp.id);
-
-                do {
-                    num_comp = ibv_poll_cq(cluster.hosts[i].ctx->cq_req, 1, &wc);
-                } while (num_comp == 0);
-
-                if (num_comp < 0 || wc.status != IBV_WC_SUCCESS) {
-                    printf("num_comp = %d\n", num_comp);
-                    printf("wc.status = %d\n", wc.status);
-                    perror("ibv_poll_cq");
-                    break;
-                }
-                printf("done polling the wr\n");
-            }
+            /* send out responses (rate updates, sender's copy of head) to the hosts that gets affected */ 
+            send_out_responses();
         }
     }
 
@@ -331,6 +382,7 @@ int main(int argc, char **argv)
         cluster.flows->rate = 0;
     }
     cluster.num_hosts = num_hosts;
+    cluster.next_slot = 0;
     cluster.hosts = calloc(num_hosts, sizeof(struct host_info));
     for (i = 0; i < num_hosts; ++i) {
         printf("HOST LOOP #%d\n", i + 1);
@@ -339,9 +391,13 @@ int main(int argc, char **argv)
         cluster.hosts[i].ring->head = RING_BUFFER_SIZE - 1;
         cluster.hosts[i].ingress_port = calloc(1, sizeof(flow_t));
         cluster.hosts[i].ingress_port->max_rate = LINE_RATE_MB;
+        cluster.hosts[i].ingress_port->host_id = i;
+        cluster.hosts[i].ingress_port->is_egress = 0;
         vector_init(&cluster.hosts[i].ingress_port->flows);
         cluster.hosts[i].egress_port = calloc(1, sizeof(flow_t));
         cluster.hosts[i].egress_port->max_rate = LINE_RATE_MB;
+        cluster.hosts[i].egress_port->host_id = i;
+        cluster.hosts[i].egress_port->is_egress = 1;
         vector_init(&cluster.hosts[i].egress_port->flows);
         //cluster.hosts[i].ingress_port.flow_map = calloc(num_hosts, sizeof(uint16_t));
         //cluster.hosts[i].egress_port.flow_map = calloc(num_hosts, sizeof(uint16_t));

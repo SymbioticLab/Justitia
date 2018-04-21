@@ -25,7 +25,7 @@
 #define MAX_FLOWS 512
 //#define LINE_RATE_MB 12000 /* MBps */
 #define LINE_RATE_MB 6000 /* MBps */
-#define MSG_LEN 8
+#define MSG_LEN 16
 #define SOCK_PATH "/users/yiwenzhg/rdma_socket"
 #define ELEPHANT_HAS_LOWER_BOUND 1  /* whether elephant has a minimum virtual link cap set by AIMD */
 #define TABLE_SIZE 7
@@ -42,21 +42,23 @@ struct request_ring_buffer {
 struct flow {
     uint8_t is_assigned;                    /* whether this flow has benn assigned by the rate computation algorithm */
     uint8_t in_transit;                     /* whether the slot in the flow array can be used */
-    //uint8_t is_read;
+    uint8_t is_read;
     //uint16_t remote_host;                   /* receiver in egress port; sender in ingress port */
-    uint16_t src;                           /* src and dest indicates the direction of the data flow */
+    uint16_t src;                           /* src and dest indicates the direction of the data flowing in the cluster */
     uint16_t dest;
     //uint16_t flow_cnt;
-    uint32_t rate;                          /* aggregate rate */
+    uint32_t rate;                          /* assigned rate */
 };
 
 struct port {
     //uint8_t is_assigned;                    /* whether this port has been assigned by the rate computation algorithm */
+    uint16_t host_id;
+    uint_16_t is_egress;
     uint32_t unassigned_flows;              /* number of flows that haven't been assigned */
     //flow_t *flows;                          /* a table of flows. size = # of hosts in the cluster. */
     vector_t flows;
     //uint32_t flow_map;                      /* table of flows. value in each slot is flow count. For egress port, idx =: receiver_host; for ingress port, idx =: sender_host */
-    uint32_t max_rate;                      /* max rate of the port. default to line rate */
+    uint32_t max_rate;                      /* max rate of the port. default to line rate. Assume same for both egress and ingress port */
     uint32_t used_rate;                     /* rate already assigned at the port. */
 };
 

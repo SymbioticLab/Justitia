@@ -10,10 +10,10 @@ static struct pingpong_context * alloc_qps(struct host_request *, struct arbiter
 static struct pingpong_dest * pp_client_exch_dest(const char *, const char *, struct pingpong_dest *, char);
 static struct pingpong_dest * pp_server_exch_dest(struct pingpong_context *, const struct pingpong_dest *, int);
 static int pp_connect_ctx(struct pingpong_context *, int, struct pingpong_dest *, struct pingpong_dest *, int, char);
-struct pingpong_context *init_ctx_and_build_conn(const char *, const char *, int, int, struct host_request *, struct arbiter_response *, char);
+struct pingpong_context *init_ctx_and_build_conn(const char *, const char *, int, int, struct host_request *, struct arbiter_response_region *, char);
 
 struct pingpong_context *init_ctx_and_build_conn(const char *addr, const char *addr2, int is_arbiter, int gidx, 
-                                                        struct host_request *host_req, struct arbiter_response *ca_resp, char rmf_choice) {
+                                                        struct host_request *host_req, struct arbiter_response_region *ca_resp, char rmf_choice) {
     struct pingpong_context *ctx;
     struct pingpong_dest my_dest;
 
