@@ -36,9 +36,10 @@ enum host_request_type {
 };
 
 struct host_request {                       /* request sent from host pacer */
+	//uint8_t num_req;						/* number of requests to come */
     enum host_request_type type;
     uint16_t dlid;
-	uint16_t flow_idx;						/* idx in the flow array at the host pacer, needed in arbiter's response */
+	uint16_t flow_idx;						/* idx in the flow array at the host pacer, needed when hearing back from arbiter */
     uint8_t is_read;
 	uint8_t check_byte;						/* indicates completion */
 };
@@ -93,6 +94,6 @@ struct pingpong_dest {
 	union ibv_gid gid;
 };
 
-struct pingpong_context *init_ctx_and_build_conn(const char *, const char *, int, int, struct host_request *, struct arbiter_response *, char);
+struct pingpong_context *init_ctx_and_build_conn(const char *, const char *, int, int, struct host_request *, struct arbiter_response_region *, char);
 
 #endif

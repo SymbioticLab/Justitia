@@ -50,7 +50,7 @@ static void update_flow_info(struct host_request *req, int src_idx)
     for (i = 0; i < cluster.num_hosts; i++) {
         if (req->dlid == cluster.hosts[i].lid) {
             cluster.flows[cluster.next_slot].in_transit = 1;
-            //cluster.flows[cluster.next_slot].flow_cnt++;
+            cluster.flows[cluster.next_slot].flow_idx = req->flow_idx;
             if (!req->is_read) {    /* WRITE/SEND */
                 cluster.flows[cluster.next_slot].src = src_idx;
                 cluster.flows[cluster.next_slot].dest = i;
@@ -93,6 +93,11 @@ static void distribute_rates()
     return;
 }
 
+static void submit_response(int rate)
+{
+
+}
+
 /* send out responses (rate updates, sender's copy of head) to the hosts that gets affected */ 
 static void send_out_responses()
 {
@@ -103,7 +108,6 @@ static void send_out_responses()
     struct ibv_wc wc;
 
     memset(&sge, 0, sizeof(sge));
-    sge.length = sizeof(struct arbiter_response_header);
 
     memset(&wr, 0, sizeof(wr));
     wr.wr_id = 0;
@@ -114,46 +118,62 @@ static void send_out_responses()
     //TODO: do inline based on the message size
     wr.send_flags = IBV_SEND_SIGNALED;
 
-    /* distribute rates back to the sender (both WRITE/SEND and READ) */
-    //TODO: for READ flow, needs to assign rate to ingress ports
-    // assume no READ for now
-    int i, j;
-    int count = 0;
+    /* distribute rates back to the sender (both WRITE/SEND and READ)
+     * For WRITE/SEND flows, rates are distributed back to the egress port
+     * For READ flows, rates is distributed to the ingress port */
+    int i, j, count;        /* assume count < MAX_RATE_UPDATES */
+    flow_t *flow = NULL;
+
     for (i = 0; i < cluster.num_hosts; i++) {
-        for (j = 0; j < vector_count(&cluster.hosts[i].egress_port.flows); ++i) {
-            // pack rates. then send them in a batch
-            cluster.hosts[i].egress_port.flows[j]->rate;
-
+        count = 0;
+        /* find rates to distribute. then send them in a batch */
+        for (j = 0; j < vector_count(&cluster.hosts[i].egress_port->flows); ++i) {
+            flow = vector_get(&cluster.hosts[i].egress_port->flows, j);
+            if (!flow->is_read) {
+                cluster.hosts[i].ca_resp.rate_updates[count].rate = flow->rate;
+                cluster.hosts[i].ca_resp.rate_updates[count].flow_idx = flow->flow_idx;
+                ++count;
+            }
         }
-        ++count;
+        for (j = 0; j < vector_count(&cluster.hosts[i].ingress_port->flows); ++i) {
+            flow = vector_get(&cluster.hosts[i].egress_port->flows, j);
+            if (flow->is_read) {
+                cluster.hosts[i].ca_resp.rate_updates[count].rate = flow->rate;
+                cluster.hosts[i].ca_resp.rate_updates[count].flow_idx = flow->flow_idx;
+                ++count;
+            }
+        }
+
+        /* send out response to the host */
+        cluster.hosts[i].ca_resp.header.num_rate_updates = count;
+        cluster.hosts[i].ca_resp.header.sender_head = cluster.hosts[i].ring->head;
+        //++cluster.hosts[i].header.ca_resp.id;
+        cluster.hosts[i].ca_resp.header.id += 100;
+
+        sge.lkey = cluster.hosts[i].ctx->resp_mr->lkey;
+        sge.addr = (uintptr_t)&cluster.hosts[i].ca_resp;
+        sge.length = sizeof(struct arbiter_response_header) + count * sizeof(struct arbiter_rate_update);
+
+        wr.wr.rdma.rkey = cluster.hosts[i].ctx->rem_dest->rkey_resp;
+        wr.wr.rdma.remote_addr = cluster.hosts[i].ctx->rem_dest->vaddr_resp;
+
+        ibv_post_send(cluster.hosts[i].ctx->qp_req, &wr, &bad_wr);
+        printf("sending out new response (Host<%d>-[%d])\n", i, cluster.hosts[i].ca_resp.header.id);
+
+        do {
+            num_comp = ibv_poll_cq(cluster.hosts[i].ctx->cq_req, 1, &wc);
+        } while (num_comp == 0);
+
+        if (num_comp < 0 || wc.status != IBV_WC_SUCCESS) {
+            fprintf(stderr, "error polling wc from response wr\n");
+            //printf("num_comp = %d\n", num_comp);
+            //printf("wc.status = %d\n", wc.status);
+            perror("ibv_poll_cq");
+            exit(EXIT_FAILURE);
+        }
+        printf("done polling the wr\n");
     }
-    
-    cluster.hosts[i].ca_resp.rate = rate;
-    cluster.hosts[i].ca_resp.sender_head = cluster.hosts[i].ring->head;
-    //++cluster.hosts[i].ca_resp.id;
-    cluster.hosts[i].ca_resp.id += 100;
-    //cluster.hosts[i].ca_resp.check = 1;
 
-    sge.lkey = cluster.hosts[i].ctx->resp_mr->lkey;
-    sge.addr = (uintptr_t)&cluster.hosts[i].ca_resp;
-
-    wr.wr.rdma.rkey = cluster.hosts[i].ctx->rem_dest->rkey_resp;
-    wr.wr.rdma.remote_addr = cluster.hosts[i].ctx->rem_dest->vaddr_resp;
-
-    ibv_post_send(cluster.hosts[i].ctx->qp_req, &wr, &bad_wr);
-    printf("sending out new response (Host<%d>-[%d])\n", i, cluster.hosts[i].ca_resp.id);
-
-    do {
-        num_comp = ibv_poll_cq(cluster.hosts[i].ctx->cq_req, 1, &wc);
-    } while (num_comp == 0);
-
-    if (num_comp < 0 || wc.status != IBV_WC_SUCCESS) {
-        printf("num_comp = %d\n", num_comp);
-        printf("wc.status = %d\n", wc.status);
-        perror("ibv_poll_cq");
-        break;
-    }
-    printf("done polling the wr\n");
 
 }
 
@@ -177,11 +197,6 @@ uint32_t compute_rate(struct host_request *host_req)
         }
     }
 
-    //TODO: for READ flow, needs to assign rate to ingress ports
-    /* WRITE/SEND and READ treated differently:
-        For WRITE/SEND flows, the egress port that posts the wr needs to receive rate update.
-        For READ flows, the ingress port that posts the wr needs to receive rate update.
-    */
     /* both src and dest ports needs to be updated:
         if a given flow is assigned a rate at an egress port,
             find the flow's dest port (which is an ingress port) and decrement the unassigned_flows there.
@@ -198,6 +213,7 @@ uint32_t compute_rate(struct host_request *host_req)
             }
 
             flow->rate = (port->max_rate - port->used_rate) / port->unassigned_flows;
+            printf("rate = %d\n", flow->rate);
             flow->is_assigned = 1;
             port->unassigned_flows--;
             port->used_rate += flow->rate;
@@ -208,7 +224,7 @@ uint32_t compute_rate(struct host_request *host_req)
                 cluster.hosts[flow->dest].ingress_port->used_rate += flow->rate;
             } else {
                 cluster.hosts[flow->src].egress_port->unassigned_flows--;
-                cluster.hosts[flow->src].egress_port->used_reate += flow->rate;
+                cluster.hosts[flow->src].egress_port->used_rate += flow->rate;
             }
 
             if (port->unassigned_flows < 0) {

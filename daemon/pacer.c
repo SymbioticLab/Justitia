@@ -260,7 +260,9 @@ static void send_out_request()
                         num_comp = ibv_poll_cq(cb.ctx->cq_rmf, 1, &wc);
                 } while (num_comp == 0);
                 if (num_comp < 0 || wc.status != IBV_WC_SUCCESS) {
-                    break;
+                    fprintf(stderr, "error polling wc from request wr\n");
+                    perror("ibv_poll_cq");
+                    exit(EXIT_FAILURE);
                 }
                 printf("done polling the wr\n");
                 

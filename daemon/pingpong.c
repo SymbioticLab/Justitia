@@ -6,7 +6,7 @@ static const int port2 = 18516;
 static const int ib_port = 1;
 static const int mtu = IBV_MTU_2048;
 
-static struct pingpong_context * alloc_qps(struct host_request *, struct arbiter_response *, int);
+static struct pingpong_context * alloc_qps(struct host_request *, struct arbiter_response_region *, int);
 static struct pingpong_dest * pp_client_exch_dest(const char *, const char *, struct pingpong_dest *, char);
 static struct pingpong_dest * pp_server_exch_dest(struct pingpong_context *, const struct pingpong_dest *, int);
 static int pp_connect_ctx(struct pingpong_context *, int, struct pingpong_dest *, struct pingpong_dest *, int, char);
@@ -72,7 +72,7 @@ struct pingpong_context *init_ctx_and_build_conn(const char *addr, const char *a
     return ctx;
 }
 
-static struct pingpong_context *alloc_qps(struct host_request *host_req, struct arbiter_response *ca_resp, int req_buf_size) {
+static struct pingpong_context *alloc_qps(struct host_request *host_req, struct arbiter_response_region *ca_resp, int req_buf_size) {
     struct ibv_device **dev_list;
     struct ibv_device *ib_dev;
     struct pingpong_context *ctx;
@@ -127,7 +127,7 @@ static struct pingpong_context *alloc_qps(struct host_request *host_req, struct 
         goto clean_req_mr;
     }
 
-    ctx->resp_mr = ibv_reg_mr(ctx->pd, ca_resp, sizeof(struct arbiter_response), IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_WRITE);
+    ctx->resp_mr = ibv_reg_mr(ctx->pd, ca_resp, sizeof(struct arbiter_response_region), IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_WRITE);
     if (!ctx->resp_mr) {
         fprintf(stderr, "Couldn't register RESP_MR\n");
         goto clean_resp_mr;

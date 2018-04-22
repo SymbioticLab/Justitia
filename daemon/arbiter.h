@@ -43,20 +43,18 @@ struct flow {
     uint8_t is_assigned;                    /* whether this flow has benn assigned by the rate computation algorithm */
     uint8_t in_transit;                     /* whether the slot in the flow array can be used */
     uint8_t is_read;
-    //uint16_t remote_host;                   /* receiver in egress port; sender in ingress port */
     uint16_t src;                           /* src and dest indicates the direction of the data flowing in the cluster */
     uint16_t dest;
-    //uint16_t flow_cnt;
+    uint16_t flow_idx;						/* idx in the flow array at the host pacer */
     uint32_t rate;                          /* assigned rate */
 };
 
 struct port {
     //uint8_t is_assigned;                    /* whether this port has been assigned by the rate computation algorithm */
     uint16_t host_id;
-    uint_16_t is_egress;
+    uint16_t is_egress;
     uint32_t unassigned_flows;              /* number of flows that haven't been assigned */
-    //flow_t *flows;                          /* a table of flows. size = # of hosts in the cluster. */
-    vector_t flows;
+    vector_t flows;                         /* a list of flows. size = # of flows in this port. */
     //uint32_t flow_map;                      /* table of flows. value in each slot is flow count. For egress port, idx =: receiver_host; for ingress port, idx =: sender_host */
     uint32_t max_rate;                      /* max rate of the port. default to line rate. Assume same for both egress and ingress port */
     uint32_t used_rate;                     /* rate already assigned at the port. */
@@ -68,14 +66,12 @@ struct host_info {
     struct pingpong_context *ctx;           /* other rdma related ctx goes here */
     port_t *ingress_port;
     port_t *egress_port;
-    struct arbiter_response ca_resp;        /* pinned for response send back to the host */
+    struct arbiter_response_region ca_resp;        /* pinned for response send back to the host */
 };
 
 struct cluster_info {                       /* global knowledge of CA */
     uint16_t num_hosts;
     struct host_info *hosts;                /* array of structures containning info of each host in the cluster */
-    //uint32_t *host_port_table;          /* flow cnt for ingress and egress port for each host in the cluster */
-    //unsigned int *switch_port_table;        /* flow cnt for egress ports at the switch */
     flow_t flows[MAX_FLOWS];
     uint16_t next_slot;
 };
