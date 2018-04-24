@@ -83,8 +83,8 @@ static void update_flow_info(struct host_request *req, int src_idx)
 
     //TODO: update when flow_exit msg comes
 
-    fprintf(stderr, "Error in updating flow info\n");
-    exit(EXIT_FAILURE);
+    //fprintf(stderr, "Error in updating flow info\n");
+    //exit(EXIT_FAILURE);
 
 }
 
@@ -236,6 +236,7 @@ static void handle_host_updates()
     unsigned int i, head;
     unsigned int msg_flag = 0;
     while (1) {
+        msg_flag = 0;   /* "receving msg from any host will cause response sent to all hosts" is the current implementation */
         for (i = 0; i < cluster.num_hosts; ++i) {
             head = cluster.hosts[i].ring->head + 1;
             if (head == RING_BUFFER_SIZE)
@@ -266,7 +267,6 @@ static void handle_host_updates()
             }
 
             if (msg_flag) {
-                msg_flag = 0;
                 /* update head pointer */
                 if (head == 0) {
                     cluster.hosts[i].ring->head = RING_BUFFER_SIZE - 1;

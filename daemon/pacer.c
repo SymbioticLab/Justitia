@@ -394,7 +394,7 @@ static void flow_handler()
             }
 
             //start = get_cycles();
-            submit_request(FLOW_JOIN, 0, cb.sb->flows[slot].dlid, slot, 0);
+            submit_request(FLOW_JOIN, 0, __atomic_load_n(&cb.sb->flows[slot].dlid, __ATOMIC_RELAXED), slot, 0);
             //int j;
             //for (j = 0; j < 200; j++) {
             //    submit_request(FLOW_JOIN, 0, cb.sb->flows[cb.next_slot].dest_qp_num, 0);
@@ -489,7 +489,7 @@ static void handle_response()
             __atomic_store_n(&cb.sender_head, cb.ca_resp.header.sender_head, __ATOMIC_RELAXED);
             //__atomic_store_n(&cb.virtual_link_cap, cb.ca_resp.rate, __ATOMIC_RELAXED);
             /* temporary hack */
-            __atomic_store_n(&cb.virtual_link_cap, 6000, __ATOMIC_RELAXED);
+            __atomic_store_n(&cb.virtual_link_cap, LINE_RATE_MB, __ATOMIC_RELAXED);
             
             num_rate_updates = __atomic_load_n(&cb.ca_resp.header.num_rate_updates, __ATOMIC_RELAXED);
             printf("received a new response from central arbiter [id:%d, num_updates = %d]\n", curr_id, cb.ca_resp.header);

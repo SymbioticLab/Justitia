@@ -1372,7 +1372,7 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 	//// Get dlid info
 	if (flow) {
 		if (qp->state == IBV_QPS_INIT && attr->qp_state == IBV_QPS_RTR) {
-			__atomic_store_n(&flow->dlid, &attr->ah_attr.dlid, __ATOMIC_RELAXED);
+			__atomic_store_n(&flow->dlid, attr->ah_attr.dlid, __ATOMIC_RELAXED);
 		}
 	}
 
