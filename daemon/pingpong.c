@@ -73,6 +73,7 @@ struct pingpong_context *init_ctx_and_build_conn(const char *addr, const char *a
 }
 
 static struct pingpong_context *alloc_qps(struct host_request *host_req, struct arbiter_response_region *ca_resp, int req_buf_size) {
+    printf("Entering alloc_qps\n");
     struct ibv_device **dev_list;
     struct ibv_device *ib_dev;
     struct pingpong_context *ctx;

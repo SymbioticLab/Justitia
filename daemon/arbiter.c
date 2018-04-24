@@ -88,16 +88,6 @@ static void update_flow_info(struct host_request *req, int src_idx)
 
 }
 
-static void distribute_rates()
-{
-    return;
-}
-
-static void submit_response(int rate)
-{
-
-}
-
 /* send out responses (rate updates, sender's copy of head) to the hosts that gets affected */ 
 static void send_out_responses()
 {
@@ -158,7 +148,7 @@ static void send_out_responses()
         wr.wr.rdma.remote_addr = cluster.hosts[i].ctx->rem_dest->vaddr_resp;
 
         ibv_post_send(cluster.hosts[i].ctx->qp_req, &wr, &bad_wr);
-        printf("sending out new response (Host<%d>-[%d])\n", i, cluster.hosts[i].ca_resp.header.id);
+        printf("sending out new response (Host<%d>-[%d], num_updates = %d)\n", i, cluster.hosts[i].ca_resp.header.id, count);
 
         do {
             num_comp = ibv_poll_cq(cluster.hosts[i].ctx->cq_req, 1, &wc);
@@ -244,16 +234,17 @@ static void handle_host_updates()
 {
     /* checking ring buffer for each host */
     unsigned int i, head;
+    unsigned int msg_flag = 0;
     while (1) {
         for (i = 0; i < cluster.num_hosts; ++i) {
             head = cluster.hosts[i].ring->head + 1;
             if (head == RING_BUFFER_SIZE)
                 head = 0;
-            //uint32_t rate = 0;
-            
+
             while (__atomic_load_n(&cluster.hosts[i].ring->host_req[head].check_byte, __ATOMIC_RELAXED) == 1) {
             //while ((num_req = __atomic_load_n(&cluster.hosts[i].ring->host_req[head].num_req, __ATOMIC_RELAXED)) != 0) {
                 printf("Getting new request from Host%d; ", i);
+                msg_flag = 1;
                 if (cluster.hosts[i].ring->host_req[head].type == RMF_ABOVE_TARGET) {
                     printf("received RMF_EXCEED_TARGET message\n");
                 } else if (cluster.hosts[i].ring->host_req[head].type == RMF_BELOW_TARGET) {
@@ -273,15 +264,19 @@ static void handle_host_updates()
                 if (head == RING_BUFFER_SIZE)
                     head = 0;
             }
-            /* update head pointer */
-            if (head == 0) {
-                cluster.hosts[i].ring->head = RING_BUFFER_SIZE - 1;
-            } else {
-                cluster.hosts[i].ring->head = head - 1;
-            }
 
-            /* send out responses (rate updates, sender's copy of head) to the hosts that gets affected */ 
-            send_out_responses();
+            if (msg_flag) {
+                msg_flag = 0;
+                /* update head pointer */
+                if (head == 0) {
+                    cluster.hosts[i].ring->head = RING_BUFFER_SIZE - 1;
+                } else {
+                    cluster.hosts[i].ring->head = head - 1;
+                }
+
+                /* send out responses (rate updates, sender's copy of head) to the hosts that gets affected */ 
+                send_out_responses();
+            }
         }
     }
 
@@ -405,18 +400,19 @@ int main(int argc, char **argv)
         /* init ctx, mr, and connect to each host via RDMA RC */
         cluster.hosts[i].ring = calloc(1, sizeof(struct request_ring_buffer));
         cluster.hosts[i].ring->head = RING_BUFFER_SIZE - 1;
-        cluster.hosts[i].ingress_port = calloc(1, sizeof(flow_t));
+        cluster.hosts[i].ingress_port = calloc(1, sizeof(port_t));
         cluster.hosts[i].ingress_port->max_rate = LINE_RATE_MB;
         cluster.hosts[i].ingress_port->host_id = i;
         cluster.hosts[i].ingress_port->is_egress = 0;
         vector_init(&cluster.hosts[i].ingress_port->flows);
-        cluster.hosts[i].egress_port = calloc(1, sizeof(flow_t));
+        cluster.hosts[i].egress_port = calloc(1, sizeof(port_t));
         cluster.hosts[i].egress_port->max_rate = LINE_RATE_MB;
         cluster.hosts[i].egress_port->host_id = i;
         cluster.hosts[i].egress_port->is_egress = 1;
         vector_init(&cluster.hosts[i].egress_port->flows);
         //cluster.hosts[i].ingress_port.flow_map = calloc(num_hosts, sizeof(uint16_t));
         //cluster.hosts[i].egress_port.flow_map = calloc(num_hosts, sizeof(uint16_t));
+        //memset(&cluster.hosts[i].ca_resp, 0, sizeof(struct arbiter_response_region));
 
         if (!RMF_DISTRIBUTE_AMONG_HOSTS) {
             cluster.hosts[i].ctx = init_ctx_and_build_conn(ip[i], NULL, 1, gid_idx[i], cluster.hosts[i].ring->host_req, &cluster.hosts[i].ca_resp, '2');

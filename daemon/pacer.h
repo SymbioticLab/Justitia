@@ -52,7 +52,7 @@ struct control_block {
     ringbuf_worker_t *flow_handler_worker;      /* ringbuf worker handling flow update request */
     ringbuf_worker_t *latency_monitor_worker;   /* ringbuf worker handling RMF latency update request */
     struct host_request *host_req;              /* actual data buffer for the ring */
-    struct arbiter_response_header ca_resp;     /* MR used to hold arbiter's response */
+    struct arbiter_response_region ca_resp;     /* MR used to hold arbiter's response */
     uint16_t sender_head;                       /* sender's copy of head at remote ring buffer */
     uint16_t sender_tail;                       /* where sender writes to remote ring buffer */
     struct pingpong_context *ctx;
