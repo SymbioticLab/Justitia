@@ -478,7 +478,7 @@ static inline void fetch_token_read()
 
 static void handle_response()
 {
-    uint32_t curr_id = 1, prev_id = 0;
+    uint32_t curr_id, prev_id = 0;
     int i = 0, num_rate_updates = 0, flow_idx, rate = 0;
     while (1) {
         /* update sender's copy of head at arbiter's ring buffer, and get new rate*/

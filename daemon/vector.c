@@ -21,7 +21,7 @@ void vector_add(vector_t *v, void *e)
     if (v->size == 0) {
         v->size = 10;
         v->data = malloc(sizeof(void*) * v->size);
-        memset(v->data, '\0', sizeof(void*) * v->size);
+        memset(v->data, 0, sizeof(void*) * v->size);
     }
 
     if (v->size == v->count) {

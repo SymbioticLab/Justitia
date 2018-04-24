@@ -61,6 +61,7 @@ static void update_flow_info(struct host_request *req, int src_idx)
                 cluster.hosts[i].ingress_port->unassigned_flows++;
                 //cluster.hosts[src_idx].egress_port_flow_cnt++;
                 //cluster.hosts[i].ingress_port_flow_cnt++;
+                printf("DEBUG update flow info: new flow[%d] added to host%d's egress port and host%d's ingress port\n", cluster.next_slot, src_idx, i);
             } else {                /* READ: src and dest are consistent with data flowing direction */
                 cluster.flows[cluster.next_slot].src = i;
                 cluster.flows[cluster.next_slot].dest = src_idx;
@@ -80,6 +81,7 @@ static void update_flow_info(struct host_request *req, int src_idx)
     do {
         cluster.next_slot = (cluster.next_slot + 1) % MAX_FLOWS;
     } while (cluster.flows[cluster.next_slot].in_transit);
+    printf("update: cluster.next_slot = %d\n", cluster.next_slot);
 
     //TODO: update when flow_exit msg comes
 
@@ -117,7 +119,9 @@ static void send_out_responses()
     for (i = 0; i < cluster.num_hosts; i++) {
         count = 0;
         /* find rates to distribute. then send them in a batch */
-        for (j = 0; j < vector_count(&cluster.hosts[i].egress_port->flows); ++i) {
+        ////TODO: add mutex to enxure multi-thread safe later
+        printf("host[%d] ingress port flow cnt = %d; egress port flow cnt = %d\n", i, vector_count(&cluster.hosts[i].ingress_port->flows), vector_count(&cluster.hosts[i].egress_port->flows));
+        for (j = 0; j < vector_count(&cluster.hosts[i].egress_port->flows); ++j) {
             flow = vector_get(&cluster.hosts[i].egress_port->flows, j);
             if (!flow->is_read) {
                 cluster.hosts[i].ca_resp.rate_updates[count].rate = flow->rate;
@@ -125,8 +129,8 @@ static void send_out_responses()
                 ++count;
             }
         }
-        for (j = 0; j < vector_count(&cluster.hosts[i].ingress_port->flows); ++i) {
-            flow = vector_get(&cluster.hosts[i].egress_port->flows, j);
+        for (j = 0; j < vector_count(&cluster.hosts[i].ingress_port->flows); ++j) {
+            flow = vector_get(&cluster.hosts[i].ingress_port->flows, j);
             if (flow->is_read) {
                 cluster.hosts[i].ca_resp.rate_updates[count].rate = flow->rate;
                 cluster.hosts[i].ca_resp.rate_updates[count].flow_idx = flow->flow_idx;
@@ -146,6 +150,9 @@ static void send_out_responses()
 
         wr.wr.rdma.rkey = cluster.hosts[i].ctx->rem_dest->rkey_resp;
         wr.wr.rdma.remote_addr = cluster.hosts[i].ctx->rem_dest->vaddr_resp;
+        printf("DEDEDE rkey_resp = %08Lx; i = %d\n\n", wr.wr.rdma.rkey, i);
+        printf("DEDEDE rkey_resp host 0 = %08Lx\n\n", cluster.hosts[0].ctx->rem_dest->rkey_resp);
+        printf("DEDEDE rkey_resp host 1 = %08Lx\n\n", cluster.hosts[1].ctx->rem_dest->rkey_resp);
 
         ibv_post_send(cluster.hosts[i].ctx->qp_req, &wr, &bad_wr);
         printf("sending out new response (Host<%d>-[%d], num_updates = %d)\n", i, cluster.hosts[i].ca_resp.header.id, count);
@@ -180,7 +187,7 @@ uint32_t compute_rate(struct host_request *host_req)
             sort_key = port->max_rate / port->unassigned_flows;
             pq_push(ports, sort_key, port);
         }
-        port = cluster.hosts[i].egress_port;
+        port = cluster.hosts[i].ingress_port;
         if (port->unassigned_flows) {
             sort_key = port->max_rate / port->unassigned_flows;
             pq_push(ports, sort_key, port);

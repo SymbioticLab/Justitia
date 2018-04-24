@@ -468,6 +468,8 @@ static struct pingpong_dest * pp_server_exch_dest(struct pingpong_context *ctx,
     }
     printf("DEBUG: (pacer) local vaddr_req:%016Lx\n", my_dest->vaddr_req);
     printf("DEBUG: (pacer) remote vaddr_req:%016Lx\n", rem_dest->vaddr_req);
+    printf("DEBUG: (pacer) local rkey_resp:%08Lx\n", my_dest->rkey_resp);
+    printf("DEBUG: (pacer) remote rkey_resp:%08Lx\n", rem_dest->rkey_resp);
 
     wire_gid_to_gid(gid, &rem_dest->gid);
 
