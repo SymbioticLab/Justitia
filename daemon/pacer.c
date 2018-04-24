@@ -362,7 +362,7 @@ static void flow_handler()
         /* check join */
         len = recv(s2, (void *)buf, (size_t)MSG_LEN, 0);
         printf("receive message of length %d.\n", len);
-        buf[len] = '\0';
+        ////buf[len] = '\0';     /* now msg len is always fixed at MSG_LEN; msg itself will contain null char */
         printf("message is %s.\n", buf);
         if (strcmp(buf, "join") == 0)
         {
@@ -384,7 +384,7 @@ static void flow_handler()
             /* submit update to CA */
             if ((len = recv(s2, (void *)buf, (size_t)MSG_LEN, 0)) > 0) {
                 printf("receive slot message of length %d.\n", len);
-                buf[len] = '\0';
+                ////buf[len] = '\0';    /* now msg len is always fixed at MSG_LEN; msg itself will contain null char */
                 slot = strtol(buf, NULL, 10);
                 printf("flow slot is %d.\n", slot);
             } else {
@@ -406,7 +406,7 @@ static void flow_handler()
             printf("READ detected\n");
             if ((len = recv(s2, (void *)buf, (size_t)MSG_LEN, 0)) > 0) {
                 printf("receive slot message of length %d.\n", len);
-                buf[len] = '\0';
+                ////buf[len] = '\0';    /* now msg len is always fixed at MSG_LEN; msg itself will contain null char */
                 slot = strtol(buf, NULL, 10);
                 printf("flow slot is %d.\n", slot);
             } else {
@@ -439,7 +439,7 @@ static void flow_handler()
             */
             if ((len = recv(s2, (void *)buf, (size_t)MSG_LEN, 0)) > 0) {
                 printf("receive slot message of length %d.\n", len);
-                buf[len] = '\0';
+                ////buf[len] = '\0';    /* now msg len is always fixed at MSG_LEN; msg itself will contain null char */
                 slot = strtol(buf, NULL, 10);
                 printf("flow slot is %d.\n", slot);
             } else {

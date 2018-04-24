@@ -65,7 +65,8 @@ static void contact_pacer(int join) {
 
     if (!join) {
         strcpy(str, "exit");
-        if (send(s, str, strlen(str), 0) == -1) {
+        ////if (send(s, str, strlen(str), 0) == -1) {
+        if (send(s, str, MSG_LEN, 0) == -1) {
             perror("send: exit");
             exit(1);
         }
@@ -80,7 +81,8 @@ static void contact_pacer(int join) {
         /* send join message */
         printf("Sending join message...\n");
         strcpy(str, "join");
-        if (send(s, str, strlen(str), 0) == -1) {
+        ////if (send(s, str, strlen(str), 0) == -1) {
+        if (send(s, str, MSG_LEN, 0) == -1) {
             perror("send: join");
             exit(1);
         }

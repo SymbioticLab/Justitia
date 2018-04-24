@@ -79,7 +79,7 @@ static void contact_pacer_write_join() {
     }
    
     strcpy(str, "WRITEjoin");
-    if (send(s, str, strlen(str), 0) == -1) {
+    if (send(s, str, MSG_LEN, 0) == -1) {
         perror("send: WRITEjoin");
         exit(1);
     }
