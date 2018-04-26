@@ -41,7 +41,7 @@ struct request_ring_buffer {
 /* represent a set of flows starting/ending from/to a particular host */
 struct flow {
     uint8_t is_assigned;                    /* whether this flow has benn assigned by the rate computation algorithm */
-    uint8_t in_transit;                     /* whether the slot in the flow array can be used */
+    //uint8_t in_transit;                     /* whether the slot in the flow array can be used */
     uint8_t is_read;
     uint16_t src;                           /* src and dest indicates the direction of the data flowing in the cluster */
     uint16_t dest;
@@ -67,13 +67,12 @@ struct host_info {
     port_t *ingress_port;
     port_t *egress_port;
     struct arbiter_response_region ca_resp;        /* pinned for response send back to the host */
+    flow_t flows[MAX_FLOWS];                /* flows joining from each host */
 };
 
 struct cluster_info {                       /* global knowledge of CA */
     uint16_t num_hosts;
     struct host_info *hosts;                /* array of structures containning info of each host in the cluster */
-    flow_t flows[MAX_FLOWS];
-    uint16_t next_slot;
 };
 
 extern struct cluster_info cluster;
