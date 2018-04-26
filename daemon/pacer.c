@@ -476,6 +476,19 @@ static inline void fetch_token_read()
     __atomic_fetch_sub(&cb.tokens_read, 1, __ATOMIC_RELAXED);
 }
 
+static void print_rate_table()
+{
+    int i;
+    int rate;
+    printf("----RATE TABLE----\n");
+    for (i = 0; i < MAX_FLOWS; i++) {
+        if ((rate  = __atomic_load_n(&cb.rate_table[i], __ATOMIC_RELAXED)) != 0) {
+            printf("%d\t|     %d\n", i, rate);
+        }
+    }
+    printf("------------------\n");
+}
+
 static void handle_response()
 {
     uint32_t curr_id, prev_id = 0;
@@ -487,19 +500,21 @@ static void handle_response()
         if (curr_id > prev_id) {
             prev_id = curr_id;
             __atomic_store_n(&cb.sender_head, cb.ca_resp.header.sender_head, __ATOMIC_RELAXED);
-            //__atomic_store_n(&cb.virtual_link_cap, cb.ca_resp.rate, __ATOMIC_RELAXED);
             /* temporary hack */
             __atomic_store_n(&cb.virtual_link_cap, LINE_RATE_MB, __ATOMIC_RELAXED);
             
             num_rate_updates = __atomic_load_n(&cb.ca_resp.header.num_rate_updates, __ATOMIC_RELAXED);
-            printf("received a new response from central arbiter [id:%d, num_updates = %d]\n", curr_id, cb.ca_resp.header);
+            printf("received a new response from central arbiter [id:%d, num_updates = %d]\n", curr_id, cb.ca_resp.header.num_rate_updates);
             printf("new sender_head: %d\n", cb.sender_head);
             for (i = 0; i < num_rate_updates; i++) {
                 rate = __atomic_load_n(&cb.ca_resp.rate_updates[i].rate, __ATOMIC_RELAXED);
                 flow_idx = __atomic_load_n(&cb.ca_resp.rate_updates[i].flow_idx, __ATOMIC_RELAXED);
-                printf("rate update #%d: flow[%d] = %d", i, flow_idx, rate);
+                printf("rate update #%d: flow[%d] = %d\n", i, flow_idx, rate);
+                //TODO: update rate for each individual flows
+                __atomic_store_n(&cb.rate_table[flow_idx], rate, __ATOMIC_RELAXED);
             }
-        } 
+            print_rate_table();
+        }
         //TODO: find another way to detect error. The following way doesn't work for obvious reasons
         //else {
         //    fprintf(stderr, "Error receiving responses, prev_id: %d, new_id: %d\n", prev_id, cb.ca_resp.header.id);
@@ -681,6 +696,7 @@ int main(int argc, char **argv)
     cb.sender_head = RING_BUFFER_SIZE - 1;
     cb.sender_tail = 0;
     memset(&cb.ca_resp, 0, sizeof(struct arbiter_response_region));
+    memset(cb.rate_table, 0, sizeof(uint32_t) * MAX_FLOWS);
     for (i = 0; i < MAX_FLOWS; i++)
     {
         cb.sb->flows[i].pending = 0;

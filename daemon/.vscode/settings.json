@@ -15,5 +15,18 @@
         "vector": "c",
         "string.h": "c",
         "get_clock.h": "c"
-    }
+    },
+    "sync-rsync.onSave": true,
+    "sync-rsync.local": "/Users/yiwenzhang/Research/frdma/",
+    "sync-rsync.sites": [
+        {
+            "remotePath": "yiwenzhg@apt043.apt.emulab.net:/users/yiwenzhg/frdma"
+        },
+        {
+            "remotePath": "yiwenzhg@apt037.apt.emulab.net:/users/yiwenzhg/frdma"
+        },
+        {
+            "remotePath": "yiwenzhg@apt048.apt.emulab.net:/users/yiwenzhg/frdma"
+        }
+    ]
 }

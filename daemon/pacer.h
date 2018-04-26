@@ -63,6 +63,7 @@ struct control_block {
     uint32_t local_read_rate;
     uint16_t next_slot;
     uint16_t num_big_read_flows;
+    uint32_t rate_table[MAX_FLOWS];             /* used to store the current rate assignment for each flow */
 };
 
 extern struct control_block cb;            /* declaration */
