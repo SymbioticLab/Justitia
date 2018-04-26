@@ -46,6 +46,8 @@ struct flow {
     uint16_t src;                           /* src and dest indicates the direction of the data flowing in the cluster */
     uint16_t dest;
     uint16_t flow_idx;						/* idx in the flow array at the host pacer */
+    node_t *list_pos_egress;                /* list node pointer for the flow at the egress port. used for easier node deletion */
+    node_t *list_pos_ingress;               /* list node pointer for the flow at the ingress port. used for easier node deletion */
     uint32_t rate;                          /* assigned rate */
 };
 

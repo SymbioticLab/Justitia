@@ -153,11 +153,13 @@ void monitor_latency(void *arg)
         /* send an update to CA only at the transition of tail_99 exceeds target or tail_99 go below target */
         if (tail_99 > TAIL && prev_tail <= TAIL) {
             submit_request(RMF_ABOVE_TARGET, 0, 0, 0, 1);
+            printf("sending RMF_ABOVE_TARGET message\n");
             //if (submit_request(RMF_ABOVE_TARGET, 0, 0, 1)) {
             //    fprintf(stderr, "Failed to submit a 'latency above target' update to CA\n");
             //}
         } else if (tail_99 <= TAIL && prev_tail > TAIL) {
             submit_request(RMF_BELOW_TARGET, 0, 0, 0, 1);
+            printf("sending RMF_BELOW_TARGET message\n");
             //if (submit_request(RMF_BELOW_TARGET, 0, 0, 1)) {
             //    fprintf(stderr, "Failed to submit a 'latency below target' update to CA\n");
             //}
