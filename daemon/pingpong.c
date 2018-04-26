@@ -1,5 +1,4 @@
 #include "pingpong.h"
-#include "arbiter.h"
 
 static const int port = 18515;
 static const int port2 = 18516;

@@ -58,7 +58,7 @@ static void update_flow_info(struct host_request *req, int src_idx)
                     cluster.hosts[i].flows[idx].dest = i;
                     cluster.hosts[i].flows[idx].is_read = 0;
                     list_push(&cluster.hosts[src_idx].egress_port->flows, &cluster.hosts[i].flows[idx]);
-                    cluster.hosts[i].flows[idx].list_pos_egress = cluster.hosts[src_idx].egress_port->flows.head;
+                    cluster.hosts[src_idx].flows[idx].list_pos_egress = cluster.hosts[src_idx].egress_port->flows.head;
                     cluster.hosts[src_idx].egress_port->unassigned_flows++;
                     list_push(&cluster.hosts[i].ingress_port->flows, &cluster.hosts[i].flows[idx]);
                     cluster.hosts[i].flows[idx].list_pos_ingress = cluster.hosts[i].ingress_port->flows.head;
@@ -69,7 +69,7 @@ static void update_flow_info(struct host_request *req, int src_idx)
                     cluster.hosts[i].flows[idx].dest = src_idx;
                     cluster.hosts[i].flows[idx].is_read = 1;
                     list_push(&cluster.hosts[src_idx].ingress_port->flows, &cluster.hosts[i].flows[idx]);
-                    cluster.hosts[i].flows[idx].list_pos_ingress = cluster.hosts[src_idx].ingress_port->flows.head;
+                    cluster.hosts[src_idx].flows[idx].list_pos_ingress = cluster.hosts[src_idx].ingress_port->flows.head;
                     cluster.hosts[src_idx].ingress_port->unassigned_flows++;
                     list_push(&cluster.hosts[i].egress_port->flows, &cluster.hosts[i].flows[idx]);
                     cluster.hosts[i].flows[idx].list_pos_egress = cluster.hosts[i].egress_port->flows.head;
@@ -84,13 +84,17 @@ static void update_flow_info(struct host_request *req, int src_idx)
         for (i = 0; i < cluster.num_hosts; i++) {
             if (req->dlid == cluster.hosts[i].lid) {
                 if (!req->is_read) {    /* WRITE/SEND */
-                    list_remove(&cluster.hosts[src_idx].egress_port->flows, cluster.hosts[i].flows[idx].list_pos_egress);
+                    list_remove(&cluster.hosts[src_idx].egress_port->flows, cluster.hosts[src_idx].flows[idx].list_pos_egress);
                     list_remove(&cluster.hosts[i].ingress_port->flows, cluster.hosts[i].flows[idx].list_pos_ingress);
                     printf("DEBUG update flow info: flow[%d] removed from host%d's egress port and host%d's ingress port\n", idx, src_idx, i);
+                    printf("DEBUG update flow info: host%d's egress port length = %zu; host%d's ingress port length = %zu\n", 
+                        src_idx, cluster.hosts[src_idx].egress_port->flows.length, i, cluster.hosts[i].ingress_port->flows.length);
                 } else {                /* READ: src and dest are consistent with data flowing direction */
-                    list_remove(&cluster.hosts[src_idx].ingress_port->flows, cluster.hosts[i].flows[idx].list_pos_ingress);
+                    list_remove(&cluster.hosts[src_idx].ingress_port->flows, cluster.hosts[src_idx].flows[idx].list_pos_ingress);
                     list_remove(&cluster.hosts[i].egress_port->flows, cluster.hosts[i].flows[idx].list_pos_egress);
                     printf("DEBUG update flow info: flow[%d] removed from host%d's ingress port and host%d's egress port\n", idx, src_idx, i);
+                    printf("DEBUG update flow info: host%d's ingress port length = %zu; host%d's egress port length = %zu\n", 
+                        src_idx, cluster.hosts[src_idx].ingress_port->flows.length, i, cluster.hosts[i].egress_port->flows.length);
                 }
                 break;
             }
@@ -191,6 +195,7 @@ static void send_out_responses()
 
 }
 
+//TODO: add mutex for multi-threading in flows list later
 void compute_rate()
 {
     heap_t *ports = calloc(1, sizeof(heap_t));
@@ -200,13 +205,13 @@ void compute_rate()
     node_t *node = NULL;
     for (i = 0; i < cluster.num_hosts; ++i) {
         port = cluster.hosts[i].egress_port;
-        if (port->unassigned_flows) {   /* ports with unassigned_flows = 0 does not get pushed into the the prio queue */
+        if (port->flows.length) {
             //sort_key = port->max_rate / port->unassigned_flows;
             sort_key = port->max_rate / port->flows.length;
             pq_push(ports, sort_key, port);
         }
         port = cluster.hosts[i].ingress_port;
-        if (port->unassigned_flows) {
+        if (port->flows.length) {
             //sort_key = port->max_rate / port->unassigned_flows;
             sort_key = port->max_rate / port->flows.length;
             pq_push(ports, sort_key, port);
@@ -219,8 +224,9 @@ void compute_rate()
         if the flow is assigned at an ingress port instead,
             find the flow's src port (which is an egress port) and decrement the counter there.
     */
-    port->used_rate = 0;
     while((port = pq_pop(ports)) != NULL) {
+        port->unassigned_flows = port->flows.length;
+        port->used_rate = 0;
         printf("COMPUTE_RATE: @Port[%d], num_flow = %zu, num_unassigned_flow = %d\n", port->host_id, port->flows.length, port->unassigned_flows);
         node = port->flows.head;
         while (node != NULL) {
@@ -253,6 +259,7 @@ void compute_rate()
             
             node = node->next;
         }
+
     }
 
     free(ports);
@@ -296,10 +303,12 @@ static void handle_host_updates()
                     head = 0;
             }
 
-            compute_rate();
 
             if (msg_flag) {
                 msg_flag = 0;   /* in send_out_responses() responses will be sent to the other hosts too. so clear the flag here to avoid resendind */
+                /* compute rate */
+                compute_rate();
+
                 /* update head pointer */
                 if (head == 0) {
                     cluster.hosts[i].ring->head = RING_BUFFER_SIZE - 1;
