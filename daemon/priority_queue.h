@@ -4,10 +4,10 @@
 typedef struct {
     int priority;
     void *data;
-} node_t;
+} pq_node_t;
  
 typedef struct {
-    node_t *nodes;
+    pq_node_t *nodes;
     int len;
     int size;
 } heap_t;

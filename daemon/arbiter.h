@@ -17,7 +17,7 @@
 #include <pthread.h>
 #include <signal.h>
 #include "pingpong.h"
-#include "vector.h"
+#include "list.h"
 
 #define RMF_DISTRIBUTE_AMONG_HOSTS 1
 
@@ -54,7 +54,7 @@ struct port {
     uint16_t host_id;
     uint16_t is_egress;
     uint32_t unassigned_flows;              /* number of flows that haven't been assigned */
-    vector_t flows;                         /* a list of flows. size = # of flows in this port. */
+    list_t flows;                           /* a list of flows. */
     //uint32_t flow_map;                      /* table of flows. value in each slot is flow count. For egress port, idx =: receiver_host; for ingress port, idx =: sender_host */
     uint32_t max_rate;                      /* max rate of the port. default to line rate. Assume same for both egress and ingress port */
     uint32_t used_rate;                     /* rate already assigned at the port. */

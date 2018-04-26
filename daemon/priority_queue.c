@@ -5,7 +5,7 @@
 void pq_push (heap_t *h, int priority, void *data) {
     if (h->len + 1 >= h->size) {
         h->size = h->size ? h->size * 2 : 4;
-        h->nodes = (node_t *)realloc(h->nodes, h->size * sizeof (node_t));
+        h->nodes = (pq_node_t *)realloc(h->nodes, h->size * sizeof (pq_node_t));
     }
     int i = h->len + 1;
     int j = i / 2;

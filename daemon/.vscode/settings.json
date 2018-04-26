@@ -14,7 +14,9 @@
         "deque": "c",
         "vector": "c",
         "string.h": "c",
-        "get_clock.h": "c"
+        "get_clock.h": "c",
+        "list.h": "c",
+        "priority_queue.h": "c"
     },
     "sync-rsync.onSave": true,
     "sync-rsync.local": "/Users/yiwenzhang/Research/frdma/",
