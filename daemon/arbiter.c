@@ -191,7 +191,7 @@ static void send_out_responses()
 
 }
 
-void compute_rate(struct host_request *host_req)
+void compute_rate()
 {
     heap_t *ports = calloc(1, sizeof(heap_t));
     int i, sort_key;
@@ -201,12 +201,14 @@ void compute_rate(struct host_request *host_req)
     for (i = 0; i < cluster.num_hosts; ++i) {
         port = cluster.hosts[i].egress_port;
         if (port->unassigned_flows) {   /* ports with unassigned_flows = 0 does not get pushed into the the prio queue */
-            sort_key = port->max_rate / port->unassigned_flows;
+            //sort_key = port->max_rate / port->unassigned_flows;
+            sort_key = port->max_rate / port->flows.length;
             pq_push(ports, sort_key, port);
         }
         port = cluster.hosts[i].ingress_port;
         if (port->unassigned_flows) {
-            sort_key = port->max_rate / port->unassigned_flows;
+            //sort_key = port->max_rate / port->unassigned_flows;
+            sort_key = port->max_rate / port->flows.length;
             pq_push(ports, sort_key, port);
         }
     }
@@ -285,12 +287,14 @@ static void handle_host_updates()
                     printf("unrecognized message\n");
                     exit(EXIT_FAILURE);
                 }
-                compute_rate(&cluster.hosts[i].ring->host_req[head]);
+                //compute_rate(&cluster.hosts[i].ring->host_req[head]);
                 cluster.hosts[i].ring->host_req[head].check_byte = 0;
                 ++head;
                 if (head == RING_BUFFER_SIZE)
                     head = 0;
             }
+
+            compute_rate();
 
             if (msg_flag) {
                 msg_flag = 0;   /* in send_out_responses() responses will be sent to the other hosts too. so clear the flag here to avoid resendind */
