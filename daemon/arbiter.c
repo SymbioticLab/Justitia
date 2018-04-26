@@ -219,13 +219,14 @@ void compute_rate()
         if the flow is assigned at an ingress port instead,
             find the flow's src port (which is an egress port) and decrement the counter there.
     */
+    port->used_rate = 0;
     while((port = pq_pop(ports)) != NULL) {
         printf("COMPUTE_RATE: @Port[%d], num_flow = %zu, num_unassigned_flow = %d\n", port->host_id, port->flows.length, port->unassigned_flows);
         node = port->flows.head;
         while (node != NULL) {
             flow = node->data;
             if (!port->unassigned_flows) {  /* can happen for ports with low priority after a few pops */
-                printf("port->unassigned = 0!!\n");
+                printf("port->unassigned = 0! skip this port.\n");
                 node = node->next;
                 continue;
             }
@@ -254,6 +255,7 @@ void compute_rate()
         }
     }
 
+    free(ports);
 }
 
 /* read host updates and send out response (rate, ringbuf_info, etc) */
