@@ -480,19 +480,19 @@ static void print_rate_table()
 {
     int i;
     int rate;
-    printf("----RATE TABLE----\n");
+    printf("--------RATE TABLE--------\n");
     for (i = 0; i < MAX_FLOWS; i++) {
-        if ((rate  = __atomic_load_n(&cb.rate_table[i], __ATOMIC_RELAXED)) != 0) {
-            printf("%d\t|     %d\n", i, rate);
+        if ((rate  = __atomic_load_n(&cb.rate_table[i].rate, __ATOMIC_RELAXED)) != 0) {
+            printf("%d\t|     %d|     %d\n", i, rate, __atomic_load_n(&cb.rate_table[i].tokens_to_grab, __ATOMIC_RELAXED));
         }
     }
-    printf("------------------\n");
+    printf("--------------------------\n");
 }
 
 static void handle_response()
 {
     uint32_t curr_id, prev_id = 0;
-    int i = 0, num_rate_updates = 0, flow_idx, rate = 0;
+    int i = 0, num_rate_updates = 0, flow_idx = 0, rate = 0, v_link = 0, token_to_grab = 0, min_tokens = INT_MAX, temp_tokens = 0;
     while (1) {
         /* update sender's copy of head at arbiter's ring buffer, and get new rate*/
         //TODO: handle wrap-around
@@ -501,7 +501,7 @@ static void handle_response()
             prev_id = curr_id;
             __atomic_store_n(&cb.sender_head, cb.ca_resp.header.sender_head, __ATOMIC_RELAXED);
             /* temporary hack */
-            __atomic_store_n(&cb.virtual_link_cap, LINE_RATE_MB, __ATOMIC_RELAXED);
+            //__atomic_store_n(&cb.virtual_link_cap, LINE_RATE_MB, __ATOMIC_RELAXED);
             
             num_rate_updates = __atomic_load_n(&cb.ca_resp.header.num_rate_updates, __ATOMIC_RELAXED);
             printf("received a new response from central arbiter [id:%d, num_updates = %d]\n", curr_id, cb.ca_resp.header.num_rate_updates);
@@ -510,10 +510,33 @@ static void handle_response()
                 rate = __atomic_load_n(&cb.ca_resp.rate_updates[i].rate, __ATOMIC_RELAXED);
                 flow_idx = __atomic_load_n(&cb.ca_resp.rate_updates[i].flow_idx, __ATOMIC_RELAXED);
                 printf("rate update #%d: flow[%d] = %d\n", i, flow_idx, rate);
-                //TODO: update rate for each individual flows
-                __atomic_store_n(&cb.rate_table[flow_idx], rate, __ATOMIC_RELAXED);
+                __atomic_store_n(&cb.rate_table[flow_idx].rate, rate, __ATOMIC_RELAXED);
+                v_link += rate;
+                
+                temp_tokens = LINE_RATE_MB / rate;
+                __atomic_store_n(&cb.rate_table[flow_idx].tokens_to_grab, temp_tokens, __ATOMIC_RELAXED);
+                if (temp_tokens < min_tokens) {
+                    min_tokens = temp_tokens;
+                }
             }
+            if (v_link > LINE_RATE_MB) {
+                fprintf(stderr, "Error, sum of rate updates can't be greater than line rate!\n");
+                exit(EXIT_FAILURE);
+            }
+
+            if (min_tokens > 1) {
+                for (i = 0; i < num_rate_updates; i++) {
+                    flow_idx = __atomic_load_n(&cb.ca_resp.rate_updates[i].flow_idx, __ATOMIC_RELAXED);
+                    temp_tokens = __atomic_load_n(&cb.rate_table[flow_idx].tokens_to_grab, __ATOMIC_RELAXED) / min_tokens;
+                    __atomic_store_n(&cb.rate_table[flow_idx].tokens_to_grab, temp_tokens, __ATOMIC_RELAXED);
+                }
+            }
+
             print_rate_table();
+
+            /* set virtual link */
+            __atomic_store_n(&cb.virtual_link_cap, v_link, __ATOMIC_RELAXED);
+            printf("set virtual link rate to %d\n", v_link);
         }
         //TODO: find another way to detect error. The following way doesn't work for obvious reasons
         //else {

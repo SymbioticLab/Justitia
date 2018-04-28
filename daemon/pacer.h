@@ -18,6 +18,7 @@
 #include <signal.h>
 #include "pingpong.h"
 #include "ringbuf.h"
+#include "limits.h"
 
 #define SHARED_MEM_NAME "/rdma-fairness"
 #define MAX_FLOWS 512
@@ -45,6 +46,11 @@ struct shared_block {
     uint16_t num_active_small_flows;            /* incremented when a mouse first sends a message */
 };
 
+struct rate_info {
+    uint32_t rate;
+    uint16_t tokens_to_grab;                     /* shouldn't be a large number */
+};
+
 struct control_block {
     struct shared_block *sb;
     
@@ -63,7 +69,7 @@ struct control_block {
     uint32_t local_read_rate;
     uint16_t next_slot;
     uint16_t num_big_read_flows;
-    uint32_t rate_table[MAX_FLOWS];             /* used to store the current rate assignment for each flow */
+    struct rate_info rate_table[MAX_FLOWS];             /* used to store the current rate assignment for each flow */
 };
 
 extern struct control_block cb;            /* declaration */
