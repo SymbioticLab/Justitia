@@ -483,7 +483,7 @@ static void print_rate_table()
     printf("--------RATE TABLE--------\n");
     for (i = 0; i < MAX_FLOWS; i++) {
         if ((rate  = __atomic_load_n(&cb.rate_table[i].rate, __ATOMIC_RELAXED)) != 0) {
-            printf("%d\t|     %d|     %d\n", i, rate, __atomic_load_n(&cb.rate_table[i].tokens_to_grab, __ATOMIC_RELAXED));
+            printf("%d\t|   %d   |    %d\n", i, rate, __atomic_load_n(&cb.rate_table[i].tokens_to_grab, __ATOMIC_RELAXED));
         }
     }
     printf("--------------------------\n");
@@ -492,7 +492,7 @@ static void print_rate_table()
 static void handle_response()
 {
     uint32_t curr_id, prev_id = 0;
-    int i = 0, num_rate_updates = 0, flow_idx = 0, rate = 0, v_link = 0, token_to_grab = 0, min_tokens = INT_MAX, temp_tokens = 0;
+    int i = 0, num_rate_updates = 0, flow_idx = 0, rate = 0, v_link = LINE_RATE_MB, token_to_grab = 0, min_tokens = INT_MAX, temp_tokens = 0;
     while (1) {
         /* update sender's copy of head at arbiter's ring buffer, and get new rate*/
         //TODO: handle wrap-around
@@ -504,6 +504,9 @@ static void handle_response()
             //__atomic_store_n(&cb.virtual_link_cap, LINE_RATE_MB, __ATOMIC_RELAXED);
             
             num_rate_updates = __atomic_load_n(&cb.ca_resp.header.num_rate_updates, __ATOMIC_RELAXED);
+            if (num_rate_updates > 0) {
+                v_link = 0;
+            }
             printf("received a new response from central arbiter [id:%d, num_updates = %d]\n", curr_id, cb.ca_resp.header.num_rate_updates);
             printf("new sender_head: %d\n", cb.sender_head);
             for (i = 0; i < num_rate_updates; i++) {
@@ -520,7 +523,7 @@ static void handle_response()
                 }
             }
             if (v_link > LINE_RATE_MB) {
-                fprintf(stderr, "Error, sum of rate updates can't be greater than line rate!\n");
+                fprintf(stderr, "Error, sum of rate updates (%d) can't be greater than line rate!\n", v_link);
                 exit(EXIT_FAILURE);
             }
 
@@ -534,7 +537,7 @@ static void handle_response()
 
             print_rate_table();
 
-            /* set virtual link */
+            /* set virtual link rate */
             __atomic_store_n(&cb.virtual_link_cap, v_link, __ATOMIC_RELAXED);
             printf("set virtual link rate to %d\n", v_link);
         }
