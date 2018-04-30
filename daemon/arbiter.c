@@ -254,6 +254,7 @@ void compute_rate()
 
             if (port->unassigned_flows < 0) {
                 fprintf(stderr, "Error computing rates: unassigned_flows can't be negative\n");
+                free(ports);
                 exit(EXIT_FAILURE);
             }
             

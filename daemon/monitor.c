@@ -151,6 +151,7 @@ void monitor_latency(void *arg)
         wr.wr_id = seq;
 
         /* send an update to CA only at the transition of tail_99 exceeds target or tail_99 go below target */
+        //printf("tail_99: %.2f; prev_tail:  %.2f\n", tail_99, prev_tail);
         if (tail_99 > TAIL && prev_tail <= TAIL) {
             submit_request(RMF_ABOVE_TARGET, 0, 0, 0, 1);
             printf("sending RMF_ABOVE_TARGET message\n");

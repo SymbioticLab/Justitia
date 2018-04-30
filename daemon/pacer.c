@@ -254,10 +254,7 @@ static void send_out_request()
                 }
 
                 do {
-                    if (cb.host_req[offset-1].type == FLOW_JOIN || cb.host_req[offset-1].type == FLOW_EXIT) 
-                        num_comp = ibv_poll_cq(cb.ctx->cq_req, 1, &wc);
-                    else
-                        num_comp = ibv_poll_cq(cb.ctx->cq_rmf, 1, &wc);
+                    num_comp = ibv_poll_cq(cb.ctx->cq_req, 1, &wc);
                 } while (num_comp == 0);
                 if (num_comp < 0 || wc.status != IBV_WC_SUCCESS) {
                     fprintf(stderr, "error polling wc from request wr\n");
