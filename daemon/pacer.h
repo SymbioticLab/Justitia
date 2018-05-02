@@ -46,9 +46,10 @@ struct shared_block {
     uint16_t num_active_small_flows;            /* incremented when a mouse first sends a message */
 };
 
-struct rate_info {
+struct rate_limit_info {
     uint32_t rate;
-    uint16_t tokens_to_grab;                     /* shouldn't be a large number */
+    uint16_t tokens_to_grab;                    /* tokens to fetch before send out the data; shouldn't be a large number */
+    uint16_t token_count;                       /* number of tokens fetched so far */
 };
 
 struct control_block {
@@ -69,7 +70,7 @@ struct control_block {
     uint32_t local_read_rate;
     uint16_t next_slot;
     uint16_t num_big_read_flows;
-    struct rate_info rate_table[MAX_FLOWS];             /* used to store the current rate assignment for each flow */
+    struct rate_limit_info rate_table[MAX_FLOWS];             /* used to store the current rate assignment for each flow */
 };
 
 extern struct control_block cb;            /* declaration */

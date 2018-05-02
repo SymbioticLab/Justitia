@@ -489,7 +489,7 @@ static void print_rate_table()
 static void handle_response()
 {
     uint32_t curr_id, prev_id = 0;
-    int i = 0, num_rate_updates = 0, flow_idx = 0, rate = 0, v_link = LINE_RATE_MB, token_to_grab = 0, min_tokens = INT_MAX, temp_tokens = 0;
+    int i = 0, num_rate_updates = 0, flow_idx = 0, rate = 0, v_link = LINE_RATE_MB, min_tokens = INT_MAX, temp_tokens = 0;
     while (1) {
         /* update sender's copy of head at arbiter's ring buffer, and get new rate*/
         //TODO: handle wrap-around
@@ -497,13 +497,13 @@ static void handle_response()
         if (curr_id > prev_id) {
             prev_id = curr_id;
             __atomic_store_n(&cb.sender_head, cb.ca_resp.header.sender_head, __ATOMIC_RELAXED);
-            /* temporary hack */
-            //__atomic_store_n(&cb.virtual_link_cap, LINE_RATE_MB, __ATOMIC_RELAXED);
-            
+            min_tokens = INT_MAX;            
+
             num_rate_updates = __atomic_load_n(&cb.ca_resp.header.num_rate_updates, __ATOMIC_RELAXED);
             if (num_rate_updates > 0) {
                 v_link = 0;
             }
+
             printf("received a new response from central arbiter [id:%d, num_updates = %d]\n", curr_id, cb.ca_resp.header.num_rate_updates);
             printf("new sender_head: %d\n", cb.sender_head);
             for (i = 0; i < num_rate_updates; i++) {
@@ -798,6 +798,7 @@ int main(int argc, char **argv)
     */
 
     /* main loop: fetch token */
+    uint16_t count = 0;
     while (1)
     {
         for (i = 0; i < MAX_FLOWS; i++)
@@ -805,7 +806,12 @@ int main(int argc, char **argv)
             if (!__atomic_load_n(&cb.sb->flows[i].read, __ATOMIC_RELAXED) && __atomic_load_n(&cb.sb->flows[i].pending, __ATOMIC_RELAXED))
             {
                 fetch_token();
-                __atomic_store_n(&cb.sb->flows[i].pending, 0, __ATOMIC_RELAXED);
+                cb.rate_table[i].token_count++;
+                /* "greater than or eqaul to" so that we are sort of fine even if we never hear back from the aibiter */
+                if (cb.rate_table[i].token_count >= __atomic_load_n(&cb.rate_table[i].tokens_to_grab, __ATOMIC_RELAXED)) {
+                    __atomic_store_n(&cb.sb->flows[i].pending, 0, __ATOMIC_RELAXED);
+                    cb.rate_table[i].token_count = 0;
+                }
             }
         }
     }

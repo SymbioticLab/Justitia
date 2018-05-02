@@ -784,9 +784,6 @@ static int pp_connect_ctx(struct pingpong_context *ctx,
         fprintf(stderr, "Failed to modify REQ QP to RTS\n");
         return 1;
     }
-    printf("DDD: attr.rq_psn: %d\n", attr.rq_psn);
-    printf("DDD: attr.sq_psn: %d\n", attr.sq_psn);
-
 
     return 0;
 }

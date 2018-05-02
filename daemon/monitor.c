@@ -44,7 +44,6 @@ void monitor_latency(void *arg)
     uint32_t temp;
     //uint32_t temp, new_remote_read_rate;
 
-    cpu_mhz = get_cpu_mhz(no_cpu_freq_warn);
 
     /* SEND WR */
     memset(&wr, 0, sizeof wr);
