@@ -269,9 +269,14 @@ void compute_rate()
 /* read host updates and send out response (rate, ringbuf_info, etc) */
 static void handle_host_updates()
 {
+#ifdef LOGGING
+    cycles_t start_cycle, end_cycle;
+    double cpu_mhz = get_cpu_mhz(1);
+    double delay = 0;
+#endif
     /* checking ring buffer for each host */
     unsigned int i, head;
-    unsigned int msg_flag = 0;
+    unsigned int msg_flag = 0, rate_compute_flag = 0;
     while (1) {
         msg_flag = 0;   /* "receving msg from any host will cause response sent to all hosts" is the current implementation */
         for (i = 0; i < cluster.num_hosts; ++i) {
@@ -283,22 +288,22 @@ static void handle_host_updates()
             //while ((num_req = __atomic_load_n(&cluster.hosts[i].ring->host_req[head].num_req, __ATOMIC_RELAXED)) != 0) {
                 DEBUG_PRINT("Getting new request from Host%d; ", i);
                 msg_flag = 1;
-#ifdef DEBUG
                 if (cluster.hosts[i].ring->host_req[head].type == RMF_ABOVE_TARGET) {
-                    printf("received RMF_ABOVE_TARGET message\n");
+                    DEBUG_PRINT("received RMF_ABOVE_TARGET message\n");
                 } else if (cluster.hosts[i].ring->host_req[head].type == RMF_BELOW_TARGET) {
-                    printf("received RMF_BELOW_TARGET message\n");
+                    DEBUG_PRINT("received RMF_BELOW_TARGET message\n");
                 } else if (cluster.hosts[i].ring->host_req[head].type == FLOW_JOIN) {
-                    printf("received FLOW_JOIN message\n");
+                    DEBUG_PRINT("received FLOW_JOIN message\n");
+                    rate_compute_flag = 1;
                     update_flow_info(&cluster.hosts[i].ring->host_req[head], i);
                 } else if (cluster.hosts[i].ring->host_req[head].type == FLOW_EXIT) {
-                    printf("received FLOW_EXIT message\n");
+                    DEBUG_PRINT("received FLOW_EXIT message\n");
+                    rate_compute_flag = 1;
                     update_flow_info(&cluster.hosts[i].ring->host_req[head], i);
                 } else {
                     fprintf(stderr, "Error. Unrecognized message\n");
                     exit(EXIT_FAILURE);
                 }
-#endif
                 //compute_rate(&cluster.hosts[i].ring->host_req[head]);
                 cluster.hosts[i].ring->host_req[head].check_byte = 0;
                 ++head;
@@ -307,10 +312,23 @@ static void handle_host_updates()
             }
 
 
+            //if (msg_flag) {
             if (msg_flag) {
-                msg_flag = 0;   /* in send_out_responses() responses will be sent to the other hosts too. so clear the flag here to avoid resendind */
-                /* compute rate */
-                compute_rate();
+                msg_flag = 0;   /* in send_out_responses() responses will be sent to the other hosts too. so clear the flag here to avoid resending */
+
+                if (rate_compute_flag) {
+                    rate_compute_flag = 0;
+#ifdef LOGGING
+                    start_cycle = get_cycles();
+#endif
+                    /* compute rate */
+                    compute_rate();
+#ifdef LOGGING
+                    end_cycle = get_cycles();
+                    delay = (end_cycle - start_cycle) / cpu_mhz;
+                    printf("LOGGING: time for compute_rate() = %.2f\n", delay);
+#endif
+                }
 
                 /* update head pointer */
                 if (head == 0) {
