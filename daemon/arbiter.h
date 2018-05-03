@@ -18,6 +18,7 @@
 #include <signal.h>
 #include "pingpong.h"
 #include "list.h"
+#include "debug.h"
 
 #define RMF_DISTRIBUTE_AMONG_HOSTS 1
 

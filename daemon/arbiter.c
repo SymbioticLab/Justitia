@@ -63,7 +63,7 @@ static void update_flow_info(struct host_request *req, int src_idx)
                     list_push(&cluster.hosts[i].ingress_port->flows, &cluster.hosts[i].flows[idx]);
                     cluster.hosts[i].flows[idx].list_pos_ingress = cluster.hosts[i].ingress_port->flows.head;
                     cluster.hosts[i].ingress_port->unassigned_flows++;
-                    printf("DEBUG update flow info: new flow[%d] added to host%d's egress port and host%d's ingress port\n", idx, src_idx, i);
+                    DEBUG_PRINT("DEBUG update flow info: new flow[%d] added to host%d's egress port and host%d's ingress port\n", idx, src_idx, i);
                 } else {                /* READ: src and dest are consistent with data flowing direction */
                     cluster.hosts[i].flows[idx].src = i;
                     cluster.hosts[i].flows[idx].dest = src_idx;
@@ -74,7 +74,7 @@ static void update_flow_info(struct host_request *req, int src_idx)
                     list_push(&cluster.hosts[i].egress_port->flows, &cluster.hosts[i].flows[idx]);
                     cluster.hosts[i].flows[idx].list_pos_egress = cluster.hosts[i].egress_port->flows.head;
                     cluster.hosts[i].egress_port->unassigned_flows++;
-                    printf("DEBUG update flow info: new flow[%d] added to host%d's ingress port and host%d's egress port\n", idx, src_idx, i);
+                    DEBUG_PRINT("DEBUG update flow info: new flow[%d] added to host%d's ingress port and host%d's egress port\n", idx, src_idx, i);
                 }
                 break;
             }
@@ -86,14 +86,14 @@ static void update_flow_info(struct host_request *req, int src_idx)
                 if (!req->is_read) {    /* WRITE/SEND */
                     list_remove(&cluster.hosts[src_idx].egress_port->flows, cluster.hosts[src_idx].flows[idx].list_pos_egress);
                     list_remove(&cluster.hosts[i].ingress_port->flows, cluster.hosts[i].flows[idx].list_pos_ingress);
-                    printf("DEBUG update flow info: flow[%d] removed from host%d's egress port and host%d's ingress port\n", idx, src_idx, i);
-                    printf("DEBUG update flow info: host%d's egress port length = %zu; host%d's ingress port length = %zu\n", 
+                    DEBUG_PRINT("DEBUG update flow info: flow[%d] removed from host%d's egress port and host%d's ingress port\n", idx, src_idx, i);
+                    DEBUG_PRINT("DEBUG update flow info: host%d's egress port length = %zu; host%d's ingress port length = %zu\n", 
                         src_idx, cluster.hosts[src_idx].egress_port->flows.length, i, cluster.hosts[i].ingress_port->flows.length);
                 } else {                /* READ: src and dest are consistent with data flowing direction */
                     list_remove(&cluster.hosts[src_idx].ingress_port->flows, cluster.hosts[src_idx].flows[idx].list_pos_ingress);
                     list_remove(&cluster.hosts[i].egress_port->flows, cluster.hosts[i].flows[idx].list_pos_egress);
-                    printf("DEBUG update flow info: flow[%d] removed from host%d's ingress port and host%d's egress port\n", idx, src_idx, i);
-                    printf("DEBUG update flow info: host%d's ingress port length = %zu; host%d's egress port length = %zu\n", 
+                    DEBUG_PRINT("DEBUG update flow info: flow[%d] removed from host%d's ingress port and host%d's egress port\n", idx, src_idx, i);
+                    DEBUG_PRINT("DEBUG update flow info: host%d's ingress port length = %zu; host%d's egress port length = %zu\n", 
                         src_idx, cluster.hosts[src_idx].ingress_port->flows.length, i, cluster.hosts[i].egress_port->flows.length);
                 }
                 break;
@@ -135,7 +135,7 @@ static void send_out_responses()
         count = 0;
         /* find rates to distribute. then send them in a batch */
         ////TODO: add mutex to enxure multi-thread safe later
-        printf("host[%d] ingress port flow cnt = %zu; egress port flow cnt = %zu\n", i, cluster.hosts[i].ingress_port->flows.length, cluster.hosts[i].egress_port->flows.length);
+        DEBUG_PRINT("host[%d] ingress port flow cnt = %zu; egress port flow cnt = %zu\n", i, cluster.hosts[i].ingress_port->flows.length, cluster.hosts[i].egress_port->flows.length);
 
         node = cluster.hosts[i].egress_port->flows.head;
         while (node != NULL) {
@@ -171,12 +171,12 @@ static void send_out_responses()
 
         wr.wr.rdma.rkey = cluster.hosts[i].ctx->rem_dest->rkey_resp;
         wr.wr.rdma.remote_addr = cluster.hosts[i].ctx->rem_dest->vaddr_resp;
-        //printf("DEDEDE rkey_resp = %08x; i = %d\n\n", wr.wr.rdma.rkey, i);
-        //printf("DEDEDE rkey_resp host 0 = %08x\n\n", cluster.hosts[0].ctx->rem_dest->rkey_resp);
-        //printf("DEDEDE rkey_resp host 1 = %08x\n\n", cluster.hosts[1].ctx->rem_dest->rkey_resp);
+        //DEBUG_PRINT("DEDEDE rkey_resp = %08x; i = %d\n\n", wr.wr.rdma.rkey, i);
+        //DEBUG_PRINT("DEDEDE rkey_resp host 0 = %08x\n\n", cluster.hosts[0].ctx->rem_dest->rkey_resp);
+        //DEBUG_PRINT("DEDEDE rkey_resp host 1 = %08x\n\n", cluster.hosts[1].ctx->rem_dest->rkey_resp);
 
         ibv_post_send(cluster.hosts[i].ctx->qp_req, &wr, &bad_wr);
-        printf("sending out new response (Host<%d>-[%d], num_rate_updates = %d)\n", i, cluster.hosts[i].ca_resp.header.id, count);
+        DEBUG_PRINT("sending out new response (Host<%d>-[%d], num_rate_updates = %d)\n", i, cluster.hosts[i].ca_resp.header.id, count);
 
         do {
             num_comp = ibv_poll_cq(cluster.hosts[i].ctx->cq_req, 1, &wc);
@@ -184,12 +184,12 @@ static void send_out_responses()
 
         if (num_comp < 0 || wc.status != IBV_WC_SUCCESS) {
             fprintf(stderr, "error polling wc from response wr\n");
-            //printf("num_comp = %d\n", num_comp);
-            //printf("wc.status = %d\n", wc.status);
+            //DEBUG_PRINT("num_comp = %d\n", num_comp);
+            //DEBUG_PRINT("wc.status = %d\n", wc.status);
             perror("ibv_poll_cq");
             exit(EXIT_FAILURE);
         }
-        printf("done polling the wr\n");
+        DEBUG_PRINT("done polling the wr\n");
     }
 
 
@@ -227,18 +227,18 @@ void compute_rate()
     while((port = pq_pop(ports)) != NULL) {
         port->unassigned_flows = port->flows.length;
         port->used_rate = 0;
-        printf("COMPUTE_RATE: @Port[%d], num_flow = %zu, num_unassigned_flow = %d\n", port->host_id, port->flows.length, port->unassigned_flows);
+        DEBUG_PRINT("COMPUTE_RATE: @Port[%d], num_flow = %zu, num_unassigned_flow = %d\n", port->host_id, port->flows.length, port->unassigned_flows);
         node = port->flows.head;
         while (node != NULL) {
             flow = node->data;
             if (!port->unassigned_flows) {  /* can happen for ports with low priority after a few pops */
-                printf("port->unassigned = 0! skip this port.\n");
+                DEBUG_PRINT("port->unassigned = 0! skip this port.\n");
                 node = node->next;
                 continue;
             }
 
             flow->rate = (port->max_rate - port->used_rate) / port->unassigned_flows;
-            printf("rate = %d\n", flow->rate);
+            DEBUG_PRINT("rate = %d\n", flow->rate);
             flow->is_assigned = 1;
             port->unassigned_flows--;
             port->used_rate += flow->rate;
@@ -281,8 +281,9 @@ static void handle_host_updates()
 
             while (__atomic_load_n(&cluster.hosts[i].ring->host_req[head].check_byte, __ATOMIC_RELAXED) == 1) {
             //while ((num_req = __atomic_load_n(&cluster.hosts[i].ring->host_req[head].num_req, __ATOMIC_RELAXED)) != 0) {
-                printf("Getting new request from Host%d; ", i);
+                DEBUG_PRINT("Getting new request from Host%d; ", i);
                 msg_flag = 1;
+#ifdef DEBUG
                 if (cluster.hosts[i].ring->host_req[head].type == RMF_ABOVE_TARGET) {
                     printf("received RMF_ABOVE_TARGET message\n");
                 } else if (cluster.hosts[i].ring->host_req[head].type == RMF_BELOW_TARGET) {
@@ -294,9 +295,10 @@ static void handle_host_updates()
                     printf("received FLOW_EXIT message\n");
                     update_flow_info(&cluster.hosts[i].ring->host_req[head], i);
                 } else {
-                    printf("unrecognized message\n");
+                    fprintf(stderr, "Error. Unrecognized message\n");
                     exit(EXIT_FAILURE);
                 }
+#endif
                 //compute_rate(&cluster.hosts[i].ring->host_req[head]);
                 cluster.hosts[i].ring->host_req[head].check_byte = 0;
                 ++head;
@@ -416,11 +418,11 @@ int main(int argc, char **argv)
     while (fgets(line, sizeof(line), fp)) {
         token = strtok(line, " ");
         strcpy(ip[i], token);
-        printf("HOST%d = %s", i + 1, ip[i]);
+        DEBUG_PRINT("HOST%d = %s", i + 1, ip[i]);
         gid_idx_char = strtok(NULL, " ");
         if (gid_idx_char != NULL) {
             gid_idx[i] = strtol(gid_idx_char, NULL, 10);
-            printf("HOST%d gid_idx = %d", i + 1, gid_idx[i]);
+            DEBUG_PRINT("HOST%d gid_idx = %d", i + 1, gid_idx[i]);
         }
         ++i;
     }
@@ -430,7 +432,7 @@ int main(int argc, char **argv)
     cluster.num_hosts = num_hosts;
     cluster.hosts = calloc(num_hosts, sizeof(struct host_info));
     for (i = 0; i < num_hosts; ++i) {
-        printf("HOST LOOP #%d\n", i + 1);
+        DEBUG_PRINT("HOST LOOP #%d\n", i + 1);
         /* init ctx, mr, and connect to each host via RDMA RC */
         cluster.hosts[i].ring = calloc(1, sizeof(struct request_ring_buffer));
         cluster.hosts[i].ring->head = RING_BUFFER_SIZE - 1;

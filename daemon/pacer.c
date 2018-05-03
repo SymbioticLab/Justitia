@@ -220,7 +220,8 @@ static void send_out_request()
     while (1) {
         len = ringbuf_consume(cb.ring, &offset);
         if (len) {
-            printf("LEN = %d\n", len);
+            //printf("LEN = %zu\n", len);
+            DEBUG_PRINT("LEN = %zu\n", len);
             rem = len;
             /* check sender's head updates from arbiter */
             /* send update */
@@ -238,8 +239,8 @@ static void send_out_request()
                 //cb.host_req[offset].num_req = num_req;       /* update number of requests send in a batch */
                 sge.addr = (uintptr_t)&cb.host_req[offset];
 
-                printf("cb.sender_tail = %d\n", cb.sender_tail);
-                printf("sender_head = %d\n", sender_head);
+                DEBUG_PRINT("cb.sender_tail = %d\n", cb.sender_tail);
+                DEBUG_PRINT("sender_head = %d\n", sender_head);
                 wr.wr.rdma.remote_addr = cb.ctx->rem_dest->vaddr_req + cb.sender_tail * sizeof(struct host_request);
                 if (ibv_post_send(cb.ctx->qp_req, &wr, &bad_wr)) {
                     fprintf(stderr, "DEBUG POST SEND: REALLY BAD!!, errno = %d\n", errno);
@@ -261,7 +262,7 @@ static void send_out_request()
                     perror("ibv_poll_cq");
                     exit(EXIT_FAILURE);
                 }
-                printf("done polling the wr\n");
+                DEBUG_PRINT("done polling the wr\n");
                 
             }
 
@@ -358,13 +359,13 @@ static void flow_handler()
 
         /* check join */
         len = recv(s2, (void *)buf, (size_t)MSG_LEN, 0);
-        printf("receive message of length %d.\n", len);
+        DEBUG_PRINT("receive message of length %d.\n", len);
         ////buf[len] = '\0';     /* now msg len is always fixed at MSG_LEN; msg itself will contain null char */
-        printf("message is %s.\n", buf);
+        DEBUG_PRINT("message is %s.\n", buf);
         if (strcmp(buf, "join") == 0)
         {
             /* send back slot number */
-            printf("sending back slot number %d...\n", cb.next_slot);
+            DEBUG_PRINT("sending back slot number %d...\n", cb.next_slot);
             len = snprintf(buf, MSG_LEN, "%d", cb.next_slot);
             cb.sb->flows[cb.next_slot].active = 1;
             send(s2, &buf, len, 0);
@@ -380,10 +381,10 @@ static void flow_handler()
         {
             /* submit update to CA */
             if ((len = recv(s2, (void *)buf, (size_t)MSG_LEN, 0)) > 0) {
-                printf("receive slot message of length %d.\n", len);
+                DEBUG_PRINT("receive slot message of length %d.\n", len);
                 ////buf[len] = '\0';    /* now msg len is always fixed at MSG_LEN; msg itself will contain null char */
                 slot = strtol(buf, NULL, 10);
-                printf("flow slot is %d.\n", slot);
+                DEBUG_PRINT("flow slot is %d.\n", slot);
             } else {
                 if (len < 0) perror("recv");
                 else printf("Server closed connection\n");
@@ -396,16 +397,16 @@ static void flow_handler()
             //for (j = 0; j < 200; j++) {
             //    submit_request(FLOW_JOIN, 0, cb.sb->flows[cb.next_slot].dest_qp_num, 0);
             //}
-            printf("sending WRITE/SEND FLOW JOIN message\n");
+            DEBUG_PRINT("sending WRITE/SEND FLOW JOIN message\n");
         }
         else if (strcmp(buf, "READjoin") == 0)
         {
-            printf("READ detected\n");
+            DEBUG_PRINT("READ detected\n");
             if ((len = recv(s2, (void *)buf, (size_t)MSG_LEN, 0)) > 0) {
-                printf("receive slot message of length %d.\n", len);
+                DEBUG_PRINT("receive slot message of length %d.\n", len);
                 ////buf[len] = '\0';    /* now msg len is always fixed at MSG_LEN; msg itself will contain null char */
                 slot = strtol(buf, NULL, 10);
-                printf("flow slot is %d.\n", slot);
+                DEBUG_PRINT("flow slot is %d.\n", slot);
             } else {
                 if (len < 0) perror("recv");
                 else printf("Server closed connection\n");
@@ -424,7 +425,7 @@ static void flow_handler()
 
             /* submit update to CA */
             submit_request(FLOW_JOIN, 1, cb.sb->flows[slot].dlid, slot, 0);
-            printf("sending READ FLOW JOIN message\n");
+            DEBUG_PRINT("sending READ FLOW JOIN message\n");
         }
         else if (strcmp(buf, "exit") == 0)
         {
@@ -435,10 +436,10 @@ static void flow_handler()
             __atomic_fetch_sub(&cb.num_big_read_flows, 1, __ATOMIC_RELAXED);
             */
             if ((len = recv(s2, (void *)buf, (size_t)MSG_LEN, 0)) > 0) {
-                printf("receive slot message of length %d.\n", len);
+                DEBUG_PRINT("receive slot message of length %d.\n", len);
                 ////buf[len] = '\0';    /* now msg len is always fixed at MSG_LEN; msg itself will contain null char */
                 slot = strtol(buf, NULL, 10);
-                printf("flow slot is %d.\n", slot);
+                DEBUG_PRINT("flow slot is %d.\n", slot);
             } else {
                 if (len < 0) perror("recv");
                 else printf("Server closed connection\n");
@@ -450,7 +451,7 @@ static void flow_handler()
 
             /* submit update to CA */
             submit_request(FLOW_EXIT, 0, cb.sb->flows[slot].dlid, slot, 0);
-            printf("sending FLOW EXIT message\n");
+            DEBUG_PRINT("sending FLOW EXIT message\n");
         }
     }
 }
@@ -504,12 +505,12 @@ static void handle_response()
                 v_link = 0;
             }
 
-            printf("received a new response from central arbiter [id:%d, num_updates = %d]\n", curr_id, cb.ca_resp.header.num_rate_updates);
-            printf("new sender_head: %d\n", cb.sender_head);
+            DEBUG_PRINT("received a new response from central arbiter [id:%d, num_updates = %d]\n", curr_id, cb.ca_resp.header.num_rate_updates);
+            DEBUG_PRINT("new sender_head: %d\n", cb.sender_head);
             for (i = 0; i < num_rate_updates; i++) {
                 rate = __atomic_load_n(&cb.ca_resp.rate_updates[i].rate, __ATOMIC_RELAXED);
                 flow_idx = __atomic_load_n(&cb.ca_resp.rate_updates[i].flow_idx, __ATOMIC_RELAXED);
-                printf("rate update #%d: flow[%d] = %d\n", i, flow_idx, rate);
+                DEBUG_PRINT("rate update #%d: flow[%d] = %d\n", i, flow_idx, rate);
                 __atomic_store_n(&cb.rate_table[flow_idx].rate, rate, __ATOMIC_RELAXED);
                 v_link += rate;
                 
@@ -536,7 +537,7 @@ static void handle_response()
 
             /* set virtual link rate */
             __atomic_store_n(&cb.virtual_link_cap, v_link, __ATOMIC_RELAXED);
-            printf("set virtual link rate to %d\n", v_link);
+            DEBUG_PRINT("set virtual link rate to %d\n", v_link);
         }
         //TODO: find another way to detect error. The following way doesn't work for obvious reasons
         //else {
@@ -798,7 +799,6 @@ int main(int argc, char **argv)
     */
 
     /* main loop: fetch token */
-    uint16_t count = 0;
     while (1)
     {
         for (i = 0; i < MAX_FLOWS; i++)

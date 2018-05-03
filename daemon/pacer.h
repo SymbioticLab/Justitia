@@ -1,3 +1,6 @@
+#ifndef PACER_H
+#define PACER_H
+
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
@@ -19,6 +22,7 @@
 #include "pingpong.h"
 #include "ringbuf.h"
 #include "limits.h"
+#include "debug.h"
 
 #define SHARED_MEM_NAME "/rdma-fairness"
 #define MAX_FLOWS 512
@@ -77,3 +81,5 @@ extern struct control_block cb;            /* declaration */
 extern uint32_t chunk_size_table[TABLE_SIZE];
 
 void submit_request(enum host_request_type, uint8_t, uint16_t, uint16_t, unsigned int);
+
+#endif
