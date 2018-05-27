@@ -3,6 +3,8 @@
 static const int port = 18515;
 static const int ib_port = 1;
 static const int mtu = IBV_MTU_2048;
+//static const int ib_dev_idx = 0;
+static const int ib_dev_idx = 2;
 
 static struct pingpong_context * alloc_monitor_qp();
 static struct pingpong_dest * pp_client_exch_dest(const char *, struct pingpong_dest *);
@@ -67,7 +69,14 @@ static struct pingpong_context *alloc_monitor_qp() {
         return NULL;
     }
 
-    ib_dev = *dev_list; // pick the first device
+    //ib_dev = *dev_list; // pick the first device
+    ib_dev = dev_list[ib_dev_idx];
+    printf("IB DEV NAME: %s\n", ib_dev->name);
+    //printf("start printing all dev name from idx 0:\n");
+    //printf("dev_list[0]: %s\n", dev_list[0]->name);
+    //printf("dev_list[1]: %s\n", dev_list[1]->name);
+    //printf("dev_list[2]: %s\n", dev_list[2]->name);
+    //printf("dev_list[3]: %s\n", dev_list[3]->name);
     if (!ib_dev) {
         fprintf(stderr, "No IB devices found\n");
         return NULL;
@@ -471,6 +480,7 @@ static int pp_connect_ctx(struct pingpong_context *ctx,
     };
 
     if (dest->gid.global.interface_id) {
+        printf("DO i enter here?\n");
 		attr.ah_attr.is_global = 1;
 		attr.ah_attr.grh.hop_limit = 1;
 		attr.ah_attr.grh.dgid = dest->gid;
