@@ -4,9 +4,10 @@
 //#include <immintrin.h> /* For _mm_pause */
 #include "countmin.h"
 
-#define DEFAULT_CHUNK_SIZE 10000000
-//#define DEFAULT_CHUNK_SIZE 1000000
-#define DEFAULT_BATCH_OPS 667
+//#define DEFAULT_CHUNK_SIZE 10000000
+#define DEFAULT_CHUNK_SIZE 1000000
+#define DEFAULT_BATCH_OPS 5000
+//#define DEFAULT_BATCH_OPS 667
 //#define DEFAULT_BATCH_OPS 1500
 #define MAX_TOKEN 5
 #define HOSTNAME_PATH "/proc/sys/kernel/hostname"
@@ -280,7 +281,8 @@ static void generate_tokens()
         if ((temp = __atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED)))
         {
             if ((num_big = __atomic_load_n(&cb.sb->num_active_big_flows, __ATOMIC_RELAXED)))
-                chunk_size = chunk_size_table[temp / num_big / (LINE_RATE_MB/6)];
+                //chunk_size = chunk_size_table[temp / num_big / (LINE_RATE_MB/6)];
+                chunk_size = 1000000;
             else
                 chunk_size = DEFAULT_CHUNK_SIZE;
             __atomic_store_n(&cb.sb->active_chunk_size, chunk_size, __ATOMIC_RELAXED);
