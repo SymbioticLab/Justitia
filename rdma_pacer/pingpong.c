@@ -480,7 +480,6 @@ static int pp_connect_ctx(struct pingpong_context *ctx,
     };
 
     if (dest->gid.global.interface_id) {
-        printf("DO i enter here?\n");
 		attr.ah_attr.is_global = 1;
 		attr.ah_attr.grh.hop_limit = 1;
 		attr.ah_attr.grh.dgid = dest->gid;
