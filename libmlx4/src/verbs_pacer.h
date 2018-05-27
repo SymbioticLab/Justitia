@@ -16,8 +16,8 @@ char *get_sock_path() {
         return SOCK_PATH;
     }
 
-    char hostname[60];
-    if(fgets(hostname, 60, fp) != NULL) {
+    char hostname[100];
+    if(fgets(hostname, 100, fp) != NULL) {
         //char *sock_path = (char *)malloc(108 * sizeof(char));
         char *sock_path = (char *)calloc(108, sizeof(char));
         //printf("DE hostname:%s\n", hostname);
