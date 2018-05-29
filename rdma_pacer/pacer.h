@@ -20,12 +20,14 @@
 
 #define SHARED_MEM_NAME "/rdma-fairness"
 #define MAX_FLOWS 512
-//#define LINE_RATE_MB 12000 /* MBps */
-#define LINE_RATE_MB 1100 /* MBps */
+//#define LINE_RATE_MB 12000 /* MBps */     // 100Gbps
+//#define LINE_RATE_MB 1100 /* MBps */      // 10Gbps
+#define LINE_RATE_MB 6000 /* MBps */        // 56Gbps
 #define MSG_LEN 8
 #define SOCK_PATH "/users/yiwenzhg/rdma_socket"
 #define ELEPHANT_HAS_LOWER_BOUND 1  /* whether elephant has a minimum virtual link cap set by AIMD */
 #define TABLE_SIZE 7
+#define FAVOR_BIG_FLOW
 
 struct flow_info {
     uint8_t pending;

@@ -6,9 +6,9 @@
 
 //#define DEFAULT_CHUNK_SIZE 10000000
 #define DEFAULT_CHUNK_SIZE 1000000
-#define DEFAULT_BATCH_OPS 5000
-//#define DEFAULT_BATCH_OPS 667
-//#define DEFAULT_BATCH_OPS 1500
+//#define DEFAULT_BATCH_OPS 5000    // xl170 (when using 10Gbps link)
+//#define DEFAULT_BATCH_OPS 667     // Conflux
+#define DEFAULT_BATCH_OPS 1500    // c6220/r320
 #define MAX_TOKEN 5
 #define HOSTNAME_PATH "/proc/sys/kernel/hostname"
 
@@ -282,7 +282,7 @@ static void generate_tokens()
         {
             if ((num_big = __atomic_load_n(&cb.sb->num_active_big_flows, __ATOMIC_RELAXED)))
                 //chunk_size = chunk_size_table[temp / num_big / (LINE_RATE_MB/6)];
-                chunk_size = 1000000;
+                chunk_size = 1000000;       // hard-coded to be 1MB
             else
                 chunk_size = DEFAULT_CHUNK_SIZE;
             __atomic_store_n(&cb.sb->active_chunk_size, chunk_size, __ATOMIC_RELAXED);

@@ -6,13 +6,15 @@
 #include <inttypes.h>
 #include <math.h>
 
-#define TAIL 3
+#define TAIL 2
 
 #define WIDTH 32768
 #define DEPTH 16
 #define U 24
 #define GRAN 4
 #define WINDOW_SIZE 10000
+// Time to wait in milliseconds when latency target can't not be met (before giving back bandwidth)
+#define LAT_TARGET_WAIT_TIME 5000
 
 CMH_type *cmh = NULL;
 
@@ -24,7 +26,7 @@ void monitor_latency(void *arg)
 
     int lat; // in nanoseconds
     cycles_t start_cycle, end_cycle;
-    cycles_t prev_start_cycle = 0;
+    //cycles_t prev_start_cycle = 0;
     // cycles_t cmh_start, cmh_end;
     int no_cpu_freq_warn = 1;
     double cpu_mhz = get_cpu_mhz(no_cpu_freq_warn);
@@ -99,9 +101,16 @@ void monitor_latency(void *arg)
     }
 
     /* monitor loop */
-    uint32_t min_virtual_link_cap;
-    uint16_t num_active_big_flows;
-    uint16_t num_active_small_flows;
+    uint32_t min_virtual_link_cap = 0;
+    uint16_t num_active_big_flows = 0;
+    uint16_t num_active_small_flows = 0;
+#ifdef FAVOR_BIG_FLOW
+    uint16_t prev_num_small_flows = 0;
+    cycles_t counter_start = 0;
+    cycles_t counter_end = 0;
+    cycles_t started_counting = 0;
+    int AIMD_off = 0;
+#endif
     while (1)
     {
         start_cycle = get_cycles();
@@ -173,6 +182,16 @@ void monitor_latency(void *arg)
         num_active_small_flows = __atomic_load_n(&cb.sb->num_active_small_flows, __ATOMIC_RELAXED);
         // printf("num_active_big_flows = %d\n", num_active_big_flows);
         // printf("num_active_small_flows = %d\n", num_active_small_flows);
+#ifdef FAVOR_BIG_FLOW
+        if (num_active_small_flows > prev_num_small_flows) {
+            AIMD_off = 0;
+        }
+        prev_num_small_flows = num_active_small_flows;
+        //// If can't meet latency target in a given interval, keep the current virtual link cap which was set to LINE_RATE
+        if (AIMD_off) {
+            continue;
+        }
+#endif
         if (num_active_big_flows + num_remote_big_reads)
         {
             if (num_active_small_flows)
@@ -187,12 +206,31 @@ void monitor_latency(void *arg)
                     if (ELEPHANT_HAS_LOWER_BOUND && temp < min_virtual_link_cap)
                     {
                         temp = min_virtual_link_cap;
+#ifdef FAVOR_BIG_FLOW
+                        //// counter to count the time since we can't meet the latency target
+                        if (!started_counting) {
+                            counter_start = get_cycles();
+                            started_counting = 1;
+                        }
+                        counter_end = get_cycles();
+                        if (((counter_end - counter_start) / cpu_mhz) > LAT_TARGET_WAIT_TIME * 1000) {
+                            printf("elapsed time is %.2f us\n", (counter_end - counter_start) / cpu_mhz);
+                            //// Give bandwidth back to big flows until another small flow joins
+                            started_counting = 0;
+                            temp = LINE_RATE_MB;
+                            AIMD_off = 1;
+                        }
+#endif
                     }
                 }
                 else if (__atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED) < LINE_RATE_MB)
                 {
                     /* Additive Increase */
                     temp++;
+#ifdef FAVOR_BIG_FLOW
+                    //// invalidate latency target counter
+                    started_counting = 0;
+#endif
                 }
                 if (num_remote_big_reads) {
                     new_remote_read_rate = round((double)num_remote_big_reads
