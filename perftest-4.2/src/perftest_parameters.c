@@ -3157,7 +3157,7 @@ void print_report_lat (struct perftest_parameters *user_param)
 		printf("%.2f\n", delta[iters_99_99] / cycles_rtt_quotient);
 	}
 
-	if (user_param->iters < 100000000) {
+	if (user_param->iters < 100000000 && !user_param->log_off) {
 		FILE *f = fopen(user_param->output_log, "w");
 		//fprintf(f, "Task_cnt\tTime(us)\n");
 		fprintf(f, "Task_cnt\tTime(us)\t\tLatency(us)\n");
