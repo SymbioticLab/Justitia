@@ -3,7 +3,8 @@
 static const int port = 18515;
 static const int ib_port = 1;
 static const int mtu = IBV_MTU_2048;
-static const int ib_dev_idx = 0;
+//static const int ib_dev_idx = 0;
+static const int ib_dev_idx = 1;
 //static const int ib_dev_idx = 2;  // used in xl170
 
 static struct pingpong_context * alloc_monitor_qp();

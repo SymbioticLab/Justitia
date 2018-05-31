@@ -6,7 +6,7 @@
 #include <inttypes.h>
 #include <math.h>
 
-#define TAIL 2
+#define TAIL 3
 
 #define WIDTH 32768
 #define DEPTH 16
@@ -180,8 +180,8 @@ void monitor_latency(void *arg)
 
         num_active_big_flows = __atomic_load_n(&cb.sb->num_active_big_flows, __ATOMIC_RELAXED);
         num_active_small_flows = __atomic_load_n(&cb.sb->num_active_small_flows, __ATOMIC_RELAXED);
-        // printf("num_active_big_flows = %d\n", num_active_big_flows);
-        // printf("num_active_small_flows = %d\n", num_active_small_flows);
+        //printf("num_active_big_flows = %d\n", num_active_big_flows);
+        //printf("num_active_small_flows = %d\n", num_active_small_flows);
 #ifdef FAVOR_BIG_FLOW
         if (num_active_small_flows > prev_num_small_flows) {
             AIMD_off = 0;
