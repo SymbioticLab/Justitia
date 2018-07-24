@@ -4,14 +4,14 @@
 #include "pacer.h"
 #include <immintrin.h> /* For _mm_pause */  // remember to take off this header file and __mm_pause() when running on ConFlux
 
-static inline void cpu_relax() __attribute__((always_inline));
-static inline void cpu_relax() {
-#if (COMPILER == MVCC)
-    _mm_pause();
-#elif (COMPILER == GCC || COMPILER == LLVM)
-    asm("pause");
-#endif
-}
+//static inline void cpu_relax() __attribute__((always_inline));
+//static inline void cpu_relax() {
+//#if (COMPILER == MVCC)
+//    _mm_pause();
+//#elif (COMPILER == GCC || COMPILER == LLVM)
+//    asm("pause");
+//#endif
+//}
 
 static void contact_pacer_read() {
     /* prepare unix domain socket */
