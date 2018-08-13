@@ -10,7 +10,8 @@
 //#define DEFAULT_BATCH_OPS 667     // Conflux
 //#define DEFAULT_BATCH_OPS 1500    // c6220/r320
 #define DEFAULT_BATCH_OPS 2500    // Shin's RoCEv2
-#define MAX_TOKEN 5
+//#define MAX_TOKEN 5
+#define MAX_TOKEN 500
 #define HOSTNAME_PATH "/proc/sys/kernel/hostname"
 
 extern CMH_type *cmh;
@@ -283,7 +284,8 @@ static void generate_tokens()
         {
             if ((num_big = __atomic_load_n(&cb.sb->num_active_big_flows, __ATOMIC_RELAXED)))
                 //chunk_size = chunk_size_table[temp / num_big / (LINE_RATE_MB/6)];
-                chunk_size = 1000000;       // hard-coded to be 1MB
+                //chunk_size = 1000000;       // hard-coded to be 1MB
+                chunk_size = DEFAULT_CHUNK_SIZE;
             else
                 chunk_size = DEFAULT_CHUNK_SIZE;
             __atomic_store_n(&cb.sb->active_chunk_size, chunk_size, __ATOMIC_RELAXED);

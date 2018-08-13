@@ -51,12 +51,13 @@
 
 ////
 #include <inttypes.h>
-#define SPLIT_CHUNK_SIZE		1000000			//// Default Split Chunk Size; Need to be equal or less than the initial chunk size that pacer sets.
+//#define SPLIT_CHUNK_SIZE		1000000			//// Default Split Chunk Size; Need to be equal or less than the initial chunk size that pacer sets.
+#define SPLIT_CHUNK_SIZE		10000			//// Default Split Chunk Size; Need to be equal or less than the initial chunk size that pacer sets.
 #define MIN_SPLIT_CHUNK_SIZE    2048			//// A minimun chunk size that everybody knows and assumes.
 //#define SPLIT_CHUNK_SIZE		1048576			//// Default Split Chunk Size; Need to be equal or less than the initial chunk size that pacer sets.
 #define MANUAL_SPLIT_QPN_DIFF 	1				//// manually set (guess) split qpn/psn or general approcah
 #define SPLIT_QP_NUM_DIFF		1				//// DC if MANUAL_SPLIT is off
-#define SPLIT_USE_EVENT			1				//// event-triggered polling for splitting
+#define SPLIT_USE_EVENT			0				//// event-triggered polling for splitting
 #define SPLIT_USE_LINKED_LIST	0				//// post using a linked list or not (for one-sided verbs) (for testing purposes)
 //#define SPLIT_USE_NO_BATCH		0				//// 1 -> post 1 poll 1 at one-sided verbs; DC if SPLIT_USE_LINKED_LIST is 1; 0 -> use batch 
 #define SPLIT_USE_NO_BATCH_2SIDED		1		//// 1 -> post 1 poll 1 at two-sided verbs; 
