@@ -1147,7 +1147,8 @@ struct ibv_qp *mlx4_create_qp(struct ibv_pd *pd, struct ibv_qp_init_attr *attr)
 	printf("DEBUG mlx4_create_qp: split_qp->qpn = %06x\n", split_qp2->qp_num);
 
 	int i;
-	for (i = 0; i < SPLIT_QP_NUM_ONE_SIDED; i++) {
+	//for (i = 0; i < SPLIT_QP_NUM_ONE_SIDED; i++) {
+	for (i = SPLIT_QP_NUM_ONE_SIDED - 1; i >= 0 ; i--) {
 		split_qp[i] = __mlx4_create_qp(pd, &split_init_attr);
 		if (split_qp[i]) {
 			printf("DEBUG mlx4_create_qp: split_qp[%d]->qpn = %06x\n", i, split_qp[i]->qp_num);
