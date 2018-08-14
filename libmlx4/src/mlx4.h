@@ -62,7 +62,8 @@
 //#define SPLIT_USE_NO_BATCH		0				//// 1 -> post 1 poll 1 at one-sided verbs; DC if SPLIT_USE_LINKED_LIST is 1; 0 -> use batch 
 #define SPLIT_USE_NO_BATCH_2SIDED		1		//// 1 -> post 1 poll 1 at two-sided verbs; 
 #define SPLIT_ONE_SIDED_BATCH_SIZE		1		//// batch rate in one-sided verbs. 1 means no batch
-#define SPLIT_USE_SELECTIVE_SIGNALING	0		//// use selective signaling (only last chunk signaled) or not when sending split chunks 
+#define SPLIT_USE_SELECTIVE_SIGNALING	1		//// use selective signaling (only last chunk signaled) when sending split chunks 
+#define SPLIT_QP_NUM_ONE_SIDED			1		//// number of split_QPs used to send split chunks in one-sided verbs
 #define SPLIT_MAX_SEND_WR 		8000
 #define SPLIT_MAX_RECV_WR 		8000
 #define SPLIT_MAX_CQE			10000
@@ -681,7 +682,7 @@ struct mlx4_qp {
 	struct mlx4_inlr_buff		inlr_buff;
 	uint8_t				qp_cap_cache;
 	//// added for spliting
-	struct ibv_qp 		*split_qp;
+	struct ibv_qp 		*split_qp[SPLIT_QP_NUM_ONE_SIDED];
 	struct ibv_qp 		*split_qp2;
 	//struct ibv_cq		*split_cq;
 	struct ibv_cq		*split_send_cq;

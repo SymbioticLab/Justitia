@@ -1123,7 +1123,7 @@ int mlx4_poll_cq(struct ibv_cq *ibcq, int ne, struct ibv_exp_wc *wc,
 		for (i = 0; i < num_chunks_to_recv; i++) {
 			rsge.addr += split_chunk_size;		// relevant for SEND, DC for WIMM
 
-			ret = mlx4_post_recv(qp->split_qp, &rwr, &bad_rwr);
+			ret = mlx4_post_recv(qp->split_qp[0], &rwr, &bad_rwr);
 			if (ret != 0) {
 				errno = ret;
 				fprintf(stderr, "mlx4_post_recv REALLY BAD!!, errno = %d\n", errno);
@@ -1146,7 +1146,7 @@ int mlx4_poll_cq(struct ibv_cq *ibcq, int ne, struct ibv_exp_wc *wc,
 		rwr.sg_list = &rsge;
 		rwr.num_sge = 1;
 
-		ret = mlx4_post_recv(qp->split_qp, &rwr, &bad_rwr);
+		ret = mlx4_post_recv(qp->split_qp[0], &rwr, &bad_rwr);
 		if (ret != 0) {
 			errno = ret;
 			fprintf(stderr, "mlx4_post_recv REALLY BAD!!, errno = %d\n", errno);
@@ -1260,7 +1260,7 @@ int mlx4_poll_cq(struct ibv_cq *ibcq, int ne, struct ibv_exp_wc *wc,
 		rwr.sg_list = &rsge;
 		rwr.num_sge = 1;
 
-		int ret = mlx4_post_recv(qp->split_qp, &rwr, &bad_rwr);
+		int ret = mlx4_post_recv(qp->split_qp[0], &rwr, &bad_rwr);
 		if (ret != 0) {
 			errno = ret;
 			fprintf(stderr, "mlx4_post_recv REALLY BAD!!, errno = %d\n", errno);

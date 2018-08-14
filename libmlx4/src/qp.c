@@ -1407,7 +1407,7 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 					sge.lkey = wr->sg_list->lkey;
 
 					// those WRs are handled by the split qp
-					ret = __mlx4_post_send(qp->split_qp, &swr, &bad_swr);
+					ret = __mlx4_post_send(qp->split_qp[0], &swr, &bad_swr);
 					if (ret != 0)
 					{
 						errno = ret;
@@ -1500,7 +1500,7 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 					++i;
 				}
 
-				ret = __mlx4_post_send(qp->split_qp, &swr, bad_wr);
+				ret = __mlx4_post_send(qp->split_qp[0], &swr, bad_wr);
 				if (ret != 0)
 				{
 					errno = ret;
@@ -1671,7 +1671,7 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 			swr.send_flags = IBV_SEND_SIGNALED;
 
 			int ret2;
-			ret2 = __mlx4_post_send(qp->split_qp, &swr, &bad_swr);
+			ret2 = __mlx4_post_send(qp->split_qp[0], &swr, &bad_swr);
 			if (ret2 != 0)
 			{
 				errno = ret2;
@@ -1851,7 +1851,7 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 				}
 
 				//__mlx4_post_send(qp->split_qp, wr, bad_wr);
-				ret = __mlx4_post_send(qp->split_qp, wr, bad_wr);
+				ret = __mlx4_post_send(qp->split_qp[0], wr, bad_wr);
 				if (ret != 0)
 				{
 					errno = ret;
@@ -2037,7 +2037,7 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 					sge.lkey = wr->sg_list->lkey;
 
 					// those WRs are handled by the split qp
-					ret = __mlx4_post_send(qp->split_qp, &swr, bad_wr);
+					ret = __mlx4_post_send(qp->split_qp[0], &swr, bad_wr);
 					if (ret != 0)
 					{
 						errno = ret;
@@ -2147,7 +2147,7 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 				}
 				current_wr->next = NULL;
 				// those WRs are handled by the split qp
-				ret = __mlx4_post_send(qp->split_qp, wr_head, bad_wr);
+				ret = __mlx4_post_send(qp->split_qp[0], wr_head, bad_wr);
 				if (ret != 0)
 				{
 					errno = ret;
@@ -2425,7 +2425,7 @@ int orig_mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 					swr.send_flags = IBV_SEND_SIGNALED;
 
 					int ret2;
-					ret2 = __mlx4_post_send(qp->split_qp, &swr, &bad_swr);
+					ret2 = __mlx4_post_send(qp->split_qp[0], &swr, &bad_swr);
 					if (ret2 != 0)
 					{
 						errno = ret2;
@@ -2556,7 +2556,7 @@ int orig_mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 						}
 
 						//__mlx4_post_send(qp->split_qp, wr, bad_wr);
-						ret = __mlx4_post_send(qp->split_qp, wr, bad_wr);
+						ret = __mlx4_post_send(qp->split_qp[0], wr, bad_wr);
 						//cnt++;
 						//printf("post_send [%d]\n", cnt);
 						if (ret != 0)
@@ -2625,7 +2625,7 @@ int orig_mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 					rwr.sg_list = &rsge;
 					rwr.num_sge = 1;
 
-					ret2 = mlx4_post_recv(qp->split_qp, &rwr, &bad_rwr);
+					ret2 = mlx4_post_recv(qp->split_qp[0], &rwr, &bad_rwr);
 					if (ret2 != 0)
 					{
 						errno = ret2;
