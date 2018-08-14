@@ -6,7 +6,7 @@
 #include <inttypes.h>
 #include <math.h>
 
-#define TAIL 3
+#define TAIL 2
 
 #define WIDTH 32768
 #define DEPTH 16

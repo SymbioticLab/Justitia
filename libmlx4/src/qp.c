@@ -1278,6 +1278,7 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 																	 : __atomic_load_n(&sb->active_chunk_size, __ATOMIC_RELAXED))
 								   : SPLIT_CHUNK_SIZE;
 	//if (++GLOBAL_CNT % 100 == 0) {
+	//printf("DEBUG: POST SEND: split_chunk_size = %" PRIu32 "\n", split_chunk_size);
 	//	printf("DEBUG: POST SEND: split_chunk_size = %" PRIu32 " [%d]\n", split_chunk_size, GLOBAL_CNT);
 	//	fflush(stdout);
 	//}

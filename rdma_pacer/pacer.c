@@ -5,7 +5,8 @@
 #include "countmin.h"
 
 //#define DEFAULT_CHUNK_SIZE 10000000
-#define DEFAULT_CHUNK_SIZE 1000000
+//#define DEFAULT_CHUNK_SIZE 1000000
+#define DEFAULT_CHUNK_SIZE 10000
 //#define DEFAULT_BATCH_OPS 5000    // xl170 (when using 10Gbps link)
 //#define DEFAULT_BATCH_OPS 667     // Conflux
 //#define DEFAULT_BATCH_OPS 1500    // c6220/r320
@@ -13,6 +14,7 @@
 //#define MAX_TOKEN 5
 #define MAX_TOKEN 500
 #define HOSTNAME_PATH "/proc/sys/kernel/hostname"
+#define SPLIT_QP_NUM_ONE_SIDED 2
 
 extern CMH_type *cmh;
 struct control_block cb;
@@ -303,7 +305,8 @@ static void generate_tokens()
                 }
                 else
                 {
-                    while (get_cycles() - start_cycle < cpu_mhz * chunk_size / temp)
+                    //while (get_cycles() - start_cycle < (cpu_mhz * chunk_size / temp) / SPLIT_QP_NUM_ONE_SIDED)
+                    while (get_cycles() - start_cycle < cpu_mhz * chunk_size / temp)      // number of cycles needed to send 1 split chunk at current virtual link rate
                         cpu_relax();
                     start_cycle = get_cycles();
                     __atomic_fetch_add(&cb.tokens, 1, __ATOMIC_RELAXED);
