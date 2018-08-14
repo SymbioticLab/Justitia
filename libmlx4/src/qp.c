@@ -2014,20 +2014,24 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 				int num_wrs_to_split_qp = num_chunks_to_send - 1;
 				struct ibv_send_wr swr;
 				struct ibv_sge sge;
-				int i;
+				int i, j, qp_idx;
 				struct ibv_wc wc;
 				int ne = 0;
 				struct ibv_cq *ev_cq;
 				void *ev_ctx;
 
-				for (i = 0; i < num_wrs_to_split_qp; i++)
+				for (i = 0, j = 0; i < num_wrs_to_split_qp; i++, j++)
 				{
 					swr.wr_id = i + 1;
 					swr.opcode = wr->opcode;
 					swr.sg_list = &sge;
 					swr.num_sge = 1;
-					//swr.send_flags = (i == num_wrs_to_split_qp - 1 || !SPLIT_USE_SELECTIVE_SIGNALING) ? IBV_SEND_SIGNALED : 0; // last one is signaled for synchronization
-					swr.send_flags = (i == num_wrs_to_split_qp - 1 || (i + 1) % SPLIT_ONE_SIDED_BATCH_SIZE == 0) ? (orig_send_flags | IBV_SEND_SIGNALED) : (orig_send_flags & (~(IBV_SEND_SIGNALED)));
+					//swr.send_flags = (i == num_wrs_to_split_qp - 1 || (i + 1) % SPLIT_ONE_SIDED_BATCH_SIZE == 0) ? (orig_send_flags | IBV_SEND_SIGNALED) : (orig_send_flags & (~(IBV_SEND_SIGNALED)));
+					if (SPLIT_QP_NUM_ONE_SIDED > 1) {
+						swr.send_flags = (i >= num_wrs_to_split_qp - SPLIT_QP_NUM_ONE_SIDED) ? (orig_send_flags | IBV_SEND_SIGNALED) : (orig_send_flags & (~(IBV_SEND_SIGNALED)));
+					} else {
+						swr.send_flags = (i == num_wrs_to_split_qp - 1 || (i + 1) % SPLIT_ONE_SIDED_BATCH_SIZE == 0) ? (orig_send_flags | IBV_SEND_SIGNALED) : (orig_send_flags & (~(IBV_SEND_SIGNALED)));
+					}
 					swr.wr.rdma.remote_addr = wr->wr.rdma.remote_addr + split_chunk_size * i;
 					swr.wr.rdma.rkey = wr->wr.rdma.rkey;
 					swr.next = NULL;
@@ -2037,7 +2041,8 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 					sge.lkey = wr->sg_list->lkey;
 
 					// those WRs are handled by the split qp
-					ret = __mlx4_post_send(qp->split_qp[0], &swr, bad_wr);
+					qp_idx = j % SPLIT_QP_NUM_ONE_SIDED;
+					ret = __mlx4_post_send(qp->split_qp[qp_idx], &swr, bad_wr);
 					if (ret != 0)
 					{
 						errno = ret;
@@ -2047,6 +2052,7 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 
 					if (swr.send_flags == (orig_send_flags | IBV_SEND_SIGNALED))
 					{
+						//printf("indeed signalled; i = %d; var = %d\n", i, num_wrs_to_split_qp - SPLIT_QP_NUM_ONE_SIDED);
 						if (SPLIT_USE_EVENT)
 						{
 							ret = ibv_get_cq_event(qp->split_comp_send_channel, &ev_cq, &ev_ctx);
