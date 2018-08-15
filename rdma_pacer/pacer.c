@@ -12,7 +12,7 @@
 //#define DEFAULT_BATCH_OPS 1500    // c6220/r320
 #define DEFAULT_BATCH_OPS 2500    // Shin's RoCEv2
 //#define MAX_TOKEN 5
-#define MAX_TOKEN 500
+#define MAX_TOKEN 5
 #define HOSTNAME_PATH "/proc/sys/kernel/hostname"
 #define SPLIT_QP_NUM_ONE_SIDED 2
 
