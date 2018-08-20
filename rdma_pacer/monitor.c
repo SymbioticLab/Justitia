@@ -15,8 +15,16 @@
 #define WINDOW_SIZE 10000
 // Time to wait in milliseconds when latency target can't not be met (before giving back bandwidth)
 #define LAT_TARGET_WAIT_TIME 5000
+// Time to wait in microseconds when latency target is met
+#define RMF_FREQENCY 2
 
 CMH_type *cmh = NULL;
+
+static inline void cpu_relax() __attribute__((always_inline));
+static inline void cpu_relax()
+{
+    asm("nop");
+}
 
 void monitor_latency(void *arg)
 {
@@ -111,8 +119,21 @@ void monitor_latency(void *arg)
     cycles_t started_counting = 0;
     int AIMD_off = 0;
 #endif
+#ifdef SMART_RMF
+    int lat_above_target = 0;
+    cycles_t counter_rmf = 0;
+#endif
     while (1)
     {
+#ifdef SMART_RMF
+        if (lat_above_target) {
+            counter_rmf = get_cycles();
+
+            while ((get_cycles() - counter_rmf) / cpu_mhz < RMF_FREQENCY)
+                cpu_relax();
+            lat_above_target = 0;
+        }
+#endif
         start_cycle = get_cycles();
         if (ibv_post_send(ctx->qp, &wr, &bad_wr))
         {
@@ -201,6 +222,9 @@ void monitor_latency(void *arg)
                 temp = __atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED);
                 if (tail_99 > TAIL)
                 {
+#ifdef SMART_RMF
+                    lat_above_target = 1;
+#endif
                     /* Multiplicative Decrease */
                     temp >>= 1;
                     if (ELEPHANT_HAS_LOWER_BOUND && temp < min_virtual_link_cap)

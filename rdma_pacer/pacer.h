@@ -29,6 +29,7 @@
 #define ELEPHANT_HAS_LOWER_BOUND 1  /* whether elephant has a minimum virtual link cap set by AIMD */
 #define TABLE_SIZE 7
 //#define FAVOR_BIG_FLOW
+#define SMART_RMF
 
 struct flow_info {
     uint8_t pending;
