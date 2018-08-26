@@ -3,12 +3,12 @@
 
 #include <stdlib.h>
 #include <stdio.h>
-#include <setjmp.h>
+//#include <setjmp.h>
 
-jmp_buf queue_error;
+//jmp_buf queue_error;
 
-#define QUEUE_FULL_ERROR 1
-#define QUEUE_EMPTY_ERROR 2
+//#define QUEUE_FULL_ERROR 1
+//#define QUEUE_EMPTY_ERROR 2
 
 // O(1) queue implementation
 typedef struct {
@@ -31,7 +31,7 @@ static inline Queue *queue_init(int size)
 static inline void queue_push(Queue *q, int a)
 {
     if (q->read == (q->write + 1) % q->size)
-        longjmp(queue_error, QUEUE_FULL_ERROR);
+        printf("QUEUE_FULL_ERROR\n");
     q->array[q->write] = a;
     q->write = (q->write + 1) % q->size;
 }
@@ -39,7 +39,7 @@ static inline void queue_push(Queue *q, int a)
 static inline int queue_pop(Queue *q)
 {
     if (q->read == q->write)
-        longjmp(queue_error, QUEUE_EMPTY_ERROR);
+        printf("QUEUE_EMPTY_ERROR\n");
     int tmp = q->array[q->read];
     q->read = (q->read + 1) % q->size;
     return tmp;
