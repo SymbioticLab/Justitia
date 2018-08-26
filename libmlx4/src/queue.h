@@ -3,12 +3,6 @@
 
 #include <stdlib.h>
 #include <stdio.h>
-//#include <setjmp.h>
-
-//jmp_buf queue_error;
-
-//#define QUEUE_FULL_ERROR 1
-//#define QUEUE_EMPTY_ERROR 2
 
 // O(1) queue implementation
 typedef struct {
