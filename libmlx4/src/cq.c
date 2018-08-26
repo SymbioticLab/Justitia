@@ -933,7 +933,8 @@ static int mlx4_poll_one(struct mlx4_cq *cq,
 }
 
 #if defined(__x86_64__) || defined(__i386__)
-static inline unsigned long get_cycles()
+typedef unsigned long long cycles_t;
+static inline cycles_t get_cycles()
 {
 	unsigned low, high;
 	unsigned long long val;

@@ -4,12 +4,14 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+typedef unsigned long long cycles_t;
+
 // O(1) queue implementation
 typedef struct {
     int read;
     int write;
     int size;
-    int *array;
+    cycles_t *array;
 } Queue;
 
 static inline Queue *queue_init(int size)
@@ -22,7 +24,7 @@ static inline Queue *queue_init(int size)
     return q;
 }
 
-static inline void queue_push(Queue *q, int a)
+static inline void queue_push(Queue *q, cycles_t a)
 {
     if (q->read == (q->write + 1) % q->size)
         printf("QUEUE_FULL_ERROR\n");

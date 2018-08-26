@@ -64,8 +64,25 @@ int32_t debit = 0;
 #endif
 
 ////
-int GLOBAL_CNT = 0;
+//int GLOBAL_CNT = 0;
 //int start_flag = 1;
+#if defined(__x86_64__) || defined(__i386__)
+typedef unsigned long long cycles_t;
+static inline cycles_t get_cycles()
+{
+	unsigned low, high;
+	unsigned long long val;
+	asm volatile ("rdtsc" : "=a" (low), "=d" (high));
+	val = high;
+	val = (val << 32) | low;
+	return val;
+}
+#else
+static inline unsigned long get_cycles()
+{
+	return 0;
+}
+#endif
 ////
 
 #ifdef MLX4_WQE_FORMAT
@@ -2265,6 +2282,11 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 		}
 	}
 
+	//// For latency-sensitive QP, keep the timestamp
+	if (likely(qp->isSmall == 1))
+	{
+		queue_push(qp->orig_send_cq->wr_timestamps, get_cycles());
+	}
 	//// if not splitting or other atomic verbs, act like normal
 	ret = __mlx4_post_send(ibqp, wr, bad_wr);
 out:
