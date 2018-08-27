@@ -32,11 +32,11 @@ static inline void queue_push(Queue *q, cycles_t a)
     q->write = (q->write + 1) % q->size;
 }
 
-static inline int queue_pop(Queue *q)
+static inline cycles_t queue_pop(Queue *q)
 {
     if (q->read == q->write)
         printf("QUEUE_EMPTY_ERROR\n");
-    int tmp = q->array[q->read];
+    cycles_t tmp = q->array[q->read];
     q->read = (q->read + 1) % q->size;
     return tmp;
 }
