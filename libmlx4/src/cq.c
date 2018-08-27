@@ -936,6 +936,7 @@ static int mlx4_poll_one(struct mlx4_cq *cq,
 		return CQ_SPLIT_WIMM;
 	}
 	////
+#ifdef DRIVER_MEASURE_LAT
 	//// TIMESTAMP
 	if (cq->wr_timestamps != NULL) {
 		cycles_t cycles_elapsed = get_cycles() - queue_pop(cq->wr_timestamps);
@@ -948,6 +949,7 @@ static int mlx4_poll_one(struct mlx4_cq *cq,
 		}
 	}
 	////
+#endif
 	if (split_flag) {
 		//printf("returning CQ_SPLIT\n");
 		// generate a CQ_SPLIT return val	

@@ -807,9 +807,11 @@ static struct ibv_cq *create_cq(struct ibv_context *context,
 
 	cq->pattern = MLX4_CQ_PATTERN;
 
-	////
+#ifdef DRIVER_MEASURE_LAT
+	//// TIMESTAMP
 	cq->cpu_mhz = get_cpu_mhz(1);
 	////
+#endif
 
 	return &cq->ibv_cq;
 
@@ -1193,6 +1195,7 @@ struct ibv_qp *mlx4_create_qp(struct ibv_pd *pd, struct ibv_qp_init_attr *attr)
 		}
 		//// set whether user has set the qp to send mice flows
 		mqp->isSmall = (long)attr->qp_context;
+#ifdef DRIVER_MEASURE_LAT
 		//// TIMESTAMP
 		// Initialize timestamp queue inside its send_cq if user creates a "small" QP
 		if (mqp->isSmall == 1) {			// 1 means lat-sensitive; 2 means tput-sensitive
@@ -1203,6 +1206,7 @@ struct ibv_qp *mlx4_create_qp(struct ibv_pd *pd, struct ibv_qp_init_attr *attr)
 			mqp->orig_send_cq = NULL;
 		}
 		////
+#endif
 
 	} else {
 		fprintf(stderr, "Error creating Split QP\n");
