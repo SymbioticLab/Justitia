@@ -1193,13 +1193,16 @@ struct ibv_qp *mlx4_create_qp(struct ibv_pd *pd, struct ibv_qp_init_attr *attr)
 		}
 		//// set whether user has set the qp to send mice flows
 		mqp->isSmall = (long)attr->qp_context;
-		//// Initialize timestamp queue inside its send_cq if user creates a "small" QP
+		//// TIMESTAMP
+		// Initialize timestamp queue inside its send_cq if user creates a "small" QP
 		if (mqp->isSmall == 1) {			// 1 means lat-sensitive; 2 means tput-sensitive
 			mqp->orig_send_cq = to_mcq(attr->send_cq);
 			mqp->orig_send_cq->wr_timestamps = queue_init(TIMESTAMP_QUEUE_CAP);
+			mqp->orig_send_cq->cmh = CMH_Init(CMH_WIDTH, CMH_DEPTH, CMH_U, CMH_GRAN, CMH_WINDOW_SIZE);
 		} else {
 			mqp->orig_send_cq = NULL;
 		}
+		////
 
 	} else {
 		fprintf(stderr, "Error creating Split QP\n");

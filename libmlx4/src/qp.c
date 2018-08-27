@@ -2282,11 +2282,14 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 		}
 	}
 
-	//// For latency-sensitive QP, keep the timestamp
+	//// TIMESTAMP
+	// For latency-sensitive QP, keep the timestamp
 	if (likely(qp->isSmall == 1) && (wr->send_flags & IBV_SEND_SIGNALED))
 	{
 		queue_push(qp->orig_send_cq->wr_timestamps, get_cycles());
 	}
+	////
+
 	//// if not splitting or other atomic verbs, act like normal
 	ret = __mlx4_post_send(ibqp, wr, bad_wr);
 out:

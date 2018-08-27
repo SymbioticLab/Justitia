@@ -33,7 +33,7 @@
  */
 
 #if HAVE_CONFIG_H
-#  include <config.h>
+#include <config.h>
 #endif /* HAVE_CONFIG_H */
 
 #include <stdio.h>
@@ -62,6 +62,7 @@ static inline cycles_t get_cycles()
 ////
 /* isolation */
 #include "pacer.h"
+#include "math.h"
 /* end */
 
 int mlx4_stall_num_loop = 300;
@@ -939,10 +940,11 @@ static int mlx4_poll_one(struct mlx4_cq *cq,
 	if (cq->wr_timestamps != NULL) {
 		cycles_t cycles_elapsed = get_cycles() - queue_pop(cq->wr_timestamps);
 		//printf("cycles = %llu\n", cycles_elapsed);
-		double lat = (double) cycles_elapsed / cq->cpu_mhz;
+		int lat = round(cycles_elapsed / cq->cpu_mhz * 1000);	// latency in nanosec
 		//printf("lat = %.2f\n", lat);
-		if (lat){
-
+		if (CMH_Update(cq->cmh, lat)) {
+			fprintf(stderr, "CHM_update failed\n");	
+			return CQ_OK;
 		}
 	}
 	////

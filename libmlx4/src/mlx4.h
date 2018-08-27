@@ -52,6 +52,7 @@
 ////
 #include <inttypes.h>
 #include "queue.h"
+#include "countmin.h"
 //#define SPLIT_CHUNK_SIZE		1000000			//// Default Split Chunk Size; Need to be equal or less than the initial chunk size that pacer sets.
 #define SPLIT_CHUNK_SIZE		10000			//// Default Split Chunk Size; Need to be equal or less than the initial chunk size that pacer sets.
 #define MIN_SPLIT_CHUNK_SIZE    2048			//// A minimun chunk size that everybody knows and assumes.
@@ -70,6 +71,13 @@
 #define SPLIT_MAX_CQE			10000
 #define RR_BUFFER_INIT_CAP		1000
 #define TIMESTAMP_QUEUE_CAP		16
+// For count-min sketch
+#define CMH_WIDTH 32768
+#define CMH_DEPTH 16
+#define CMH_U 24
+#define CMH_GRAN 4
+#define CMH_WINDOW_SIZE 10000
+//
 ////
 
 /* Use EXP mmap commands until it is pushed to upstream */
@@ -566,9 +574,10 @@ struct mlx4_cq {
 	struct mlx4_qp			*last_qp;
 	uint32_t			model_flags; /* use mlx4_cq_model_flags */
 	//uint32_t 		split_chunk_size;
-	////
+	//// TIMESTAMP
 	Queue 			*wr_timestamps;		/* Ideally, we don't even need a queue if assume user post-1-poll-1 for theri "small" QP */
 	double 			cpu_mhz;
+	CMH_type		*cmh;
 	////
 };
 
