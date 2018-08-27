@@ -60,6 +60,7 @@
 /* isolation */
 #include "verbs_pacer.h"
 #include "pacer.h"
+#include "get_clock.h"
 struct flow_info *flow = NULL;
 struct shared_block *sb = NULL;
 int start_flag = 0;
@@ -805,6 +806,10 @@ static struct ibv_cq *create_cq(struct ibv_context *context,
 	}
 
 	cq->pattern = MLX4_CQ_PATTERN;
+
+	////
+	cq->cpu_mhz = get_cpu_mhz(1);
+	////
 
 	return &cq->ibv_cq;
 

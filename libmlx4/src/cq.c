@@ -48,6 +48,17 @@
 #include "doorbell.h"
 ////
 #include "wqe.h"
+typedef unsigned long long cycles_t;
+static inline cycles_t get_cycles()
+{
+	unsigned low, high;
+	unsigned long long val;
+	asm volatile ("rdtsc" : "=a" (low), "=d" (high));
+	val = high;
+	val = (val << 32) | low;
+	return val;
+}
+
 ////
 /* isolation */
 #include "pacer.h"
@@ -924,6 +935,17 @@ static int mlx4_poll_one(struct mlx4_cq *cq,
 		return CQ_SPLIT_WIMM;
 	}
 	////
+	//// TIMESTAMP
+	if (cq->wr_timestamps != NULL) {
+		cycles_t cycles_elapsed = get_cycles() - queue_pop(cq->wr_timestamps);
+		//printf("cycles = %llu\n", cycles_elapsed);
+		double lat = (double) cycles_elapsed / cq->cpu_mhz;
+		//printf("lat = %.2f\n", lat);
+		if (lat){
+
+		}
+	}
+	////
 	if (split_flag) {
 		//printf("returning CQ_SPLIT\n");
 		// generate a CQ_SPLIT return val	
@@ -931,24 +953,6 @@ static int mlx4_poll_one(struct mlx4_cq *cq,
 	}
 	return CQ_OK;
 }
-
-#if defined(__x86_64__) || defined(__i386__)
-typedef unsigned long long cycles_t;
-static inline cycles_t get_cycles()
-{
-	unsigned low, high;
-	unsigned long long val;
-	asm volatile ("rdtsc" : "=a" (low), "=d" (high));
-	val = high;
-	val = (val << 32) | low;
-	return val;
-}
-#else
-static inline unsigned long get_cycles()
-{
-	return 0;
-}
-#endif
 
 static void mlx4_stall_poll_cq()
 {

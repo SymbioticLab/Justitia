@@ -568,6 +568,7 @@ struct mlx4_cq {
 	//uint32_t 		split_chunk_size;
 	////
 	Queue 			*wr_timestamps;		/* Ideally, we don't even need a queue if assume user post-1-poll-1 for theri "small" QP */
+	double 			cpu_mhz;
 	////
 };
 
