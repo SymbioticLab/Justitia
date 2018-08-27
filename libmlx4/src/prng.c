@@ -209,7 +209,8 @@ void RanrotAInit (prng_type * prng, unsigned long seed) {
     for (i = 0;  i < 300;  i++) 
         ran3(prng);
 
-    prng->scale = ldexp(1, -8 * sizeof(unsigned long));
+    prng->scale = ldexp(1, -8 * 8);
+    //prng->scale = ldexp(1, -8 * sizeof(unsigned long));
 }
 
 
