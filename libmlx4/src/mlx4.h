@@ -73,6 +73,7 @@
 #define TIMESTAMP_QUEUE_CAP		16
 // For count-min sketch
 //#define DRIVER_MEASURE_LAT
+//#define DRIVER_USE_CMH
 #define CMH_WIDTH 32768
 #define CMH_DEPTH 16
 #define CMH_U 24
@@ -579,8 +580,10 @@ struct mlx4_cq {
 	//// TIMESTAMP
 	Queue 			*wr_timestamps;		/* Ideally, we don't even need a queue if assume user post-1-poll-1 for theri "small" QP */
 	double 			cpu_mhz;
+#ifdef DRIVER_USE_CMH
 	CMH_type		*cmh;
 	////
+#endif
 #endif
 };
 

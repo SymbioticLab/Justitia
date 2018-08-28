@@ -1201,7 +1201,9 @@ struct ibv_qp *mlx4_create_qp(struct ibv_pd *pd, struct ibv_qp_init_attr *attr)
 		if (mqp->isSmall == 1) {			// 1 means lat-sensitive; 2 means tput-sensitive
 			mqp->orig_send_cq = to_mcq(attr->send_cq);
 			mqp->orig_send_cq->wr_timestamps = queue_init(TIMESTAMP_QUEUE_CAP);
+#ifdef DRIVER_USE_CMH
 			mqp->orig_send_cq->cmh = CMH_Init(CMH_WIDTH, CMH_DEPTH, CMH_U, CMH_GRAN, CMH_WINDOW_SIZE);
+#endif
 		} else {
 			mqp->orig_send_cq = NULL;
 		}

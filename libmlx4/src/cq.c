@@ -942,11 +942,13 @@ static int mlx4_poll_one(struct mlx4_cq *cq,
 		cycles_t cycles_elapsed = get_cycles() - queue_pop(cq->wr_timestamps);
 		//printf("cycles = %llu\n", cycles_elapsed);
 		int lat = round(cycles_elapsed / cq->cpu_mhz * 1000);	// latency in nanosec
-		//printf("lat = %.2f\n", lat);
+		printf("lat = %.2f\n", (double)lat/1000);
+#ifdef DRIVER_USE_CMH
 		if (CMH_Update(cq->cmh, lat)) {
 			fprintf(stderr, "CHM_update failed\n");	
 			return CQ_OK;
 		}
+#endif
 	}
 	////
 #endif
