@@ -30,7 +30,7 @@
 #define TABLE_SIZE 7
 //#define FAVOR_BIG_FLOW
 #define SMART_RMF
-#define USE_TIMEFRAME
+//#define USE_TIMEFRAME
 
 struct flow_info {
     uint8_t pending;
