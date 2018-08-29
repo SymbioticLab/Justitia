@@ -17,6 +17,10 @@
 #define LAT_TARGET_WAIT_TIME 5000
 // Time to wait in microseconds when latency target is met
 #define RMF_FREQENCY 4
+#define TIMEKEEP
+#define NUM_SAMPLE 2000
+// sampling interval (seconds) for timekeeping
+#define SAMPLE_INTERVAL 0.04
 
 CMH_type *cmh = NULL;
 
@@ -29,6 +33,18 @@ static inline void cpu_relax()
 void monitor_latency(void *arg)
 {
     printf(">>>starting monitor_latency...\n");
+#ifdef TIMEKEEP
+    int arr_idx = 0;
+    double time_arr[NUM_SAMPLE] = {0};  // array of timestamps (in seconds)
+    double lat_arr[NUM_SAMPLE] = {0};   // array of actual latency measured by monitor (in microseconds)
+    double tail_arr[NUM_SAMPLE] = {0};   // array of tail latency estimated by CMH (in microseconds)
+    double curr_time = 0;       // current time in microseconds
+    double loop_time = 0;       // used to keep track of when we reach the next sample interval (unit is microsecond)
+    cycles_t loop_start = 0, loop_end = 0;
+    int big_flow_flag = 0;
+    double initial_wait_time = 0;   // initial wait time before an elephant came in
+    int stop_timekeep = 0;
+#endif
 
     double tail_99;
 
@@ -125,6 +141,9 @@ void monitor_latency(void *arg)
 #endif
     while (1)
     {
+#ifdef TIMEKEEP
+        loop_start = get_cycles();
+#endif
 #ifdef SMART_RMF
         if (lat_above_target) {
             counter_rmf = get_cycles();
@@ -316,8 +335,40 @@ void monitor_latency(void *arg)
             //printf(">>>> virtual link cap: %" PRIu32 "\n", __atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED));
         }
 
+#ifdef TIMEKEEP
+        if (!stop_timekeep) {
+            loop_end = get_cycles();    
+            loop_time += ((double)(loop_end - loop_start) / cpu_mhz);
+            if (loop_time > SAMPLE_INTERVAL * 1000000) {
+                curr_time += loop_time;
+                loop_time = 0;
+                time_arr[arr_idx] = curr_time / 1000000;
+                lat_arr[arr_idx] = (double)(end_cycle - start_cycle) / cpu_mhz;
+                tail_arr[arr_idx] = tail_99;
+                arr_idx++;
+                if (arr_idx == NUM_SAMPLE) {
+                    stop_timekeep = 1;
+                }
+            }
+            if (!big_flow_flag && (num_active_big_flows > 0)) {
+                big_flow_flag = 1;
+                initial_wait_time = curr_time / 1000000;
+            }
+        }
+#endif
     }
     printf("Out of while loop. exiting...\n");
     CMH_Destroy(cmh);
+#ifdef TIMEKEEP // To get of the while loop, do CTRL+C on the remote side
+    //TODO: write to file...
+    FILE *f = fopen("lat_result.txt", "w");
+    fprintf(f, "Initial Wait Time before Elephant came in: %.2f(s)\n", initial_wait_time);
+    fprintf(f, "sample_cnt\tTime(s)\t\tLatency(us)\tTail(us)\n");
+    int i;
+    for (i = 0; i < NUM_SAMPLE; i++) {
+        fprintf(f, "%d\t\t%.2f\t\t%.2f\t\t%.2f\n", i + 1, time_arr[i], lat_arr[i], tail_arr[i]);
+    }
+    fclose(f);
+#endif
     exit(1);
 }
