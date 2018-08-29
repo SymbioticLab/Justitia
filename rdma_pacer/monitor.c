@@ -16,7 +16,7 @@
 // Time to wait in milliseconds when latency target can't not be met (before giving back bandwidth)
 #define LAT_TARGET_WAIT_TIME 5000
 // Time to wait in microseconds when latency target is met
-#define RMF_FREQENCY 2
+#define RMF_FREQENCY 4
 
 CMH_type *cmh = NULL;
 
