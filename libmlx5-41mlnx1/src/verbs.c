@@ -2412,7 +2412,6 @@ struct ibv_qp *mlx5_create_qp(struct ibv_pd *pd,
 		}
 	}
 
-	printf("DEBUG mlx5_create_qp: split_qp->qpn = %06x\n", split_qp->qp_num);
 	//// Now create the user's qp
 	qp = __mlx5_create_qp(pd, attr);
 	if (qp == NULL) {
