@@ -51,7 +51,8 @@
 
 ////
 #include <inttypes.h>
-#define SPLIT_CHUNK_SIZE		1000000			//// Default Split Chunk Size; Need to be equal or less than the initial chunk size that pacer sets.
+//#define SPLIT_CHUNK_SIZE		1000000			//// Default Split Chunk Size; Need to be equal or less than the initial chunk size that pacer sets.
+#define SPLIT_CHUNK_SIZE		10000			//// Default Split Chunk Size; Need to be equal or less than the initial chunk size that pacer sets.
 #define MIN_SPLIT_CHUNK_SIZE    2048			//// A minimun chunk size that everybody knows and assumes.
 //#define SPLIT_CHUNK_SIZE		1048576			//// Default Split Chunk Size; Need to be equal or less than the initial chunk size that pacer sets.
 #define MANUAL_SPLIT_QPN_DIFF 	1				//// manually set (guess) split qpn/psn or general approcah
@@ -61,7 +62,8 @@
 //#define SPLIT_USE_NO_BATCH		0				//// 1 -> post 1 poll 1 at one-sided verbs; DC if SPLIT_USE_LINKED_LIST is 1; 0 -> use batch 
 #define SPLIT_USE_NO_BATCH_2SIDED		1		//// 1 -> post 1 poll 1 at two-sided verbs; 
 #define SPLIT_ONE_SIDED_BATCH_SIZE		1		//// batch rate in one-sided verbs. 1 means no batch
-#define SPLIT_USE_SELECTIVE_SIGNALING	0		//// use selective signaling (only last chunk signaled) or not when sending split chunks 
+#define SPLIT_USE_SELECTIVE_SIGNALING	1		//// use selective signaling (only last chunk signaled) or not when sending split chunks 
+#define SPLIT_QP_NUM_ONE_SIDED			2		//// number of split_QPs used to send split chunks in one-sided verbs
 #define SPLIT_MAX_SEND_WR 		6000
 #define SPLIT_MAX_RECV_WR 		6000
 #define SPLIT_MAX_CQE			10000
@@ -899,7 +901,7 @@ struct mlx5_qp {
 	uint32_t				max_tso_header;
 	uint32_t                                flags; /* Use enum mlx5_qp_flags */
 	//// added for spliting
-	struct ibv_qp 		*split_qp;
+	struct ibv_qp 		*split_qp[SPLIT_QP_NUM_ONE_SIDED];
 	struct ibv_qp 		*split_qp2;
 	//struct ibv_cq		*split_cq;
 	struct ibv_cq		*split_send_cq;
