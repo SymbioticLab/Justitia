@@ -6,7 +6,7 @@
 #include <inttypes.h>
 #include <math.h>
 
-#define TAIL 3
+#define TAIL 2
 
 #define WIDTH 32768
 #define DEPTH 16
@@ -17,7 +17,7 @@
 #define LAT_TARGET_WAIT_TIME 5000
 // Time to wait in microseconds when latency target is met
 #define RMF_FREQENCY 800
-#define TIMEKEEP
+//#define TIMEKEEP
 #define NUM_SAMPLE 2000 // sampling interval (seconds) for timekeeping
 #define SAMPLE_INTERVAL 0.04
 #define USE_CMH
