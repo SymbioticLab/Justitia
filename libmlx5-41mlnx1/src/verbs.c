@@ -2392,17 +2392,24 @@ struct ibv_qp *mlx5_create_qp(struct ibv_pd *pd,
 	split_init_attr2.recv_cq = split_cq2;
 
 	struct ibv_qp 		*qp;
-	struct ibv_qp 		*split_qp;
-	struct ibv_qp 		*split_qp2;
+	struct ibv_qp 		*split_qp[SPLIT_QP_NUM_ONE_SIDED];
+	struct ibv_qp 		*split_qp2;			// temporarily used in 2-sided
 	split_qp2 = __mlx5_create_qp(pd, &split_init_attr2);
 	if (split_qp2 == NULL) {
 		printf("Create split qp2 failed. %s\n", strerror(errno));
 	}
 	printf("DEBUG mlx5_create_qp: split_qp->qpn = %06x\n", split_qp2->qp_num);
 
-	split_qp = __mlx5_create_qp(pd, &split_init_attr);
-	if (split_qp == NULL) {
-		printf("Create split qp failed. %s\n", strerror(errno));
+	int i;
+	//for (i = 0; i < SPLIT_QP_NUM_ONE_SIDED; i++) {
+	for (i = SPLIT_QP_NUM_ONE_SIDED - 1; i >= 0 ; i--) {
+		split_qp[i] = __mlx5_create_qp(pd, &split_init_attr);
+		if (split_qp[i]) {
+			printf("DEBUG mlx4_create_qp: split_qp[%d]->qpn = %06x\n", i, split_qp[i]->qp_num);
+		} else {
+			fprintf(stderr, "Error creating Split QP #%d\n", i + 1);
+			return NULL;
+		}
 	}
 
 	printf("DEBUG mlx5_create_qp: split_qp->qpn = %06x\n", split_qp->qp_num);
@@ -2415,7 +2422,10 @@ struct ibv_qp *mlx5_create_qp(struct ibv_pd *pd,
 	//// store split_qp & split_cq inside the user's qp
 	if (qp) {
 		struct mlx5_qp *mqp = to_mqp(qp);
-		mqp->split_qp = split_qp;
+		for (i = 0; i < SPLIT_QP_NUM_ONE_SIDED; i++) {
+			mqp->split_qp[i] = split_qp[i];
+		}
+
 		mqp->split_qp2 = split_qp2;
 		mqp->split_cq2 = split_cq2;
 		mqp->split_send_cq = split_send_cq;
@@ -3095,6 +3105,7 @@ int __mlx5_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 int mlx5_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 		   int attr_mask)
 {
+	int i;
 	start_flag = 0;
 
 	struct mlx5_qp *mqp = to_mqp(qp);
@@ -3117,7 +3128,9 @@ int mlx5_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 		if (ret)
 			return ret;
 		//// do same for custom_qp
-		update_port_data(mqp->split_qp, attr->port_num);
+		for (i = 0; i < SPLIT_QP_NUM_ONE_SIDED; i++) {
+			update_port_data(mqp->split_qp[i], attr->port_num);
+		}
 		update_port_data(mqp->split_qp2, attr->port_num);
 		////
 	}
@@ -3139,10 +3152,12 @@ int mlx5_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 	// We also directly modify split qp to RTS instead of wait users modify their qp to RTS
 	// because some users might never do so.
 	if (qp->state == IBV_QPS_INIT) {
-		if (__mlx5_modify_qp(mqp->split_qp, attr, attr_mask)) {
-			fprintf(stderr, "Failed to modify SPLIT QP to INIT State\n");
-			ret = 1;
-			goto err;
+		for (i = 0; i < SPLIT_QP_NUM_ONE_SIDED; i++) {
+			if (__mlx5_modify_qp(mqp->split_qp[i], attr, attr_mask)) {
+				fprintf(stderr, "Failed to modify SPLIT QP to INIT State\n");
+				ret = 1;
+				goto err;
+			}
 		}
 		if (__mlx5_modify_qp(mqp->split_qp2, attr, attr_mask)) {
 			fprintf(stderr, "Failed to modify SPLIT QP to INIT State\n");
@@ -3151,25 +3166,32 @@ int mlx5_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 		}
 		printf("<<<<MODIFY SPLIT QP to INIT>>>>\n");
 		fflush(stdout);
-	} else if (qp->state == IBV_QPS_RTR && mqp->split_qp->state == IBV_QPS_INIT) {
+	} else if (qp->state == IBV_QPS_RTR && mqp->split_qp[0]->state == IBV_QPS_INIT) {
 		//attr->dest_qp_num -= 1;	// for old benchmark
 		//attr->dest_qp_num -= 2; // for new benchmark
 		struct ibv_qp_attr split_attr, split_attr2;
 		memcpy(&split_attr, attr, sizeof(struct ibv_qp_attr));
 		memcpy(&split_attr2, attr, sizeof(struct ibv_qp_attr));
 		int split_mask = attr_mask;
-		split_attr.dest_qp_num -= SPLIT_QP_NUM_DIFF;
-		split_attr.rq_psn = 10083;
-		//printf("DEBUG MODIFY QP: now attr->dest_qp_num is %06x\n", attr->dest_qp_num);
+		uint32_t split_dest_qp_num = attr->dest_qp_num;
+		uint32_t split_rq_psn = 10083;
+		for (i = 0; i < SPLIT_QP_NUM_ONE_SIDED; i++) {
+			split_dest_qp_num -= SPLIT_QP_NUM_DIFF;
+			split_rq_psn++;
+			split_attr.dest_qp_num = split_dest_qp_num;
+			split_attr.rq_psn = split_rq_psn;
+			//printf("DEBUG MODIFY QP: now attr->dest_qp_num is %06x\n", attr->dest_qp_num);
 
-		if (__mlx5_modify_qp(mqp->split_qp, &split_attr, split_mask)) {
-			fprintf(stderr, "Failed to modify SPLIT QP to RTR State\n");
-			ret = 1;
-			goto err;
+			if (__mlx5_modify_qp(mqp->split_qp[i], &split_attr, split_mask)) {
+				fprintf(stderr, "Failed to modify SPLIT QP to RTR State\n");
+				ret = 1;
+				goto err;
+			}
 		}
 
-		split_attr2.dest_qp_num -= 2 * SPLIT_QP_NUM_DIFF;
-		split_attr2.rq_psn = 20083;
+		split_dest_qp_num -= SPLIT_QP_NUM_DIFF;
+		split_attr2.dest_qp_num -= split_dest_qp_num;
+		split_attr2.rq_psn = 10083;
 		if (__mlx5_modify_qp(mqp->split_qp2, &split_attr2, split_mask)) {
 			fprintf(stderr, "Failed to modify SPLIT QP to RTR State\n");
 			ret = 1;
@@ -3193,7 +3215,7 @@ int mlx5_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 		wr.sg_list = &sge;
 		wr.num_sge = 1;
 
-		if (mlx5_post_recv(mqp->split_qp, &wr, &bad_wr)) {
+		if (mlx5_post_recv(mqp->split_qp[0], &wr, &bad_wr)) {
 			fprintf(stderr, "Failed to post the initial RR to split qp.\n");
 			ret = 1;
 			goto err;
@@ -3208,7 +3230,7 @@ int mlx5_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 
 		// Modify split qp to RTS
 		split_attr.qp_state	    = IBV_QPS_RTS;
-		split_attr.sq_psn	    = 10083;
+		//split_attr.sq_psn	    = 10083;
 		split_attr.timeout	    = 14;
 		split_attr.retry_cnt	= 7;
 		split_attr.rnr_retry	= 7;
@@ -3220,14 +3242,20 @@ int mlx5_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 						IBV_QP_SQ_PSN             |
 						IBV_QP_MAX_QP_RD_ATOMIC;
 
-		if (__mlx5_modify_qp(mqp->split_qp, &split_attr, rts_mask)) {
-			fprintf(stderr, "Failed to modify SPLIT QP to RTS State\n");
-			ret = 1;
-			goto err;
-		}
+		uint32_t split_sq_psn = 10083;
+			for (i = 0; i < SPLIT_QP_NUM_ONE_SIDED; i++) {
+				split_sq_psn++;
+				split_attr.sq_psn = split_sq_psn;
+
+				if (__mlx5_modify_qp(mqp->split_qp[i], &split_attr, rts_mask)) {
+					fprintf(stderr, "Failed to modify SPLIT QP to RTS State\n");
+					ret = 1;
+					goto err;
+				}
+			}
 
 		split_attr2.qp_state	    = IBV_QPS_RTS;
-		split_attr2.sq_psn	    = 20083;
+		split_attr2.sq_psn	    = 10083;
 		split_attr2.timeout	    = 14;
 		split_attr2.retry_cnt	= 7;
 		split_attr2.rnr_retry	= 7;
@@ -3282,18 +3310,20 @@ check:
 		struct ibv_qp *orig_qp = qp;
 		if (qp->qp_type == IBV_QPT_RC) {
 			//// do same for custom_qp
-			qp = mqp->split_qp;
-			if (qp->recv_cq) {
-				mlx5_cq_clean(to_mcq(qp->recv_cq), mqp->rsc.rsn,
-						qp->srq ? to_msrq(qp->srq) : NULL);
-			}
-			if (qp->send_cq != qp->recv_cq && qp->send_cq)
-				mlx5_cq_clean(to_mcq(qp->send_cq), to_mqp(qp)->rsc.rsn, NULL);
+			for (i = 0; i < SPLIT_QP_NUM_ONE_SIDED; i++) {
+				qp = mqp->split_qp[i];
+				if (qp->recv_cq) {
+					mlx5_cq_clean(to_mcq(qp->recv_cq), mqp->rsc.rsn,
+							qp->srq ? to_msrq(qp->srq) : NULL);
+				}
+				if (qp->send_cq != qp->recv_cq && qp->send_cq)
+					mlx5_cq_clean(to_mcq(qp->send_cq), to_mqp(qp)->rsc.rsn, NULL);
 
-			mlx5_init_qp_indices(to_mqp(qp));
-			db = to_mqp(qp)->gen_data.db;
-			db[MLX5_RCV_DBR] = 0;
-			db[MLX5_SND_DBR] = 0;
+				mlx5_init_qp_indices(to_mqp(qp));
+				db = to_mqp(qp)->gen_data.db;
+				db[MLX5_RCV_DBR] = 0;
+				db[MLX5_SND_DBR] = 0;
+			}
 
 			qp = mqp->split_qp2;
 			if (qp->recv_cq) {
