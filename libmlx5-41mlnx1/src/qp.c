@@ -2970,7 +2970,7 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 				//struct ibv_exp_send_wr swr;
 				struct ibv_send_wr swr;
 				struct ibv_sge sge;
-				int i;
+				int i, j, qp_idx;
 				struct ibv_wc wc;
 				int ne = 0;
 				struct ibv_cq *ev_cq;
