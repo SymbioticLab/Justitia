@@ -1151,6 +1151,9 @@ struct ibv_qp *mlx4_create_qp(struct ibv_pd *pd, struct ibv_qp_init_attr *attr)
 	struct ibv_qp 		*split_qp[SPLIT_QP_NUM_ONE_SIDED];
 	struct ibv_qp 		*split_qp2;			// temporarily used in 2-sided
 	split_qp2 = __mlx4_create_qp(pd, &split_init_attr2);
+	if (split_qp2 == NULL) {
+		printf("Create split qp2 failed. %s\n", strerror(errno));
+	}
 	printf("DEBUG mlx4_create_qp: split_qp->qpn = %06x\n", split_qp2->qp_num);
 
 	int i;
