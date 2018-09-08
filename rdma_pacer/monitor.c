@@ -6,7 +6,7 @@
 #include <inttypes.h>
 #include <math.h>
 
-#define TAIL 2
+#define TAIL 3
 
 #define WIDTH 32768
 #define DEPTH 16
@@ -16,11 +16,11 @@
 // Time to wait in milliseconds when latency target can't not be met (before giving back bandwidth)
 #define LAT_TARGET_WAIT_TIME 5000
 // Time to wait in microseconds when latency target is met
-#define RMF_FREQENCY 4
+#define RMF_FREQENCY 800
 #define TIMEKEEP
-#define NUM_SAMPLE 2000
-// sampling interval (seconds) for timekeeping
+#define NUM_SAMPLE 2000 // sampling interval (seconds) for timekeeping
 #define SAMPLE_INTERVAL 0.04
+#define USE_CMH
 
 CMH_type *cmh = NULL;
 
@@ -117,12 +117,14 @@ void monitor_latency(void *arg)
     recv_sge.lkey = ctx->remote_read_mr->lkey;
     ibv_post_recv(ctx->qp_read, &recv_wr, &bad_recv_wr);
 
+#ifdef USE_CMH
     cmh = CMH_Init(WIDTH, DEPTH, U, GRAN, WINDOW_SIZE);
     if (!cmh)
     {
         fprintf(stderr, "CMH_Init failed\n");
         exit(1);
     }
+#endif
 
     /* monitor loop */
     uint32_t min_virtual_link_cap = 0;
@@ -173,6 +175,7 @@ void monitor_latency(void *arg)
 
         end_cycle = get_cycles();
 
+#ifdef USE_CMH
         lat = round((end_cycle - start_cycle) / cpu_mhz * 1000);
         if (CMH_Update(cmh, lat))
         {
@@ -182,6 +185,9 @@ void monitor_latency(void *arg)
 
         //cmh_start = get_cycles();
         tail_99 = round(CMH_Quantile(cmh, 0.99)/100.0)/10;
+
+        ////tail_99 = (double)lat / 1000;
+
         //printf("tail_99 = %.1f \n", tail_99);
         //cmh_end = get_cycles();
         //printf("CMH_Quantile 99th takes %.2f us\n", (cmh_end - cmh_start)/cpu_mhz);
@@ -189,6 +195,12 @@ void monitor_latency(void *arg)
         //     printf("time between two sends %.2f us", (start_cycle - prev_start_cycle)/cpu_mhz);
         // prev_start_cycle = start_cycle;
         // printf("median %.1f us 99th %.1f us\n", median, tail_99);
+#else
+        lat = (end_cycle - start_cycle) / cpu_mhz * 1000;
+        tail_99 = (double)lat / 1000;
+
+        //printf("tail_99 = %.1f \n", tail_99);
+#endif
         seq++;
         wr.wr_id = seq;
 
@@ -246,6 +258,7 @@ void monitor_latency(void *arg)
 #endif
                     /* Multiplicative Decrease */
                     temp >>= 1;
+                    ////temp -= 1000;
                     if (ELEPHANT_HAS_LOWER_BOUND && temp < min_virtual_link_cap)
                     {
                         temp = min_virtual_link_cap;
@@ -358,7 +371,11 @@ void monitor_latency(void *arg)
 #endif
     }
     printf("Out of while loop. exiting...\n");
+
+#ifdef USE_CMH
     CMH_Destroy(cmh);
+#endif
+
 #ifdef TIMEKEEP // To get of the while loop, do CTRL+C on the remote side
     //TODO: write to file...
     FILE *f = fopen("lat_result.txt", "w");

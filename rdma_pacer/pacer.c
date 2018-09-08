@@ -9,12 +9,12 @@
 #define DEFAULT_CHUNK_SIZE 5000
 //#define DEFAULT_BATCH_OPS 5000    // xl170 (when using 10Gbps link)
 //#define DEFAULT_BATCH_OPS 667     // Conflux
-//#define DEFAULT_BATCH_OPS 1500    // c6220/r320
-#define DEFAULT_BATCH_OPS 2500    // Shin's RoCEv2
+#define DEFAULT_BATCH_OPS 1500    // c6220/r320
+//#define DEFAULT_BATCH_OPS 2500    // Shin's RoCEv2
 //#define MAX_TOKEN 5
 #define MAX_TOKEN 5
 #define HOSTNAME_PATH "/proc/sys/kernel/hostname"
-#define SPLIT_QP_NUM_ONE_SIDED 2
+//#define SPLIT_QP_NUM_ONE_SIDED 2
 #define TIMEFRAME 2         // In microseconds
 
 extern CMH_type *cmh;
