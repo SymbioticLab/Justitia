@@ -1841,7 +1841,7 @@ check:
 		if (qp->qp_type == IBV_QPT_RC) {
 			//// do same for custom_qp
 			for (i = 0; i < SPLIT_QP_NUM_ONE_SIDED; i++) {
-				qp = mqp->split_qp[0];
+				qp = mqp->split_qp[i];
 				if (qp->recv_cq)
 					mlx4_cq_clean(to_mcq(qp->recv_cq), qp->qp_num,
 							qp->srq ? to_msrq(qp->srq) : NULL);
@@ -1916,6 +1916,7 @@ static void mlx4_unlock_cqs(struct ibv_qp *qp)
 }
 
 //// also do cleanup for split_qp
+//TODO: cleanup multi qps later; in fact there's something hasn't been fixed for cleanup for a long time
 int mlx4_destroy_qp(struct ibv_qp *ibqp)
 {
 	struct mlx4_qp *qp = to_mqp(ibqp);
