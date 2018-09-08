@@ -87,7 +87,7 @@ def main():
 	parser.add_option('-l', '--lamda',
 					  dest = 'lamda',
 					  default = 0.25,
-					  help = 'provide the lamda value in EWMA. Default size is .5')
+					  help = 'provide the lamda value in EWMA. Default size is .25')
 
 	(opts, args) = parser.parse_args()
 
