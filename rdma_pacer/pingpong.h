@@ -21,7 +21,7 @@
 
 #include "pingpong_utils.h"
 
-static const int BUF_SIZE = 10;
+static const int BUF_SIZE = 10;	//TODO test size = 16
 static const int BUF_READ_SIZE = 5;
 
 struct pingpong_context {
