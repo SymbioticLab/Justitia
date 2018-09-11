@@ -21,6 +21,7 @@
 #define NUM_SAMPLE 2000 // sampling interval (seconds) for timekeeping
 #define SAMPLE_INTERVAL 0.04
 #define USE_CMH
+#define CMH_PERCENTILE  0.99    // pencentile ask from CMH
 
 CMH_type *cmh = NULL;
 
@@ -46,7 +47,7 @@ void monitor_latency(void *arg)
     int stop_timekeep = 0;
 #endif
 
-    double tail_99;
+    double measured_tail;
 
     int lat; // in nanoseconds
     cycles_t start_cycle, end_cycle;
@@ -184,11 +185,11 @@ void monitor_latency(void *arg)
         }
 
         //cmh_start = get_cycles();
-        tail_99 = round(CMH_Quantile(cmh, 0.99)/100.0)/10;
+        measured_tail = round(CMH_Quantile(cmh, CMH_PERCENTILE)/100.0)/10;
 
         ////tail_99 = (double)lat / 1000;
 
-        //printf("tail_99 = %.1f \n", tail_99);
+        //printf("measured_tail = %.1f \n", measured_tail);
         //cmh_end = get_cycles();
         //printf("CMH_Quantile 99th takes %.2f us\n", (cmh_end - cmh_start)/cpu_mhz);
         // if (prev_start_cycle)
@@ -197,9 +198,7 @@ void monitor_latency(void *arg)
         // printf("median %.1f us 99th %.1f us\n", median, tail_99);
 #else
         lat = (end_cycle - start_cycle) / cpu_mhz * 1000;
-        tail_99 = (double)lat / 1000;
-
-        //printf("tail_99 = %.1f \n", tail_99);
+        measured_tail = (double)lat / 1000;
 #endif
         seq++;
         wr.wr_id = seq;
@@ -251,7 +250,7 @@ void monitor_latency(void *arg)
                 min_virtual_link_cap = round((double)(num_active_big_flows + num_remote_big_reads) 
                     / (num_active_big_flows + num_active_small_flows + num_remote_big_reads) * LINE_RATE_MB);
                 temp = __atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED);
-                if (tail_99 > TAIL)
+                if (measured_tail > TAIL)
                 {
 #ifdef SMART_RMF
                     lat_above_target = 1;
