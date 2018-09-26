@@ -280,6 +280,10 @@ static void generate_tokens()
      */
     uint32_t temp, chunk_size;
     uint16_t num_big;
+    ////
+    //__atomic_store_n(&cb.sb->active_chunk_size, chunk_size, __ATOMIC_RELAXED);
+    //__atomic_store_n(&cb.sb->active_batch_ops, chunk_size/DEFAULT_CHUNK_SIZE*DEFAULT_BATCH_OPS, __ATOMIC_RELAXED);
+    ////
     while (1)
     {
         // temp = 4999; // for testing
@@ -406,7 +410,7 @@ int main(int argc, char **argv)
     atexit(rm_shmem_on_exit);
 
     int fd_shm, i;
-    pthread_t th1, th2, th3, th4;
+    pthread_t th1, th2, th3;
     //pthread_t th1, th2, th3, th4, th5;
     struct monitor_param param;
     char *endPtr;
@@ -477,6 +481,7 @@ int main(int argc, char **argv)
         error("pthread_create: generate_tokens");
     }
 
+    /*
     printf("starting thread for token generating for read...\n");
     if (pthread_create(&th4, NULL, (void *(*)(void *)) & generate_tokens_read, NULL))
     {
@@ -484,15 +489,16 @@ int main(int argc, char **argv)
     }
 
     printf("starting thread for rate limiting big read flows...\n");
-    if (pthread_create(&th4, NULL, (void *(*)(void *)) & rate_limit_read, NULL))
+    if (pthread_create(&th5, NULL, (void *(*)(void *)) & rate_limit_read, NULL))
     {
         error("pthread_create: generate_tokens_read");
     }
+    */
 
     /* logging thread */
     /*
     printf("starting thread for logging...\n");
-    if (pthread_create(&th5, NULL, (void *(*)(void *)) & logging_tokens, NULL))
+    if (pthread_create(&th6, NULL, (void *(*)(void *)) & logging_tokens, NULL))
     {
         error("pthread_create: logging_tokens");
     }
