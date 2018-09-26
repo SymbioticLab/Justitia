@@ -15,7 +15,7 @@
 #define MAX_TOKEN 5
 #define HOSTNAME_PATH "/proc/sys/kernel/hostname"
 //#define SPLIT_QP_NUM_ONE_SIDED 2
-#define TIMEFRAME 2         // In microseconds
+//#define TIMEFRAME 2         // In microseconds
 
 extern CMH_type *cmh;
 struct control_block cb;
@@ -273,6 +273,7 @@ static void generate_tokens()
     cycles_t start_cycle = 0;
     int cpu_mhz = get_cpu_mhz(1);
     int start_flag = 1;
+    int i;
     // struct timespec wait_time;
 
     /* infinite loop: generate tokens at a rate calculated 
@@ -286,6 +287,17 @@ static void generate_tokens()
     ////
     while (1)
     {
+//// FETCH TOKEN loop
+        for (i = 0; i < MAX_FLOWS; i++)
+        {
+            if (!__atomic_load_n(&cb.sb->flows[i].read, __ATOMIC_RELAXED) && __atomic_load_n(&cb.sb->flows[i].pending, __ATOMIC_RELAXED))
+            {
+                fetch_token();
+                __atomic_store_n(&cb.sb->flows[i].pending, 0, __ATOMIC_RELAXED);
+            }
+        }
+//// end of FETCH TOKEN loop
+
         // temp = 4999; // for testing
         if ((temp = __atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED)))
         {
@@ -504,7 +516,10 @@ int main(int argc, char **argv)
     }
     */
 
+    void *res;
+    pthread_join(th2, &res);
     /* main loop: fetch token */
+    /*
     while (1)
     {
         for (i = 0; i < MAX_FLOWS; i++)
@@ -516,4 +531,5 @@ int main(int argc, char **argv)
             }
         }
     }
+    */
 }
