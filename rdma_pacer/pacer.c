@@ -278,11 +278,11 @@ static void generate_tokens()
     /* infinite loop: generate tokens at a rate calculated 
      * from virtual_link_cap and active chunk size 
      */
-    uint32_t temp, chunk_size;
+    uint32_t temp, chunk_size = DEFAULT_CHUNK_SIZE;
     uint16_t num_big;
     ////
-    //__atomic_store_n(&cb.sb->active_chunk_size, chunk_size, __ATOMIC_RELAXED);
-    //__atomic_store_n(&cb.sb->active_batch_ops, chunk_size/DEFAULT_CHUNK_SIZE*DEFAULT_BATCH_OPS, __ATOMIC_RELAXED);
+    __atomic_store_n(&cb.sb->active_chunk_size, chunk_size, __ATOMIC_RELAXED);
+    __atomic_store_n(&cb.sb->active_batch_ops, chunk_size/DEFAULT_CHUNK_SIZE*DEFAULT_BATCH_OPS, __ATOMIC_RELAXED);
     ////
     while (1)
     {
