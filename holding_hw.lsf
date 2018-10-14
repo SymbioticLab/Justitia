@@ -1,0 +1,14 @@
+#!/bin/bash
+#
+#BSUB -W  24:00               		# 24 hours of walltime requested
+#BSUB -n 80                  		# number of tasks in job
+#BSUB -R "span[ptile=40]" 		# limit 40 processes per node. See note above about HT
+#BSUB -J gittins12			# job name
+#BSUB -e errors.%J      		# error file name in which %J is replaced by the job ID
+#BSUB -o output.%J      		# output file name in which %J is replaced by the job ID
+#BSUB -q gpu_p100			# choose the queue to use: normal or large_memory
+#BSUB -B 				# email job start notification
+#BSUB -N 				# email job end notification
+#BSUB -u yiwenzhg@umich.edu	# email address to send notifications
+
+sleep 1d
