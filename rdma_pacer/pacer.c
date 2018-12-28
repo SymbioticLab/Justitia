@@ -173,6 +173,7 @@ static void flow_handler()
     unsigned int s, s2, len;
     struct sockaddr_un local, remote;
     char buf[MSG_LEN];
+    char buf_pid[MSG_LEN];
     char *sock_path = get_sock_path();
 
     struct ibv_send_wr send_wr, *bad_wr = NULL;
@@ -216,11 +217,22 @@ static void flow_handler()
         printf("message is %s.\n", buf);
         if (strcmp(buf, "join") == 0)
         {
+            /* prompt for pid */
+            if (send(s2, "pid", 3, 0) == -1) {
+                perror("error sending pid prompt: ");
+                exit(1);
+            }
+
+            /* receive pid from process */
+            len = recv(s2, (void *)buf_pid, (size_t)MSG_LEN, 0);
+            printf("receive pid message of length %d.\n", len);
+            printf("message is %s.\n", buf_pid);
+
             /* send back slot number */
             printf("sending back slot number %d...\n", cb.next_slot);
             len = snprintf(buf, MSG_LEN, "%d", cb.next_slot);
             cb.sb->flows[cb.next_slot].active = 1;
-            send(s2, &buf, len, 0);
+            send(s2, &buf, len, 0);     // yiwen:why &buf not buf?
 
             /* find next empty slot */
             cb.next_slot = (cb.next_slot + 1) % MAX_FLOWS;

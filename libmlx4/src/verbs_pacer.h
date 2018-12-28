@@ -78,6 +78,26 @@ static void contact_pacer(int join) {
             exit(1);
         }
 
+        /* recv pid prompt */
+        if ((len = recv(s, str, MSG_LEN, 0)) > 0) {
+            str[len] = '\0';
+        } else {
+            if (len < 0) perror("recv");
+            else printf("Server closed connection\n");
+            exit(1);
+        }
+        memset(str, 0, len);
+
+        /* send process ID */
+        pid_t my_pid = getpid();
+        printf("My PID is %d\n", my_pid);
+        len = snprintf(str, MSG_LEN, "%d", my_pid);
+        //printf("length of pid message is %d\n", len);
+        if (send(s, str, len, 0) == -1) {
+            perror("error in sending pid: ");
+            exit(1);
+        }
+
         /* receive the slot number */
         if ((len = recv(s, str, MSG_LEN, 0)) > 0) {
             str[len] = '\0';
