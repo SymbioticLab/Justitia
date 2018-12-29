@@ -165,6 +165,45 @@ void logging_tokens()
 }
 /* end */
 
+int find_next_slot(pid_t pid)
+{
+    int i, ret_slot = -1, match = 0;
+    if (pid == -1) {
+        printf("Invalid pid. Exiting.\n");
+        exit(1);
+    }
+
+    for (i = 0; i < MAX_FLOWS; i++) {
+        if (cb.pid_list[i] == pid) {
+            printf("PID(%d) match at slot %d\n", pid, i);
+            cb.pid_list[i] = pid;
+            ret_slot = i;
+            match = 1;
+            break;
+        }
+    } 
+
+    /* if the pid appears for the first time */
+    if (match == 0) {
+        for (i = 0; i < MAX_FLOWS; i++) {
+            if (cb.pid_list[i] == -1) {
+                //printf("No pid match. Next empty slot is %d\n", i);
+                ret_slot = i;
+                break;
+            }
+        } 
+    }
+
+    if (ret_slot == -1) {
+        printf("Error finding next slot. Exiting.\n");
+        exit(1);
+    } else {
+        cb.pid_list[ret_slot] = pid;
+    }
+
+    return ret_slot;
+}
+
 /* handle incoming flows one by one; assign a slot to an incoming flow */
 static void flow_handler()
 {
@@ -175,6 +214,7 @@ static void flow_handler()
     char buf[MSG_LEN];
     char buf_pid[MSG_LEN];
     char *sock_path = get_sock_path();
+    pid_t pid;
 
     struct ibv_send_wr send_wr, *bad_wr = NULL;
     struct ibv_sge send_sge;
@@ -225,21 +265,30 @@ static void flow_handler()
 
             /* receive pid from process */
             len = recv(s2, (void *)buf_pid, (size_t)MSG_LEN, 0);
-            printf("receive pid message of length %d.\n", len);
-            printf("message is %s.\n", buf_pid);
+            //printf("receive pid message of length %d.\n", len);
+            //printf("message is %s.\n", buf_pid);
+            buf_pid[len] = '\0';
+            pid = strtol(buf_pid, NULL, 10);
+            printf("received pid: %d\n", pid);
 
+            /* find the slot number based on the pid received */
+            cb.next_slot = find_next_slot(pid);
+            
             /* send back slot number */
-            printf("sending back slot number %d...\n", cb.next_slot);
+            printf("sending back slot number %d ...\n", cb.next_slot);
             len = snprintf(buf, MSG_LEN, "%d", cb.next_slot);
             cb.sb->flows[cb.next_slot].active = 1;
             send(s2, &buf, len, 0);     // yiwen:why &buf not buf?
 
             /* find next empty slot */
+            // No longer needed since we switch to the pid based slot
+            /* 
             cb.next_slot = (cb.next_slot + 1) % MAX_FLOWS;
             while (__atomic_load_n(&cb.sb->flows[cb.next_slot].active, __ATOMIC_RELAXED))
             {
                 cb.next_slot = (cb.next_slot + 1) % MAX_FLOWS;
             }
+            */
         }
         else if (strcmp(buf, "read") == 0)
         {
@@ -482,6 +531,7 @@ int main(int argc, char **argv)
     {
         cb.sb->flows[i].pending = 0;
         cb.sb->flows[i].active = 0;
+        cb.pid_list[i] = -1;
     }
 
     /* start thread handling incoming flows */

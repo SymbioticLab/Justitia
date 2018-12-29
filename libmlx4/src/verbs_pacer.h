@@ -86,7 +86,7 @@ static void contact_pacer(int join) {
             else printf("Server closed connection\n");
             exit(1);
         }
-        memset(str, 0, len);
+        memset(str, 0, MSG_LEN);
 
         /* send process ID */
         pid_t my_pid = getpid();

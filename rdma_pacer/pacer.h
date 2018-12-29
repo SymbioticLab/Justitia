@@ -51,6 +51,7 @@ struct control_block {
     struct shared_block *sb;
 
     struct pingpong_context *ctx;
+    pid_t pid_list[MAX_FLOWS];             /* used to map pid to slot; index is the slot number; treat flows from the same process as one */
     uint64_t tokens;                       /* number of available tokens */
     uint64_t tokens_read;
     uint32_t virtual_link_cap;             /* capacity of the virtual link that elephants go through */
