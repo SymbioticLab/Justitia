@@ -362,6 +362,7 @@ static void generate_tokens()
         // temp = 4999; // for testing
         if ((temp = __atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED)))
         {
+            //TODO: no need to have the if-else given we don't use the chunk size table anymore
             if ((num_big = __atomic_load_n(&cb.sb->num_active_big_flows, __ATOMIC_RELAXED)))
                 //chunk_size = chunk_size_table[temp / num_big / (LINE_RATE_MB/6)];
                 //chunk_size = 1000000;       // hard-coded to be 1MB
@@ -418,6 +419,7 @@ static void generate_tokens_read()
             // temp = 4999; // for testing
             if ((temp = __atomic_load_n(&cb.local_read_rate, __ATOMIC_RELAXED)))
             {
+                //TODO: note the table is no longer used
                 chunk_size = chunk_size_table[temp / num_read / 1000];
                 __atomic_store_n(&cb.sb->active_chunk_size_read, chunk_size, __ATOMIC_RELAXED);
                 // __atomic_fetch_add(&cb.tokens, 10, __ATOMIC_RELAXED);
@@ -525,6 +527,11 @@ int main(int argc, char **argv)
     cb.sb->active_chunk_size = DEFAULT_CHUNK_SIZE;
     cb.sb->active_chunk_size_read = DEFAULT_CHUNK_SIZE;
     cb.sb->active_batch_ops = DEFAULT_BATCH_OPS;
+#ifdef DYNAMIC_NUM_SPLIT_QPS
+    cb.sb->num_active_split_qps = 1;        /* initially use only 1 split qps */
+#else
+    cb.sb->num_active_split_qps = DEFAULT_NUM_SPLIT_QPS;        /* should always be 2 */
+#endif
     cb.sb->num_active_big_flows = 0;
     cb.sb->num_active_small_flows = 0; /* cancel out pacer's monitor flow */
     for (i = 0; i < MAX_FLOWS; i++)

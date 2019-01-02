@@ -15,6 +15,8 @@
 #define WINDOW_SIZE 10000
 // Time to wait in milliseconds when latency target can't not be met (before giving back bandwidth)
 #define LAT_TARGET_WAIT_TIME 5000
+// Time to wait in milliseconds when latency target can't not be met before increasing num_split_qps
+#define LAT_TARGET_UNMET_WAIT_TIME 2
 // Time to wait in microseconds when latency target is met
 #define RMF_FREQENCY 800
 //#define TIMEKEEP
@@ -131,6 +133,11 @@ void monitor_latency(void *arg)
     uint32_t min_virtual_link_cap = 0;
     uint16_t num_active_big_flows = 0;
     uint16_t num_active_small_flows = 0;
+#ifdef DYNAMIC_NUM_SPLIT_QPS
+    cycles_t target_unmet_counter_start = 0;
+    cycles_t target_unmet_counter_end = 0;
+    cycles_t started_counting_target_unmet = 0;
+#endif
 #ifdef FAVOR_BIG_FLOW
     uint16_t prev_num_small_flows = 0;
     cycles_t counter_start = 0;
@@ -261,7 +268,29 @@ void monitor_latency(void *arg)
                     if (ELEPHANT_HAS_LOWER_BOUND && temp < min_virtual_link_cap)
                     {
                         temp = min_virtual_link_cap;
+
+#ifdef DYNAMIC_NUM_SPLIT_QPS
+                        if (!started_counting_target_unmet) {
+                            target_unmet_counter_start = get_cycles();
+                            started_counting_target_unmet = 1;
+                        }
+                        target_unmet_counter_end = get_cycles();
+                        if (((target_unmet_counter_end - target_unmet_counter_start) / cpu_mhz) > LAT_TARGET_UNMET_WAIT_TIME * 1000) {
+                            //// increase num_split_qps
+                            uint16_t num_split_qps = __atomic_load_n(&cb.sb->num_active_split_qps, __ATOMIC_RELAXED);
+                            //uint16_t num_split_qps = 2;
+                            if (num_split_qps < MAX_NUM_SPLIT_QPS) {
+                                num_split_qps++;
+                                printf("elapsed time is %.2f us; increase num_split_qps to %d\n", (target_unmet_counter_end - target_unmet_counter_start) / cpu_mhz, num_split_qps);
+                                __atomic_store_n(&cb.sb->num_active_split_qps, num_split_qps, __ATOMIC_RELAXED);
+                            }
+                            started_counting_target_unmet = 0;
+                        }
+
+#endif
+
 #ifdef FAVOR_BIG_FLOW
+//TODO: will need to modify the favor_big_flow logic after introducing the "dynamically change num_split_qps" feature
                         //// counter to count the time since we can't meet the latency target
                         if (!started_counting) {
                             counter_start = get_cycles();
@@ -271,9 +300,9 @@ void monitor_latency(void *arg)
                         if (((counter_end - counter_start) / cpu_mhz) > LAT_TARGET_WAIT_TIME * 1000) {
                             printf("elapsed time is %.2f us\n", (counter_end - counter_start) / cpu_mhz);
                             //// Give bandwidth back to big flows until another small flow joins
-                            started_counting = 0;
                             temp = LINE_RATE_MB;
                             AIMD_off = 1;
+                            started_counting = 0;
                         }
 #endif
                     }
@@ -282,6 +311,10 @@ void monitor_latency(void *arg)
                 {
                     /* Additive Increase */
                     temp++;
+#ifdef DYNAMIC_NUM_SPLIT_QPS
+                    //// invalidate latency target counter
+                    started_counting_target_unmet = 0;
+#endif
 #ifdef FAVOR_BIG_FLOW
                     //// invalidate latency target counter
                     started_counting = 0;
