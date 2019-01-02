@@ -23,7 +23,8 @@
 #define NUM_SAMPLE 2000 // sampling interval (seconds) for timekeeping
 #define SAMPLE_INTERVAL 0.04
 #define USE_CMH
-#define CMH_PERCENTILE  0.99    // pencentile ask from CMH
+//#define CMH_PERCENTILE  0.99    // pencentile ask from CMH
+#define CMH_PERCENTILE  0.90    // pencentile ask from CMH
 
 CMH_type *cmh = NULL;
 

@@ -33,7 +33,7 @@
 //#define USE_TIMEFRAME
 #define DYNAMIC_NUM_SPLIT_QPS
 #define DEFAULT_NUM_SPLIT_QPS 2
-#define MAX_NUM_SPLIT_QPS 2
+#define MAX_NUM_SPLIT_QPS 3
 
 struct flow_info {
     uint8_t pending;
