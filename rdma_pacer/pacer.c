@@ -21,7 +21,8 @@ extern CMH_type *cmh;
 struct control_block cb;
 //uint32_t chunk_size_table[] = {4096, 8192, 16384, 32768, 65536, 1048576, 1048576};
 //uint32_t chunk_size_table[] = {8192, 8192, 100000, 100000, 500000, 1000000, 1000000};
-uint32_t chunk_size_table[] = {1000000, 1000000, 1000000, 1000000, 1000000, 1000000, 1000000};	// Use 1048576 in Conflux
+////uint32_t chunk_size_table[] = {1000000, 1000000, 1000000, 1000000, 1000000, 1000000, 1000000};	// Use 1048576 in Conflux
+uint32_t chunk_size_table[] = {1000000, 5000, 5000, 1000};	// adjusted based on number of split qps
 /* utility fuctions */
 static void error(char *msg)
 {
@@ -364,11 +365,18 @@ static void generate_tokens()
         {
             //TODO: no need to have the if-else given we don't use the chunk size table anymore
             if ((num_big = __atomic_load_n(&cb.sb->num_active_big_flows, __ATOMIC_RELAXED)))
+            {
                 //chunk_size = chunk_size_table[temp / num_big / (LINE_RATE_MB/6)];
                 //chunk_size = 1000000;       // hard-coded to be 1MB
-                chunk_size = DEFAULT_CHUNK_SIZE;
+                //chunk_size = DEFAULT_CHUNK_SIZE;
+
+                /* adjust chunk size based on num_split_qps */
+                chunk_size = chunk_size_table[__atomic_load_n(&cb.sb->num_active_split_qps, __ATOMIC_RELAXED) - 1];
+            }
             else
+            {
                 chunk_size = DEFAULT_CHUNK_SIZE;
+            }
             __atomic_store_n(&cb.sb->active_chunk_size, chunk_size, __ATOMIC_RELAXED);
             //__atomic_store_n(&cb.sb->active_batch_ops, chunk_size/1000000.0*DEFAULT_BATCH_OPS, __ATOMIC_RELAXED);
             __atomic_store_n(&cb.sb->active_batch_ops, chunk_size/DEFAULT_CHUNK_SIZE*DEFAULT_BATCH_OPS, __ATOMIC_RELAXED);
@@ -420,7 +428,10 @@ static void generate_tokens_read()
             if ((temp = __atomic_load_n(&cb.local_read_rate, __ATOMIC_RELAXED)))
             {
                 //TODO: note the table is no longer used
-                chunk_size = chunk_size_table[temp / num_read / 1000];
+                //chunk_size = chunk_size_table[temp / num_read / 1000];
+                /* adjust chunk size based on num_split_qps */
+                chunk_size = chunk_size_table[__atomic_load_n(&cb.sb->num_active_split_qps, __ATOMIC_RELAXED) - 1];
+
                 __atomic_store_n(&cb.sb->active_chunk_size_read, chunk_size, __ATOMIC_RELAXED);
                 // __atomic_fetch_add(&cb.tokens, 10, __ATOMIC_RELAXED);
                 // wait_time.tv_nsec = 10 * chunk_size / temp * 1000;

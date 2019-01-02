@@ -32,8 +32,8 @@
 //#define SMART_RMF
 //#define USE_TIMEFRAME
 #define DYNAMIC_NUM_SPLIT_QPS
-#define DEFAULT_NUM_SPLIT_QPS 2
-#define MAX_NUM_SPLIT_QPS 3
+#define DEFAULT_NUM_SPLIT_QPS 2     // default vaule when not use DYNAMIC_NUM_SPLIT_QPS
+#define MAX_NUM_SPLIT_QPS 2         // qp = 3, 4 or above is not very helpful
 
 struct flow_info {
     uint8_t pending;
