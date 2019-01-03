@@ -2919,7 +2919,7 @@ void print_report_bw (struct perftest_parameters *user_param, struct bw_report_d
 		fclose(f);
 	}
 
-	if (user_param->num_of_qps > 1) {
+	if (user_param->num_of_qps > 1 && !user_param->log_off) {
 		strcat(user_param->output_log, "_multi_qp_res.txt");
 		//FILE *f = fopen("multi_qp_result.txt", "w");
 		printf("DEBUG: logname: %s\n", user_param->output_log);
