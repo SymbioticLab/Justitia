@@ -6,7 +6,7 @@
 #include <inttypes.h>
 #include <math.h>
 
-#define TAIL 2
+#define TAIL 2.5
 
 #define WIDTH 32768
 #define DEPTH 16
@@ -24,7 +24,7 @@
 #define SAMPLE_INTERVAL 0.04
 #define USE_CMH
 //#define CMH_PERCENTILE  0.99    // pencentile ask from CMH
-#define CMH_PERCENTILE  0.90    // pencentile ask from CMH
+#define CMH_PERCENTILE  0.99    // pencentile ask from CMH
 
 CMH_type *cmh = NULL;
 
