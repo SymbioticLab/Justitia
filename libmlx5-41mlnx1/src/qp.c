@@ -2962,6 +2962,9 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 
 		} else if (wr->opcode == IBV_WR_RDMA_WRITE || wr->opcode == IBV_WR_RDMA_READ) { 	// One-sided verbs
 
+            //// Dynamically adjust the number of split QPs (for one-sided verbs)
+            int num_split_qp = sb ? __atomic_load_n(&sb->num_active_split_qps, __ATOMIC_RELAXED) : SPLIT_QP_NUM_ONE_SIDED;
+
 			//// calculate num of chunks to split (based on the current(updated) chunk size) (1 + remaining)
 			num_chunks_to_send = ceil_helper((float)orig_sge_length / (float)split_chunk_size);
 
@@ -2982,8 +2985,8 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 					swr.sg_list = &sge;
 					swr.num_sge = 1;
 					//swr.send_flags = (i == num_wrs_to_split_qp - 1 || (i + 1) % SPLIT_ONE_SIDED_BATCH_SIZE == 0) ? (orig_send_flags | IBV_SEND_SIGNALED) : (orig_send_flags & (~(IBV_SEND_SIGNALED)));
-					if (SPLIT_QP_NUM_ONE_SIDED > 1) {
-						swr.send_flags = (i >= num_wrs_to_split_qp - SPLIT_QP_NUM_ONE_SIDED) ? (orig_send_flags | IBV_SEND_SIGNALED) : (orig_send_flags & (~(IBV_SEND_SIGNALED)));
+					if (num_split_qp > 1) {
+						swr.send_flags = (i >= num_wrs_to_split_qp - num_split_qp) ? (orig_send_flags | IBV_SEND_SIGNALED) : (orig_send_flags & (~(IBV_SEND_SIGNALED)));
 					} else {
 						swr.send_flags = (i == num_wrs_to_split_qp - 1 || (i + 1) % SPLIT_ONE_SIDED_BATCH_SIZE == 0) ? (orig_send_flags | IBV_SEND_SIGNALED) : (orig_send_flags & (~(IBV_SEND_SIGNALED)));
 					}
@@ -2996,7 +2999,7 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 					sge.lkey = wr->sg_list->lkey;
 
 					// those WRs are handled by the split qp
-					qp_idx = j % SPLIT_QP_NUM_ONE_SIDED;
+					qp_idx = j % num_split_qp;
 					ret = __mlx5_post_send(qp->split_qp[qp_idx], (struct ibv_exp_send_wr *)&swr, (struct ibv_exp_send_wr **)bad_wr, 0);
 					if (ret != 0) {
 						errno = ret;
