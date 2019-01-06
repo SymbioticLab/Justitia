@@ -361,7 +361,7 @@ static void generate_fetch_tokens()
     uint16_t num_big;
     __atomic_store_n(&cb.sb->active_chunk_size, chunk_size, __ATOMIC_RELAXED);
     __atomic_store_n(&cb.sb->active_batch_ops, chunk_size/DEFAULT_CHUNK_SIZE*DEFAULT_BATCH_OPS, __ATOMIC_RELAXED);
-    __atomic_store_n(&cb.tokens, 1, __ATOMIC_RELAXED);      //TODO: later try store MAX_TOKEN instead of 1
+    __atomic_store_n(&cb.tokens, 1, __ATOMIC_RELAXED);      // in fact, in current logic, # of tokens should always be 1 or 0
     while (1)
     {
 //// FETCH TOKEN loop
@@ -400,20 +400,20 @@ static void generate_fetch_tokens()
 
             // try to fetch tokens for flows until we are out of tokens
             i = next_idx;
-            //int count = 0;
             while (1) {
                 if (!__atomic_load_n(&cb.sb->flows[i].read, __ATOMIC_RELAXED) && __atomic_load_n(&cb.sb->flows[i].pending, __ATOMIC_RELAXED)) {
                     if (try_fetch_a_token()) {
                         __atomic_store_n(&cb.sb->flows[i].pending, 0, __ATOMIC_RELAXED);
                         //printf("fetched for flow %d\n", i);
+                        next_idx = (i + 1) % MAX_FLOWS;
+                        break;
                     } else {    // out of tokens
+                        //printf("out of tokens %d\n");
                         next_idx = i;
                         break;
                     }
                 }
-                i = (i + 1) % MAX_FLOWS;
-                //count++;
-                //if (count )
+                //i = (i + 1) % MAX_FLOWS;
             }
  
             /* generate one token */
