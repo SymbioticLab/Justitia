@@ -413,7 +413,7 @@ static void generate_fetch_tokens()
                         break;
                     }
                 }
-                //i = (i + 1) % MAX_FLOWS;
+                i = (i + 1) % MAX_FLOWS;
             }
  
             /* generate one token */
