@@ -4,9 +4,10 @@
 //#include <immintrin.h> /* For _mm_pause */
 #include "countmin.h"
 
+// DEFAULT_CHUNK_SIZE is the initial chunk size when num_split_qps = 1
 //#define DEFAULT_CHUNK_SIZE 10000000
-//#define DEFAULT_CHUNK_SIZE 1000000
-#define DEFAULT_CHUNK_SIZE 5000
+#define DEFAULT_CHUNK_SIZE 1000000
+//#define DEFAULT_CHUNK_SIZE 5000
 //#define DEFAULT_BATCH_OPS 5000    // xl170 (when using 10Gbps link)
 //#define DEFAULT_BATCH_OPS 667     // Conflux
 #define DEFAULT_BATCH_OPS 1500    // c6220/r320
@@ -156,6 +157,7 @@ void logging_tokens()
     start_cycle = get_cycles();
     double cpu_mhz = get_cpu_mhz(1);
     while (1) {
+        // NOTE: shouldn't be DEAFULT_CHUNK_SIZE; it can change
         while (get_cycles() - curr_cycle < cpu_mhz * DEFAULT_CHUNK_SIZE / LINE_RATE_MB)
             cpu_relax();
         curr_cycle = get_cycles();
@@ -320,6 +322,19 @@ static inline void fetch_token()
     __atomic_fetch_sub(&cb.tokens, 1, __ATOMIC_RELAXED);
 }
 
+/* try fetch one token; return 1 on success and 0 on failure 
+ */
+static inline int try_fetch_a_token() __attribute__((always_inline));
+static inline int try_fetch_a_token()
+{
+    int got_token = 0;
+    if (__atomic_load_n(&cb.tokens, __ATOMIC_RELAXED)) {
+        __atomic_fetch_sub(&cb.tokens, 1, __ATOMIC_RELAXED);
+        got_token = 1;
+    }
+    return got_token;
+}
+
 static inline void fetch_token_read() __attribute__((always_inline));
 static inline void fetch_token_read()
 {
@@ -328,7 +343,7 @@ static inline void fetch_token_read()
     __atomic_fetch_sub(&cb.tokens_read, 1, __ATOMIC_RELAXED);
 }
 
-/* generate tokens at some rate
+/* generate tokens at some rate; now also fetch tokens
  */
 static void generate_tokens()
 {
@@ -336,6 +351,7 @@ static void generate_tokens()
     int cpu_mhz = get_cpu_mhz(1);
     int start_flag = 1;
     int i;
+    int next_idx = 0;
     // struct timespec wait_time;
 
     /* infinite loop: generate tokens at a rate calculated 
@@ -343,45 +359,64 @@ static void generate_tokens()
      */
     uint32_t temp, chunk_size = DEFAULT_CHUNK_SIZE;
     uint16_t num_big;
-    ////
     __atomic_store_n(&cb.sb->active_chunk_size, chunk_size, __ATOMIC_RELAXED);
     __atomic_store_n(&cb.sb->active_batch_ops, chunk_size/DEFAULT_CHUNK_SIZE*DEFAULT_BATCH_OPS, __ATOMIC_RELAXED);
-    ////
+    __atomic_store_n(&cb.tokens, 1, __ATOMIC_RELAXED);      //TODO: later try store MAX_TOKEN instead of 1
     while (1)
     {
 //// FETCH TOKEN loop
+/*
         for (i = 0; i < MAX_FLOWS; i++)
         {
             if (!__atomic_load_n(&cb.sb->flows[i].read, __ATOMIC_RELAXED) && __atomic_load_n(&cb.sb->flows[i].pending, __ATOMIC_RELAXED))
             {
                 fetch_token();
+                //printf("fetched for flow %d\n", i);
                 __atomic_store_n(&cb.sb->flows[i].pending, 0, __ATOMIC_RELAXED);
             }
         }
+*/
 //// end of FETCH TOKEN loop
 
-        // temp = 4999; // for testing
-        if ((temp = __atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED)))
+        if ((temp = __atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED)))   // yiwen: is it necessary to check virtual cap = 0?
         {
-            //TODO: no need to have the if-else given we don't use the chunk size table anymore
             if ((num_big = __atomic_load_n(&cb.sb->num_active_big_flows, __ATOMIC_RELAXED)))
             {
                 //chunk_size = chunk_size_table[temp / num_big / (LINE_RATE_MB/6)];
-                //chunk_size = 1000000;       // hard-coded to be 1MB
                 //chunk_size = DEFAULT_CHUNK_SIZE;
 
                 /* adjust chunk size based on num_split_qps */
                 chunk_size = chunk_size_table[__atomic_load_n(&cb.sb->num_active_split_qps, __ATOMIC_RELAXED) - 1];
+                //printf("num big flows = %d; chunk_size = %d\n", num_big, chunk_size);
             }
             else
             {
                 chunk_size = DEFAULT_CHUNK_SIZE;
             }
             __atomic_store_n(&cb.sb->active_chunk_size, chunk_size, __ATOMIC_RELAXED);
-            //__atomic_store_n(&cb.sb->active_batch_ops, chunk_size/1000000.0*DEFAULT_BATCH_OPS, __ATOMIC_RELAXED);
             __atomic_store_n(&cb.sb->active_batch_ops, chunk_size/DEFAULT_CHUNK_SIZE*DEFAULT_BATCH_OPS, __ATOMIC_RELAXED);
-            // __atomic_fetch_add(&cb.tokens, 10, __ATOMIC_RELAXED);
-            // wait_time.tv_nsec = 10 * chunk_size / temp * 1000;
+            //__atomic_fetch_add(&cb.tokens, 10, __ATOMIC_RELAXED);
+            //wait_time.tv_nsec = 10 * chunk_size / temp * 1000;
+
+            // try to fetch tokens for flows until we are out of tokens
+            i = next_idx;
+            //int count = 0;
+            while (1) {
+                if (!__atomic_load_n(&cb.sb->flows[i].read, __ATOMIC_RELAXED) && __atomic_load_n(&cb.sb->flows[i].pending, __ATOMIC_RELAXED)) {
+                    if (try_fetch_a_token()) {
+                        __atomic_store_n(&cb.sb->flows[i].pending, 0, __ATOMIC_RELAXED);
+                        //printf("fetched for flow %d\n", i);
+                    } else {    // out of tokens
+                        next_idx = i;
+                        break;
+                    }
+                }
+                i = (i + 1) % MAX_FLOWS;
+                //count++;
+                //if (count )
+            }
+ 
+            /* generate one token */
             if (__atomic_load_n(&cb.tokens, __ATOMIC_RELAXED) < MAX_TOKEN)
             {
                 if (start_flag)
@@ -404,7 +439,7 @@ static void generate_tokens()
                 }
             }
         }
-        // nanosleep(&wait_time, NULL);
+        //nanosleep(&wait_time, NULL);
     }
 }
 
@@ -599,7 +634,7 @@ int main(int argc, char **argv)
     void *res;
     pthread_join(th2, &res);
     /* main loop: fetch token */
-    /*
+    /* 
     while (1)
     {
         for (i = 0; i < MAX_FLOWS; i++)
