@@ -345,7 +345,7 @@ static inline void fetch_token_read()
 
 /* generate tokens at some rate; now also fetch tokens
  */
-static void generate_tokens()
+static void generate_fetch_tokens()
 {
     cycles_t start_cycle = 0;
     int cpu_mhz = get_cpu_mhz(1);
@@ -603,9 +603,9 @@ int main(int argc, char **argv)
 
     /* start token generating thread */
     printf("starting thread for token generating...\n");
-    if (pthread_create(&th3, NULL, (void *(*)(void *)) & generate_tokens, NULL))
+    if (pthread_create(&th3, NULL, (void *(*)(void *)) & generate_fetch_tokens, NULL))
     {
-        error("pthread_create: generate_tokens");
+        error("pthread_create: generate_fetch_tokens");
     }
 
     /*
