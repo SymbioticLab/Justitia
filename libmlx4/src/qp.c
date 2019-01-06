@@ -1123,6 +1123,7 @@ int __mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 	int inl = 0;
 	int ret = 0;
 	int size = 0;
+    //uint8_t expected_pending = 0;
 
 	////mlx4_lock(&qp->sq.lock);
 
@@ -1135,9 +1136,11 @@ int __mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 		/* isolation */
 		if (isSmall == 0 && flow)
 		{
+            //expected_pending = 0;
 			//printf("DEBUG ENTER HERE\n");
 			__atomic_store_n(&flow->pending, 1, __ATOMIC_RELAXED);
 			while (__atomic_load_n(&flow->pending, __ATOMIC_RELAXED))
+			//while (!__atomic_compare_exchange_n(&flow->pending, &expected_pending, 1, 1, __ATOMIC_RELAXED, __ATOMIC_RELAXED))   // multi-thread safer than doing load
 				cpu_relax();
 		}
 		/* end */
