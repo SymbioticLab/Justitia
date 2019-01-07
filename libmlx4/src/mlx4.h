@@ -53,9 +53,10 @@
 #include <inttypes.h>
 #include "queue.h"
 #include "countmin.h"
-//#define SPLIT_CHUNK_SIZE		1000000			//// Default Split Chunk Size; Need to be equal or less than the initial chunk size that pacer sets.
-#define SPLIT_CHUNK_SIZE		10000			//// Default Split Chunk Size; Need to be equal or less than the initial chunk size that pacer sets.
-#define MIN_SPLIT_CHUNK_SIZE    2048			//// A minimun chunk size that everybody knows and assumes.
+#define SPLIT_CHUNK_SIZE		1000000			//// Default Split Chunk Size; Need to be equal or less than the initial chunk size that pacer sets.
+//#define SPLIT_CHUNK_SIZE		10000			//// Default Split Chunk Size; Need to be equal or less than the initial chunk size that pacer sets.
+////#define MIN_SPLIT_CHUNK_SIZE    2048			//// A minimun chunk size that everybody knows and assumes.
+#define MIN_SPLIT_CHUNK_SIZE    1000000			//// temporary hack to make 2-sided not split at 1MB chunk
 //#define SPLIT_CHUNK_SIZE		1048576			//// Default Split Chunk Size; Need to be equal or less than the initial chunk size that pacer sets.
 #define MANUAL_SPLIT_QPN_DIFF 	1				//// manually set (guess) split qpn/psn or general approcah
 #define SPLIT_QP_NUM_DIFF		1				//// DC if MANUAL_SPLIT is off
