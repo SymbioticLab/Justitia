@@ -379,8 +379,10 @@ void monitor_latency(void *arg)
                 __atomic_store_n(&cb.virtual_link_cap, temp, __ATOMIC_RELAXED);
                 /* decrease num_split_qps back to 1 when no small flow present; chunk size will change accordingly */
                 __atomic_store_n(&cb.sb->num_active_split_qps, 1, __ATOMIC_RELAXED);
+#ifdef DYNAMIC_NUM_SPLIT_QPS
                 started_counting_target_unmet = 0;
                 printf("decrease num_split_qps to 1\n");
+#endif
             }
             //printf(">>>> virtual link cap: %" PRIu32 "\n", __atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED));
         }
