@@ -360,7 +360,8 @@ static void generate_fetch_tokens()
     uint32_t temp, chunk_size = DEFAULT_CHUNK_SIZE;
     uint16_t num_big;
     __atomic_store_n(&cb.sb->active_chunk_size, chunk_size, __ATOMIC_RELAXED);
-    __atomic_store_n(&cb.sb->active_batch_ops, chunk_size/DEFAULT_CHUNK_SIZE*DEFAULT_BATCH_OPS, __ATOMIC_RELAXED);
+    //__atomic_store_n(&cb.sb->active_batch_ops, chunk_size/DEFAULT_CHUNK_SIZE*DEFAULT_BATCH_OPS, __ATOMIC_RELAXED);
+    __atomic_store_n(&cb.sb->active_batch_ops, DEFAULT_BATCH_OPS, __ATOMIC_RELAXED);
     __atomic_store_n(&cb.tokens, 1, __ATOMIC_RELAXED);      // in fact, in current logic, # of tokens should always be 1 or 0
     while (1)
     {
@@ -394,7 +395,7 @@ static void generate_fetch_tokens()
                 chunk_size = DEFAULT_CHUNK_SIZE;
             }
             __atomic_store_n(&cb.sb->active_chunk_size, chunk_size, __ATOMIC_RELAXED);
-            __atomic_store_n(&cb.sb->active_batch_ops, chunk_size/DEFAULT_CHUNK_SIZE*DEFAULT_BATCH_OPS, __ATOMIC_RELAXED);
+            __atomic_store_n(&cb.sb->active_batch_ops, DEFAULT_BATCH_OPS, __ATOMIC_RELAXED);
             //__atomic_fetch_add(&cb.tokens, 10, __ATOMIC_RELAXED);
             //wait_time.tv_nsec = 10 * chunk_size / temp * 1000;
 
