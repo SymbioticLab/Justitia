@@ -37,6 +37,11 @@ static inline void cpu_relax()
 void monitor_latency(void *arg)
 {
     printf(">>>starting monitor_latency...\n");
+#ifdef DYNAMIC_NUM_SPLIT_QPS
+    printf("Dynamic num_split_qps adjustment: ON\n");
+#else
+    printf("Dynamic num_split_qps adjustment: OFF\n");
+#endif
 #ifdef TIMEKEEP
     int arr_idx = 0;
     double time_arr[NUM_SAMPLE] = {0};  // array of timestamps (in seconds)
