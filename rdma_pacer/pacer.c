@@ -11,7 +11,8 @@
 //#define DEFAULT_BATCH_OPS 5000    // xl170 (when using 10Gbps link)
 //#define DEFAULT_BATCH_OPS 667     // Conflux
 //#define DEFAULT_BATCH_OPS 1500    // c6220
-#define DEFAULT_BATCH_OPS 1667    // r320
+//#define DEFAULT_BATCH_OPS 1667    // r320
+#define DEFAULT_BATCH_OPS 1800    // r320
 //#define DEFAULT_BATCH_OPS 2500    // Shin's RoCEv2
 //#define MAX_TOKEN 5
 #define MAX_TOKEN 5
