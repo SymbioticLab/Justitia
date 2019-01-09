@@ -396,6 +396,7 @@ static void generate_fetch_tokens()
                 chunk_size = DEFAULT_CHUNK_SIZE;
             }
             __atomic_store_n(&cb.sb->active_chunk_size, chunk_size, __ATOMIC_RELAXED);
+            //__atomic_store_n(&cb.sb->active_batch_ops, DEFAULT_BATCH_OPS * chunk_size/DEFAULT_CHUNK_SIZE, __ATOMIC_RELAXED);  // not used
             __atomic_store_n(&cb.sb->active_batch_ops, DEFAULT_BATCH_OPS, __ATOMIC_RELAXED);
             //__atomic_fetch_add(&cb.tokens, 10, __ATOMIC_RELAXED);
             //wait_time.tv_nsec = 10 * chunk_size / temp * 1000;
