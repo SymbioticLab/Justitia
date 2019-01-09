@@ -10,7 +10,8 @@
 //#define DEFAULT_CHUNK_SIZE 5000
 //#define DEFAULT_BATCH_OPS 5000    // xl170 (when using 10Gbps link)
 //#define DEFAULT_BATCH_OPS 667     // Conflux
-#define DEFAULT_BATCH_OPS 1500    // c6220/r320
+//#define DEFAULT_BATCH_OPS 1500    // c6220
+#define DEFAULT_BATCH_OPS 1667    // r320
 //#define DEFAULT_BATCH_OPS 2500    // Shin's RoCEv2
 //#define MAX_TOKEN 5
 #define MAX_TOKEN 5
@@ -23,7 +24,7 @@ struct control_block cb;
 //uint32_t chunk_size_table[] = {4096, 8192, 16384, 32768, 65536, 1048576, 1048576};
 //uint32_t chunk_size_table[] = {8192, 8192, 100000, 100000, 500000, 1000000, 1000000};
 ////uint32_t chunk_size_table[] = {1000000, 1000000, 1000000, 1000000, 1000000, 1000000, 1000000};	// Use 1048576 in Conflux
-uint32_t chunk_size_table[] = {1000000, 5000, 5000, 1000};	// adjusted based on number of split qps
+uint32_t chunk_size_table[] = {1000000, 5000, 2000, 1000};	// adjusted based on number of split qps
 /* utility fuctions */
 static void error(char *msg)
 {
