@@ -140,6 +140,7 @@ void monitor_latency(void *arg)
     uint16_t num_active_big_flows = 0;
     uint16_t num_active_small_flows = 0;
 #ifdef DYNAMIC_NUM_SPLIT_QPS
+    uint16_t num_split_qps = 1;
     cycles_t target_unmet_counter_start = 0;
     cycles_t target_unmet_counter_end = 0;
     cycles_t started_counting_target_unmet = 0;
@@ -283,7 +284,7 @@ void monitor_latency(void *arg)
                         target_unmet_counter_end = get_cycles();
                         if (((target_unmet_counter_end - target_unmet_counter_start) / cpu_mhz) > LAT_TARGET_UNMET_WAIT_TIME * 1000) {
                             //// increase num_split_qps
-                            uint16_t num_split_qps = __atomic_load_n(&cb.sb->num_active_split_qps, __ATOMIC_RELAXED);
+                            num_split_qps = __atomic_load_n(&cb.sb->num_active_split_qps, __ATOMIC_RELAXED);
                             //uint16_t num_split_qps = 2;
                             if (num_split_qps < MAX_NUM_SPLIT_QPS) {
                                 num_split_qps++;
@@ -385,10 +386,21 @@ void monitor_latency(void *arg)
 #ifdef DYNAMIC_NUM_SPLIT_QPS
                 /* decrease num_split_qps back to 1 when no small flow present; chunk size will change accordingly */
                 __atomic_store_n(&cb.sb->num_active_split_qps, 1, __ATOMIC_RELAXED);
+                num_split_qps = 1;
                 started_counting_target_unmet = 0;
                 printf("decrease num_split_qps to 1\n");
 #endif
             }
+#ifdef DYNAMIC_NUM_SPLIT_QPS
+            else if (num_split_qps != 1)
+            {
+                /* decrease num_split_qps back to 1 when no small flow present; chunk size will change accordingly */
+                __atomic_store_n(&cb.sb->num_active_split_qps, 1, __ATOMIC_RELAXED);
+                num_split_qps = 1;
+                started_counting_target_unmet = 0;
+                printf("decrease num_split_qps to 1\n");
+            }
+#endif
             //printf(">>>> virtual link cap: %" PRIu32 "\n", __atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED));
         }
 
