@@ -304,19 +304,30 @@ void monitor_latency(void *arg)
                                     target_unmet_counter_end = get_cycles();
                                     started_counting_target_unmet = 0;
                                     if (measured_tail < prev_tail && (prev_tail - measured_tail)/prev_tail > improvement_factor) {
-                                        printf("elapsed time is %.2f us; num_split_qps = %d performs well with %.2f improvement. (prev, curr) = (%.2f, %.2f). Increase num_split_qps to %d to see if we can do even better\n",
-                                            (target_unmet_counter_end - target_unmet_counter_start) / cpu_mhz, num_split_qps, (prev_tail - measured_tail)/prev_tail, prev_tail, measured_tail, num_split_qps + 1);
-                                        selected_num_split_qps = num_split_qps;
+                                        //selected_num_split_qps = num_split_qps;
+                                        if (num_split_qps < MAX_NUM_SPLIT_QPS) {
+                                            printf("elapsed time is %.2f us; num_split_qps = %d performs well with %.2f improvement. (prev, curr) = (%.2f, %.2f). Increase num_split_qps to %d to see if we can do even better\n",
+                                                (target_unmet_counter_end - target_unmet_counter_start) / cpu_mhz, num_split_qps, (prev_tail - measured_tail)/prev_tail, prev_tail, measured_tail, num_split_qps + 1);
+                                            num_split_qps++;
+                                            __atomic_store_n(&cb.sb->num_active_split_qps, num_split_qps, __ATOMIC_RELAXED);
+                                        } else {
+                                            printf("elapsed time is %.2f us; num_split_qps = %d performs well with %.2f improvement. (prev, curr) = (%.2f, %.2f). Want to but cannot not increase num_split_qps above MAX_NUM_SPLIT_QPS = %d.\n",
+                                                (target_unmet_counter_end - target_unmet_counter_start) / cpu_mhz, num_split_qps, (prev_tail - measured_tail)/prev_tail, prev_tail, measured_tail, MAX_NUM_SPLIT_QPS);
+                                        }
                                         prev_tail = measured_tail;        
-                                        num_split_qps++;
-                                        __atomic_store_n(&cb.sb->num_active_split_qps, num_split_qps, __ATOMIC_RELAXED);
                                         found_split_level = 0;
                                     } else {
-                                        printf("elapsed time is %.2f us; num_split_qps = %d does not perform well with %.2f improvement. (prev, curr) = (%.2f, %.2f). Decreae num_split_qps back to %d and stays there\n",
-                                            (target_unmet_counter_end - target_unmet_counter_start) / cpu_mhz, num_split_qps, (prev_tail - measured_tail)/prev_tail, prev_tail, measured_tail, num_split_qps - 1);
-                                        num_split_qps--;
+                                        if (num_split_qps > 1) {
+                                            printf("elapsed time is %.2f us; num_split_qps = %d does not perform well with %.2f improvement. (prev, curr) = (%.2f, %.2f). Decreae num_split_qps back to %d and stays there\n",
+                                                (target_unmet_counter_end - target_unmet_counter_start) / cpu_mhz, num_split_qps, (prev_tail - measured_tail)/prev_tail, prev_tail, measured_tail, num_split_qps - 1);
+                                            num_split_qps--;
+                                            __atomic_store_n(&cb.sb->num_active_split_qps, num_split_qps, __ATOMIC_RELAXED);
+                                        } else {
+                                            printf("elapsed time is %.2f us; num_split_qps = %d performs well with %.2f improvement. (prev, curr) = (%.2f, %.2f). Want to but cannot not decrease num_split_qps below 1.\n",
+                                                (target_unmet_counter_end - target_unmet_counter_start) / cpu_mhz, num_split_qps, (prev_tail - measured_tail)/prev_tail, prev_tail, measured_tail);
+                                        }
+                                        //num_split_qps = (num_split_qps == 1) ? num_split_qps : num_split_qps - 1;
                                         prev_tail = measured_tail;        
-                                        __atomic_store_n(&cb.sb->num_active_split_qps, num_split_qps, __ATOMIC_RELAXED);
                                         found_split_level = 1;
                                     }
                                     /*
@@ -358,7 +369,6 @@ void monitor_latency(void *arg)
                 else    // target met
                 {
                     printf("Target Met!\n");
-                    selected_num_split_qps = num_split_qps;
                     if (found_split_level) {
                         //TODO: keep monitoring latency changes
                     }
