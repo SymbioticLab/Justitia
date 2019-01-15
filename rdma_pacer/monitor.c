@@ -12,7 +12,8 @@
 #define DEPTH 16
 #define U 24
 #define GRAN 4
-#define WINDOW_SIZE 10000
+//#define WINDOW_SIZE 10000
+#define WINDOW_SIZE 1000
 // Time to wait in milliseconds when latency target can't not be met (before giving back bandwidth)
 #define LAT_TARGET_WAIT_TIME 5000
 // Time to wait in milliseconds when latency target can't not be met before increasing num_split_qps
@@ -25,6 +26,7 @@
 #define USE_CMH
 //#define CMH_PERCENTILE  0.99    // pencentile ask from CMH
 #define CMH_PERCENTILE  0.99    // pencentile ask from CMH
+#define improvement_factor 0.25  // improvement of current measured tail over previous tail that needs to be achieved to keep the current num_split_qps
 
 CMH_type *cmh = NULL;
 
@@ -77,6 +79,7 @@ void monitor_latency(void *arg)
     int num_remote_big_reads = 0;
     uint32_t received_read_rate;
     uint32_t temp, new_remote_read_rate;
+    int found_split_level = 0;
 
     ctx = init_monitor_chan(servername, isclient, gid_idx);
     if (!ctx)
@@ -141,9 +144,12 @@ void monitor_latency(void *arg)
     uint16_t num_active_small_flows = 0;
 #ifdef DYNAMIC_NUM_SPLIT_QPS
     uint16_t num_split_qps = 1;
+    uint16_t selected_num_split_qps = num_split_qps;
     cycles_t target_unmet_counter_start = 0;
     cycles_t target_unmet_counter_end = 0;
     cycles_t started_counting_target_unmet = 0;
+    uint32_t num_samples = 0;
+    double prev_tail = 0;
 #endif
 #ifdef FAVOR_BIG_FLOW
     uint16_t prev_num_small_flows = 0;
@@ -272,26 +278,63 @@ void monitor_latency(void *arg)
                     /* Multiplicative Decrease */
                     temp >>= 1;
                     ////temp -= 1000;
+#ifdef DYNAMIC_NUM_SPLIT_QPS
+                    num_samples++;
+#endif
                     if (ELEPHANT_HAS_LOWER_BOUND && temp < min_virtual_link_cap)
                     {
                         temp = min_virtual_link_cap;
 
 #ifdef DYNAMIC_NUM_SPLIT_QPS
-                        if (!started_counting_target_unmet) {
-                            target_unmet_counter_start = get_cycles();
-                            started_counting_target_unmet = 1;
-                        }
-                        target_unmet_counter_end = get_cycles();
-                        if (((target_unmet_counter_end - target_unmet_counter_start) / cpu_mhz) > LAT_TARGET_UNMET_WAIT_TIME * 1000) {
-                            //// increase num_split_qps
+                        //TODO:finish logic here
+                        if (!found_split_level) {
                             num_split_qps = __atomic_load_n(&cb.sb->num_active_split_qps, __ATOMIC_RELAXED);
-                            //uint16_t num_split_qps = 2;
-                            if (num_split_qps < MAX_NUM_SPLIT_QPS) {
+                            if (num_split_qps == 1) {   // Fast reaction
+                                if (num_samples < WINDOW_SIZE) { continue; }
+                                num_samples = 0;
                                 num_split_qps++;
-                                printf("elapsed time is %.2f us; increase num_split_qps to %d\n", (target_unmet_counter_end - target_unmet_counter_start) / cpu_mhz, num_split_qps);
                                 __atomic_store_n(&cb.sb->num_active_split_qps, num_split_qps, __ATOMIC_RELAXED);
+                                printf("increase num_split_qps to %d\n", num_split_qps);
+                                prev_tail = measured_tail;
+                            } else {    // num_split_qps > 1
+                                if (!started_counting_target_unmet) {
+                                    target_unmet_counter_start = get_cycles();
+                                    started_counting_target_unmet = 1;
+                                }
+                                if (num_samples == WINDOW_SIZE) {
+                                    num_samples = 0;
+                                    target_unmet_counter_end = get_cycles();
+                                    started_counting_target_unmet = 0;
+                                    if (measured_tail < prev_tail && (prev_tail - measured_tail)/prev_tail > improvement_factor) {
+                                        printf("elapsed time is %.2f us; num_split_qps = %d performs well with %.2f improvement. (prev, curr) = (%.2f, %.2f). Increase num_split_qps to %d to see if we can do even better\n",
+                                            (target_unmet_counter_end - target_unmet_counter_start) / cpu_mhz, num_split_qps, (prev_tail - measured_tail)/prev_tail, prev_tail, measured_tail, num_split_qps + 1);
+                                        selected_num_split_qps = num_split_qps;
+                                        prev_tail = measured_tail;        
+                                        num_split_qps++;
+                                        __atomic_store_n(&cb.sb->num_active_split_qps, num_split_qps, __ATOMIC_RELAXED);
+                                        found_split_level = 0;
+                                    } else {
+                                        printf("elapsed time is %.2f us; num_split_qps = %d does not perform well with %.2f improvement. (prev, curr) = (%.2f, %.2f). Decreae num_split_qps back to %d and stays there\n",
+                                            (target_unmet_counter_end - target_unmet_counter_start) / cpu_mhz, num_split_qps, (prev_tail - measured_tail)/prev_tail, prev_tail, measured_tail, num_split_qps - 1);
+                                        num_split_qps--;
+                                        prev_tail = measured_tail;        
+                                        __atomic_store_n(&cb.sb->num_active_split_qps, num_split_qps, __ATOMIC_RELAXED);
+                                        found_split_level = 1;
+                                    }
+                                }
+                                /*
+                                target_unmet_counter_end = get_cycles();
+                                if (((target_unmet_counter_end - target_unmet_counter_start) / cpu_mhz) > LAT_TARGET_UNMET_WAIT_TIME * 1000) {
+                                    //// increase num_split_qps
+                                    num_split_qps = __atomic_load_n(&cb.sb->num_active_split_qps, __ATOMIC_RELAXED);
+                                    if (num_split_qps < MAX_NUM_SPLIT_QPS) {
+                                        num_split_qps++;
+                                        __atomic_store_n(&cb.sb->num_active_split_qps, num_split_qps, __ATOMIC_RELAXED);
+                                        printf("elapsed time is %.2f us; increase num_split_qps to %d\n", (target_unmet_counter_end - target_unmet_counter_start) / cpu_mhz, num_split_qps);
+                                    }
+                                    started_counting_target_unmet = 0;
+                                */
                             }
-                            started_counting_target_unmet = 0;
                         }
 
 #endif
@@ -314,10 +357,17 @@ void monitor_latency(void *arg)
 #endif
                     }
                 }
-                else if (__atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED) < LINE_RATE_MB)
+                else    // target met
                 {
+                    printf("Target Met!\n");
+                    selected_num_split_qps = num_split_qps;
+                    if (found_split_level) {
+                        //TODO: keep monitoring latency changes
+                    }
                     /* Additive Increase */
-                    temp++;
+                    if (__atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED) < LINE_RATE_MB) {
+                        temp++;
+                    }
 #ifdef DYNAMIC_NUM_SPLIT_QPS
                     //// invalidate latency target counter
                     started_counting_target_unmet = 0;
