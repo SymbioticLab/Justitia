@@ -286,23 +286,21 @@ void monitor_latency(void *arg)
                         temp = min_virtual_link_cap;
 
 #ifdef DYNAMIC_NUM_SPLIT_QPS
-                        //TODO:finish logic here
                         if (!found_split_level) {
                             num_split_qps = __atomic_load_n(&cb.sb->num_active_split_qps, __ATOMIC_RELAXED);
-                            if (num_split_qps == 1) {   // Fast reaction
-                                if (num_samples < WINDOW_SIZE) { continue; }
+                            if (num_samples == WINDOW_SIZE) {
                                 num_samples = 0;
-                                num_split_qps++;
-                                __atomic_store_n(&cb.sb->num_active_split_qps, num_split_qps, __ATOMIC_RELAXED);
-                                printf("increase num_split_qps to %d\n", num_split_qps);
-                                prev_tail = measured_tail;
-                            } else {    // num_split_qps > 1
-                                if (!started_counting_target_unmet) {
-                                    target_unmet_counter_start = get_cycles();
-                                    started_counting_target_unmet = 1;
-                                }
-                                if (num_samples == WINDOW_SIZE) {
-                                    num_samples = 0;
+                                if (num_split_qps == 1) {
+                                    num_split_qps++;
+                                    __atomic_store_n(&cb.sb->num_active_split_qps, num_split_qps, __ATOMIC_RELAXED);
+                                    printf("increase num_split_qps to %d\n", num_split_qps);
+                                    prev_tail = measured_tail;
+                                } else {    // num_split_qps > 1
+                                    if (!started_counting_target_unmet) {
+                                        target_unmet_counter_start = get_cycles();
+                                        started_counting_target_unmet = 1;
+                                    }
+
                                     target_unmet_counter_end = get_cycles();
                                     started_counting_target_unmet = 0;
                                     if (measured_tail < prev_tail && (prev_tail - measured_tail)/prev_tail > improvement_factor) {
@@ -321,19 +319,19 @@ void monitor_latency(void *arg)
                                         __atomic_store_n(&cb.sb->num_active_split_qps, num_split_qps, __ATOMIC_RELAXED);
                                         found_split_level = 1;
                                     }
+                                    /*
+                                    target_unmet_counter_end = get_cycles();
+                                    if (((target_unmet_counter_end - target_unmet_counter_start) / cpu_mhz) > LAT_TARGET_UNMET_WAIT_TIME * 1000) {
+                                        //// increase num_split_qps
+                                        num_split_qps = __atomic_load_n(&cb.sb->num_active_split_qps, __ATOMIC_RELAXED);
+                                        if (num_split_qps < MAX_NUM_SPLIT_QPS) {
+                                            num_split_qps++;
+                                            __atomic_store_n(&cb.sb->num_active_split_qps, num_split_qps, __ATOMIC_RELAXED);
+                                            printf("elapsed time is %.2f us; increase num_split_qps to %d\n", (target_unmet_counter_end - target_unmet_counter_start) / cpu_mhz, num_split_qps);
+                                        }
+                                        started_counting_target_unmet = 0;
+                                    */
                                 }
-                                /*
-                                target_unmet_counter_end = get_cycles();
-                                if (((target_unmet_counter_end - target_unmet_counter_start) / cpu_mhz) > LAT_TARGET_UNMET_WAIT_TIME * 1000) {
-                                    //// increase num_split_qps
-                                    num_split_qps = __atomic_load_n(&cb.sb->num_active_split_qps, __ATOMIC_RELAXED);
-                                    if (num_split_qps < MAX_NUM_SPLIT_QPS) {
-                                        num_split_qps++;
-                                        __atomic_store_n(&cb.sb->num_active_split_qps, num_split_qps, __ATOMIC_RELAXED);
-                                        printf("elapsed time is %.2f us; increase num_split_qps to %d\n", (target_unmet_counter_end - target_unmet_counter_start) / cpu_mhz, num_split_qps);
-                                    }
-                                    started_counting_target_unmet = 0;
-                                */
                             }
                         }
 
