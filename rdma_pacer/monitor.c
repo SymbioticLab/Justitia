@@ -330,20 +330,28 @@ void monitor_latency(void *arg)
                                     found_split_level = 1;
                                 }
 
-                                /*
-                                target_unmet_counter_end = get_cycles();
-                                if (((target_unmet_counter_end - target_unmet_counter_start) / cpu_mhz) > LAT_TARGET_UNMET_WAIT_TIME * 1000) {
-                                    //// increase num_split_qps
-                                    num_split_qps = __atomic_load_n(&cb.sb->num_active_split_qps, __ATOMIC_RELAXED);
+                            }
+                        } else {    // if has stabalized at a split level
+                            if (measured_tail < prev_tail) {    // better than before but still above target
+                                if ((prev_tail - measured_tail)/prev_tail > improvement_factor) {
+                                    if (num_split_qps > 1) {
+                                        printf("After found a level; num_split_qps = %d performs well with %.2f improvement. (prev, curr) = (%.2f, %.2f). Decrease num_split_qps to %d to minimize cost\n",
+                                            num_split_qps, (prev_tail - measured_tail)/prev_tail, prev_tail, measured_tail, num_split_qps - 1);
+                                        num_split_qps--;
+                                        __atomic_store_n(&cb.sb->num_active_split_qps, num_split_qps, __ATOMIC_RELAXED);
+                                    }
+                                }
+
+                            } else {    // worse than before and still above target
+                                if ((measured_tail - prev_tail)/prev_tail > improvement_factor) {
                                     if (num_split_qps < MAX_NUM_SPLIT_QPS) {
+                                        printf("After found a level; num_split_qps = %d does not perform well with %.2f degradation. (prev, curr) = (%.2f, %.2f). Increase num_split_qps to %d to improve isolation\n",
+                                            num_split_qps, (prev_tail - measured_tail)/prev_tail, prev_tail, measured_tail, num_split_qps + 1);
                                         num_split_qps++;
                                         __atomic_store_n(&cb.sb->num_active_split_qps, num_split_qps, __ATOMIC_RELAXED);
-                                        printf("elapsed time is %.2f us; increase num_split_qps to %d\n", (target_unmet_counter_end - target_unmet_counter_start) / cpu_mhz, num_split_qps);
                                     }
-                                    started_counting_target_unmet = 0;
-                                */
+                                }
                             }
-                        } else {    // if stabalized at a split level
                         }
                     }
 
@@ -454,7 +462,7 @@ void monitor_latency(void *arg)
                     started_counting_target_unmet = 0;
                     num_samples = 0;
                     found_split_level = 0;
-                    printf("Decrease num_split_qps to 1 given no small flow present\n");
+                    printf("No small flows are present. Decrease num_split_qps to 1.\n");
                 }
 #endif
             }
