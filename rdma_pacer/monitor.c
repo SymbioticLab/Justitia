@@ -294,7 +294,7 @@ void monitor_latency(void *arg)
                         target_unmet_counter_end = get_cycles();
                         started_counting_target_unmet = 0;
 
-                        num_split_qps = __atomic_load_n(&cb.sb->num_active_split_qps, __ATOMIC_RELAXED);
+                        num_split_qps = __atomic_load_n(&cb.sb->num_active_split_qps, __ATOMIC_RELAXED);    // shouldn't need to load from mem. Just to be safe.
                         if (!found_split_level) {
                             if (num_split_qps == 1) {
                                 num_split_qps++;
@@ -340,6 +340,7 @@ void monitor_latency(void *arg)
                                         num_split_qps--;
                                         __atomic_store_n(&cb.sb->num_active_split_qps, num_split_qps, __ATOMIC_RELAXED);
                                     }
+                                    prev_tail = measured_tail;        
                                 }
 
                             } else {    // worse than before and still above target
@@ -350,6 +351,7 @@ void monitor_latency(void *arg)
                                         num_split_qps++;
                                         __atomic_store_n(&cb.sb->num_active_split_qps, num_split_qps, __ATOMIC_RELAXED);
                                     }
+                                    prev_tail = measured_tail;        
                                 }
                             }
                         }
@@ -377,9 +379,14 @@ void monitor_latency(void *arg)
                 else    // target met
                 {
                     printf("Target Met!\n");
+#ifdef DYNAMIC_NUM_SPLIT_QPS
                     if (found_split_level) {
                         //TODO: keep monitoring latency changes
+                        num_split_qps = __atomic_load_n(&cb.sb->num_active_split_qps, __ATOMIC_RELAXED);    // shouldn't need to load from mem. Just to be safe.
+
                     }
+#endif
+
                     /* Additive Increase */
                     if (__atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED) < LINE_RATE_MB) {
                         temp++;
@@ -420,7 +427,6 @@ void monitor_latency(void *arg)
                 }
                 __atomic_store_n(&cb.virtual_link_cap, temp, __ATOMIC_RELAXED);
             }
-            //else if (__atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED) != LINE_RATE_MB)
             else {  // if no small flows
                 if (__atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED) != LINE_RATE_MB) {   
                     temp = LINE_RATE_MB;
@@ -455,6 +461,7 @@ void monitor_latency(void *arg)
                 __atomic_store_n(&cb.virtual_link_cap, temp, __ATOMIC_RELAXED);
 
 #ifdef DYNAMIC_NUM_SPLIT_QPS
+                num_split_qps = __atomic_load_n(&cb.sb->num_active_split_qps, __ATOMIC_RELAXED);    // shouldn't need to load from mem. Just to be safe.
                 if (num_split_qps != 1) {
                     /* decrease num_split_qps back to 1 when no small flow present; chunk size will change accordingly */
                     __atomic_store_n(&cb.sb->num_active_split_qps, 1, __ATOMIC_RELAXED);
