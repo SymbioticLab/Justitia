@@ -344,7 +344,6 @@ void monitor_latency(void *arg)
                                 */
                             }
                         } else {    // if stabalized at a split level
-
                         }
                     }
 
@@ -413,9 +412,13 @@ void monitor_latency(void *arg)
                 }
                 __atomic_store_n(&cb.virtual_link_cap, temp, __ATOMIC_RELAXED);
             }
-            else if (__atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED) != LINE_RATE_MB)
-            {   
-                temp = LINE_RATE_MB;
+            //else if (__atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED) != LINE_RATE_MB)
+            else {  // if no small flows
+                if (__atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED) != LINE_RATE_MB) {   
+                    temp = LINE_RATE_MB;
+                }
+
+                //TODO: figure out what's going on with the big read logic here. Why handle big reads only if there is no small flows?
                 if (num_remote_big_reads) {
                     new_remote_read_rate = round((double)num_remote_big_reads
                         / (num_remote_big_reads + num_active_big_flows) * temp);
@@ -442,24 +445,19 @@ void monitor_latency(void *arg)
                     temp -= new_remote_read_rate;
                 }
                 __atomic_store_n(&cb.virtual_link_cap, temp, __ATOMIC_RELAXED);
+
 #ifdef DYNAMIC_NUM_SPLIT_QPS
-                /* decrease num_split_qps back to 1 when no small flow present; chunk size will change accordingly */
-                __atomic_store_n(&cb.sb->num_active_split_qps, 1, __ATOMIC_RELAXED);
-                num_split_qps = 1;
-                started_counting_target_unmet = 0;
-                printf("Decrease num_split_qps to 1 given no small flow present\n");
+                if (num_split_qps != 1) {
+                    /* decrease num_split_qps back to 1 when no small flow present; chunk size will change accordingly */
+                    __atomic_store_n(&cb.sb->num_active_split_qps, 1, __ATOMIC_RELAXED);
+                    num_split_qps = 1;
+                    started_counting_target_unmet = 0;
+                    num_samples = 0;
+                    found_split_level = 0;
+                    printf("Decrease num_split_qps to 1 given no small flow present\n");
+                }
 #endif
             }
-#ifdef DYNAMIC_NUM_SPLIT_QPS
-            else if (num_split_qps != 1)
-            {
-                /* decrease num_split_qps back to 1 when no small flow present; chunk size will change accordingly */
-                __atomic_store_n(&cb.sb->num_active_split_qps, 1, __ATOMIC_RELAXED);
-                num_split_qps = 1;
-                started_counting_target_unmet = 0;
-                printf("Decrease num_split_qps to 1 given no small flow present\n");
-            }
-#endif
             //printf(">>>> virtual link cap: %" PRIu32 "\n", __atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED));
         }
 
