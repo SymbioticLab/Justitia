@@ -148,7 +148,9 @@ void monitor_latency(void *arg)
     cycles_t target_unmet_counter_end = 0;
     cycles_t started_counting_target_unmet = 0;
     uint32_t num_samples = 0;
+    uint32_t num_samples_target_met = 0;
     double prev_tail = 0;
+    int first_target_met_flag = 0;
 #endif
 #ifdef FAVOR_BIG_FLOW
     uint16_t prev_num_small_flows = 0;
@@ -269,6 +271,7 @@ void monitor_latency(void *arg)
                 min_virtual_link_cap = round((double)(num_active_big_flows + num_remote_big_reads) 
                     / (num_active_big_flows + num_active_small_flows + num_remote_big_reads) * LINE_RATE_MB);
                 temp = __atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED);
+
                 if (measured_tail > TAIL)
                 {
 #ifdef SMART_RMF
@@ -276,15 +279,13 @@ void monitor_latency(void *arg)
 #endif
                     /* Multiplicative Decrease */
                     temp >>= 1;
-                    ////temp -= 1000;
-#ifdef DYNAMIC_NUM_SPLIT_QPS
-                    num_samples++;
-#endif
                     if (ELEPHANT_HAS_LOWER_BOUND && temp < min_virtual_link_cap) {
                         temp = min_virtual_link_cap;
                     }
 
 #ifdef DYNAMIC_NUM_SPLIT_QPS
+                    num_samples_target_met = 0;
+                    num_samples++;
                     if (!started_counting_target_unmet) {
                         target_unmet_counter_start = get_cycles();
                         started_counting_target_unmet = 1;
@@ -378,11 +379,41 @@ void monitor_latency(void *arg)
                 }
                 else    // target met
                 {
-                    printf("Target Met!\n");
+                    //printf("Target Met!\n");
 #ifdef DYNAMIC_NUM_SPLIT_QPS
-                    if (found_split_level) {
-                        //TODO: keep monitoring latency changes
+                    if (prev_tail > TAIL && !first_target_met_flag) {
+                        prev_tail = measured_tail;
+                        first_target_met_flag = 1;
+                    }
+                    found_split_level = 0;
+                    num_samples = 0;
+                    num_samples_target_met++;
+                    if (num_samples_target_met == WINDOW_SIZE) {
+                        num_samples_target_met = 0;
                         num_split_qps = __atomic_load_n(&cb.sb->num_active_split_qps, __ATOMIC_RELAXED);    // shouldn't need to load from mem. Just to be safe.
+
+                        if (measured_tail < prev_tail) {    // better than before and still below target
+                            if ((prev_tail - measured_tail)/prev_tail > improvement_factor) {
+                                if (num_split_qps > 1) {
+                                    printf("Target Met; num_split_qps = %d performs well with %.2f improvement. (prev, curr) = (%.2f, %.2f). Decrease num_split_qps to %d to minimize cost\n",
+                                        num_split_qps, (prev_tail - measured_tail)/prev_tail, prev_tail, measured_tail, num_split_qps - 1);
+                                    num_split_qps--;
+                                    __atomic_store_n(&cb.sb->num_active_split_qps, num_split_qps, __ATOMIC_RELAXED);
+                                }
+                                prev_tail = measured_tail;        
+                            }
+
+                        } else {    // worse than before but still below target
+                            if ((measured_tail - prev_tail)/prev_tail > improvement_factor) {
+                                if (num_split_qps < MAX_NUM_SPLIT_QPS) {
+                                    printf("After found a level; num_split_qps = %d does not perform well with %.2f degradation. (prev, curr) = (%.2f, %.2f). Increase num_split_qps to %d to improve isolation\n",
+                                        num_split_qps, (prev_tail - measured_tail)/prev_tail, prev_tail, measured_tail, num_split_qps + 1);
+                                    num_split_qps++;
+                                    __atomic_store_n(&cb.sb->num_active_split_qps, num_split_qps, __ATOMIC_RELAXED);
+                                }
+                                prev_tail = measured_tail;        
+                            }
+                        }
 
                     }
 #endif
@@ -468,7 +499,9 @@ void monitor_latency(void *arg)
                     num_split_qps = 1;
                     started_counting_target_unmet = 0;
                     num_samples = 0;
+                    num_samples_target_met = 0;
                     found_split_level = 0;
+                    first_target_met_flag = 0;
                     printf("No small flows are present. Decrease num_split_qps to 1.\n");
                 }
 #endif
