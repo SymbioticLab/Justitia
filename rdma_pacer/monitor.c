@@ -293,9 +293,9 @@ void monitor_latency(void *arg)
                         num_samples = 0;
                         target_unmet_counter_end = get_cycles();
                         started_counting_target_unmet = 0;
-                        if (!found_split_level) {
-                            num_split_qps = __atomic_load_n(&cb.sb->num_active_split_qps, __ATOMIC_RELAXED);
 
+                        num_split_qps = __atomic_load_n(&cb.sb->num_active_split_qps, __ATOMIC_RELAXED);
+                        if (!found_split_level) {
                             if (num_split_qps == 1) {
                                 num_split_qps++;
                                 __atomic_store_n(&cb.sb->num_active_split_qps, num_split_qps, __ATOMIC_RELAXED);
