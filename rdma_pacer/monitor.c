@@ -311,7 +311,7 @@ void monitor_latency(void *arg)
                                         num_split_qps++;
                                         __atomic_store_n(&cb.sb->num_active_split_qps, num_split_qps, __ATOMIC_RELAXED);
                                     } else {
-                                        printf("Elapsed time is %.2f us; num_split_qps = %d performs well with %.2f improvement. (prev, curr) = (%.2f, %.2f). Want to but cannot not increase num_split_qps above MAX_NUM_SPLIT_QPS = %d.\n",
+                                        printf("Elapsed time is %.2f us; num_split_qps = %d performs well with %.2f improvement. (prev, curr) = (%.2f, %.2f). Want to but cannot increase num_split_qps above MAX_NUM_SPLIT_QPS = %d.\n",
                                             (target_unmet_counter_end - target_unmet_counter_start) / cpu_mhz, num_split_qps, (prev_tail - measured_tail)/prev_tail, prev_tail, measured_tail, MAX_NUM_SPLIT_QPS);
                                     }
                                     prev_tail = measured_tail;        
@@ -349,6 +349,7 @@ void monitor_latency(void *arg)
                                     if (num_split_qps < MAX_NUM_SPLIT_QPS) {
                                         printf("After found a level; num_split_qps = %d does not perform well with %.2f degradation. (prev, curr) = (%.2f, %.2f). Increase num_split_qps to %d to improve isolation\n",
                                             num_split_qps, (prev_tail - measured_tail)/prev_tail, prev_tail, measured_tail, num_split_qps + 1);
+                                        printf("num_active_small_flows = %d\n", __atomic_load_n(&cb.sb->num_active_small_flows, __ATOMIC_RELAXED));
                                         num_split_qps++;
                                         __atomic_store_n(&cb.sb->num_active_split_qps, num_split_qps, __ATOMIC_RELAXED);
                                     }
