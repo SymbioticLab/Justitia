@@ -46,6 +46,9 @@ extern int start_recv;             /* initialized in qp.c */
 extern int isSmall;                /* initialized in qp.c */
 extern int num_active_small_flows; /* initialized in verbs.c */
 extern int num_active_big_flows;   /* initialized in verbs.c */
+//// UDS_IMPL
+extern unsigned int flow_socket;    /* declaration; initialization in verbs_pacer.h */
+////
 
 char *get_sock_path();
 

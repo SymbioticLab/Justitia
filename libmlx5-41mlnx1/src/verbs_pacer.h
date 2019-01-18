@@ -6,6 +6,9 @@
 
 unsigned int slot;
 static int registered = 0;
+//// UDS_IMPL
+unsigned int flow_socket = 0;
+////
 
 char *get_sock_path() {
     FILE *fp;
@@ -107,7 +110,11 @@ static void contact_pacer(int join) {
         slot = strtol(str, NULL, 10);
         printf("Received slot number.\n");
     }
-    close(s);
+    //// UDS_IMPL
+    flow_socket = s;
+    ////
+
+    ////close(s);
 }
 
 static void set_inactive_on_exit() {

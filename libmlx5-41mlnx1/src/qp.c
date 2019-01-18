@@ -49,6 +49,7 @@
 /* isolation */
 #include "qp_pacer.h"
 #include <inttypes.h>
+#include <sys/time.h>
 int isSmall = 1; /* 0: elephant flow, 1: mouse flow */
 int isRead = 0;
 int32_t debit = 0;
@@ -2151,15 +2152,35 @@ static inline int __mlx5_post_send(struct ibv_qp *ibqp, struct ibv_exp_send_wr *
 	FILE *fp = to_mctx(ibqp->context)->dbg_fp;
 #endif
 	////mlx5_lock(&qp->sq.lock);
+    //// UDS_IMPL
+    char str;
+    //struct timeval tt1, tt2;
+    ////
 
 	for (nreq = 0; wr; ++nreq, wr = wr->next) {
 		/* isolation */
 		if (isSmall == 0 && flow) {
 			__atomic_store_n(&flow->pending, 1, __ATOMIC_RELAXED);
+            /*
 			while (__atomic_load_n(&flow->pending, __ATOMIC_RELAXED)) {
 				cpu_relax();
 				//printf("pending: %d\n", flow->pending);
 			}
+            */
+            //// UDS_IMPL
+            //gettimeofday(&tt1,NULL);
+            recv(flow_socket, &str, 1, 0);
+            //gettimeofday(&tt2,NULL);
+            //printf("elaspsed time = %d us\n", (int)(tt2.tv_usec - tt1.tv_usec));
+            /*
+            if (recv(flow_socket, str, 1, 0) > 0) {
+                //printf("received a token\n");
+            } else {
+                printf("Error in recving tokens. Exit\n");
+                exit(1);
+            }
+            */
+            ////
 		}
 		/* end */
 		idx = qp->gen_data.scur_post & (qp->sq.wqe_cnt - 1);
