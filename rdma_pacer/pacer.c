@@ -26,6 +26,9 @@ struct control_block cb;
 //uint32_t chunk_size_table[] = {8192, 8192, 100000, 100000, 500000, 1000000, 1000000};
 ////uint32_t chunk_size_table[] = {1000000, 1000000, 1000000, 1000000, 1000000, 1000000, 1000000};	// Use 1048576 in Conflux
 uint32_t chunk_size_table[] = {1000000, 5000, 2000, 1000};	// adjusted based on number of split qps
+//// UDS_IMPL
+unsigned int flow_sockets[MAX_FLOWS];
+////
 /* utility fuctions */
 static void error(char *msg)
 {
@@ -278,6 +281,11 @@ static void flow_handler()
 
             /* find the slot number based on the pid received */
             cb.next_slot = find_next_slot(pid);
+
+            //// UDS_IMPL
+            /* store the uds for later use (to inform token is ready) */
+            flow_sockets[cb.next_slot] = s2;
+            ////
             
             /* send back slot number */
             printf("sending back slot number %d ...\n", cb.next_slot);
@@ -404,10 +412,21 @@ static void generate_fetch_tokens()
 
             // try to fetch tokens for flows until we are out of tokens
             i = next_idx;
+
+            //struct timeval tt1, tt2;
             while (1) {
                 if (!__atomic_load_n(&cb.sb->flows[i].read, __ATOMIC_RELAXED) && __atomic_load_n(&cb.sb->flows[i].pending, __ATOMIC_RELAXED)) {
                     if (try_fetch_a_token()) {
                         __atomic_store_n(&cb.sb->flows[i].pending, 0, __ATOMIC_RELAXED);
+                        //// UDS_IMPL
+                        //gettimeofday(&tt1,NULL);
+                        if (send(flow_sockets[i], "0", 1, 0) == -1) {
+                            perror("error sending token: ");
+                            exit(1);
+                        }
+                        //gettimeofday(&tt2,NULL);
+                        //printf("elaspsed time = %d us\n", tt2.tv_usec - tt1.tv_usec);
+                        ////
                         //printf("fetched for flow %d\n", i);
                         next_idx = (i + 1) % MAX_FLOWS;
                         break;
