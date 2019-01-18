@@ -27,7 +27,7 @@
 //#define CMH_PERCENTILE  0.99    // pencentile ask from CMH
 #define CMH_PERCENTILE  0.99    // pencentile ask from CMH
 #define improvement_factor 0.25  // improvement of current measured tail over previous tail that needs to be achieved to keep the current num_split_qps
-#define elasticity_factor 0.25  // same as improvement_factor, but used after a level is found or a target is met
+#define elasticity_factor 0.25  // (currently not in use) same as improvement_factor, but used after a level is found or a target is met
 
 CMH_type *cmh = NULL;
 
@@ -335,7 +335,8 @@ void monitor_latency(void *arg)
                             }
                         } else {    // if has stabalized at a split level
                             if (measured_tail < prev_tail) {    // better than before but still above target
-                                if ((prev_tail - measured_tail)/prev_tail > elasticity_factor) {
+                                //if ((prev_tail - measured_tail)/prev_tail > elasticity_factor) {
+                                if ((prev_tail - measured_tail)/prev_tail > improvement_factor) {
                                     if (num_split_qps > 1) {
                                         printf("After found a level; num_split_qps = %d performs well with %.2f improvement. (prev, curr) = (%.2f, %.2f). Decrease num_split_qps to %d to minimize cost\n",
                                             num_split_qps, (prev_tail - measured_tail)/prev_tail, prev_tail, measured_tail, num_split_qps - 1);
@@ -346,7 +347,8 @@ void monitor_latency(void *arg)
                                 }
 
                             } else {    // worse than before and still above target
-                                if ((measured_tail - prev_tail)/prev_tail > elasticity_factor) {
+                                //if ((measured_tail - prev_tail)/prev_tail > elasticity_factor) {
+                                if ((measured_tail - prev_tail)/prev_tail > improvement_factor) {
                                     if (num_split_qps < MAX_NUM_SPLIT_QPS) {
                                         printf("After found a level; num_split_qps = %d does not perform well with %.2f degradation. (prev, curr) = (%.2f, %.2f). Increase num_split_qps to %d to improve isolation\n",
                                             num_split_qps, (prev_tail - measured_tail)/prev_tail, prev_tail, measured_tail, num_split_qps + 1);
@@ -395,7 +397,8 @@ void monitor_latency(void *arg)
                         num_split_qps = __atomic_load_n(&cb.sb->num_active_split_qps, __ATOMIC_RELAXED);    // shouldn't need to load from mem. Just to be safe.
 
                         if (measured_tail < prev_tail) {    // better than before and still below target
-                            if ((prev_tail - measured_tail)/prev_tail > elasticity_factor) {
+                            //if ((prev_tail - measured_tail)/prev_tail > elasticity_factor) {
+                            if ((prev_tail - measured_tail)/prev_tail > improvement_factor) {
                                 if (num_split_qps > 1) {
                                     printf("Target Met; num_split_qps = %d performs well with %.2f improvement. (prev, curr) = (%.2f, %.2f). Decrease num_split_qps to %d to minimize cost\n",
                                         num_split_qps, (prev_tail - measured_tail)/prev_tail, prev_tail, measured_tail, num_split_qps - 1);
@@ -406,7 +409,8 @@ void monitor_latency(void *arg)
                             }
 
                         } else {    // worse than before but still below target
-                            if ((measured_tail - prev_tail)/prev_tail > elasticity_factor) {
+                            //if ((measured_tail - prev_tail)/prev_tail > elasticity_factor) {
+                            if ((measured_tail - prev_tail)/prev_tail > improvement_factor) {
                                 if (num_split_qps < MAX_NUM_SPLIT_QPS) {
                                     printf("After found a level; num_split_qps = %d does not perform well with %.2f degradation. (prev, curr) = (%.2f, %.2f). Increase num_split_qps to %d to improve isolation\n",
                                         num_split_qps, (prev_tail - measured_tail)/prev_tail, prev_tail, measured_tail, num_split_qps + 1);
