@@ -34,6 +34,7 @@
 #define DYNAMIC_NUM_SPLIT_QPS
 #define DEFAULT_NUM_SPLIT_QPS 2     // default vaule when not use DYNAMIC_NUM_SPLIT_QPS
 #define MAX_NUM_SPLIT_QPS 4         // qp = 3, 4 or above is not very helpful
+#define CPU_FRIENDLY                //// Don't not use busy-wait checking for "pending" in shared memory. Use UDS with token enforcement.
 
 struct flow_info {
     uint8_t pending;

@@ -7,7 +7,8 @@
 // DEFAULT_CHUNK_SIZE is the initial chunk size when num_split_qps = 1
 //#define DEFAULT_CHUNK_SIZE 10000000
 #define DEFAULT_CHUNK_SIZE 1000000
-//#define DEFAULT_CHUNK_SIZE 5000
+//#define DEFAULT_CHUNK_SIZE 5000   // used when turn of DYNAMIC_NUM_SPLIT_QPS and DEFAULT_NUM_SPLIT_QPS = 2
+#define BIG_CHUNK_SIZE 1000000
 //#define DEFAULT_BATCH_OPS 5000    // xl170 (when using 10Gbps link)
 //#define DEFAULT_BATCH_OPS 667     // Conflux
 //#define DEFAULT_BATCH_OPS 1500    // c6220
@@ -27,7 +28,9 @@ struct control_block cb;
 ////uint32_t chunk_size_table[] = {1000000, 1000000, 1000000, 1000000, 1000000, 1000000, 1000000};	// Use 1048576 in Conflux
 uint32_t chunk_size_table[] = {1000000, 5000, 2000, 1000};	// adjusted based on number of split qps
 //// UDS_IMPL
+#ifdef CPU_FRIENDLY
 unsigned int flow_sockets[MAX_FLOWS];
+#endif
 ////
 /* utility fuctions */
 static void error(char *msg)
@@ -283,8 +286,10 @@ static void flow_handler()
             cb.next_slot = find_next_slot(pid);
 
             //// UDS_IMPL
+#ifdef CPU_FRIENDLY
             /* store the uds for later use (to inform token is ready) */
             flow_sockets[cb.next_slot] = s2;
+#endif
             ////
             
             /* send back slot number */
@@ -389,6 +394,7 @@ static void generate_fetch_tokens()
 */
 //// end of FETCH TOKEN loop
 
+        printf("temp = %d\n", temp);
         if ((temp = __atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED)))   // yiwen: is it necessary to check virtual cap = 0?
         {
             if ((num_big = __atomic_load_n(&cb.sb->num_active_big_flows, __ATOMIC_RELAXED)))
@@ -398,12 +404,12 @@ static void generate_fetch_tokens()
 
                 /* adjust chunk size based on num_split_qps */
                 chunk_size = chunk_size_table[__atomic_load_n(&cb.sb->num_active_split_qps, __ATOMIC_RELAXED) - 1];
-                //printf("num big flows = %d; chunk_size = %d\n", num_big, chunk_size);
             }
             else
             {
                 chunk_size = DEFAULT_CHUNK_SIZE;
             }
+            printf("num big flows = %d; chunk_size = %d\n", num_big, chunk_size);
             __atomic_store_n(&cb.sb->active_chunk_size, chunk_size, __ATOMIC_RELAXED);
             //__atomic_store_n(&cb.sb->active_batch_ops, DEFAULT_BATCH_OPS * chunk_size/DEFAULT_CHUNK_SIZE, __ATOMIC_RELAXED);  // not used
             __atomic_store_n(&cb.sb->active_batch_ops, DEFAULT_BATCH_OPS, __ATOMIC_RELAXED);
@@ -413,21 +419,26 @@ static void generate_fetch_tokens()
             // try to fetch tokens for flows until we are out of tokens
             i = next_idx;
 
+#ifdef CPU_FRIENDLY
             //struct timeval tt1, tt2;
+#endif
             while (1) {
+                printf("pupu\n");
                 if (!__atomic_load_n(&cb.sb->flows[i].read, __ATOMIC_RELAXED) && __atomic_load_n(&cb.sb->flows[i].pending, __ATOMIC_RELAXED)) {
                     if (try_fetch_a_token()) {
                         __atomic_store_n(&cb.sb->flows[i].pending, 0, __ATOMIC_RELAXED);
                         //// UDS_IMPL
+#ifdef CPU_FRIENDLY
                         //gettimeofday(&tt1,NULL);
                         if (send(flow_sockets[i], "0", 1, 0) == -1) {
                             perror("error sending token: ");
                             exit(1);
                         }
+#endif
                         //gettimeofday(&tt2,NULL);
                         //printf("elaspsed time = %d us\n", tt2.tv_usec - tt1.tv_usec);
                         ////
-                        //printf("fetched for flow %d\n", i);
+                        printf("fetched for flow %d\n", i);
                         next_idx = (i + 1) % MAX_FLOWS;
                         break;
                     } else {    // out of tokens
@@ -452,7 +463,11 @@ static void generate_fetch_tokens()
                 {
                     //while (get_cycles() - start_cycle < (cpu_mhz * chunk_size / temp) / SPLIT_QP_NUM_ONE_SIDED)
 #ifndef USE_TIMEFRAME
+#ifdef CPU_FRIENDLY
+                    while (get_cycles() - start_cycle < cpu_mhz * BIG_CHUNK_SIZE / temp)      // number of cycles needed to send 1 1MB-chunk at current virtual link rate
+#else
                     while (get_cycles() - start_cycle < cpu_mhz * chunk_size / temp)      // number of cycles needed to send 1 split chunk at current virtual link rate
+#endif
 #else
                     while (get_cycles() - start_cycle < cpu_mhz * TIMEFRAME)      // number of cycles needed to send 1 split chunk at current virtual link rate
 #endif
