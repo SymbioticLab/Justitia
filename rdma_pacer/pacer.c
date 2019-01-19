@@ -7,7 +7,7 @@
 // DEFAULT_CHUNK_SIZE is the initial chunk size when num_split_qps = 1
 //#define DEFAULT_CHUNK_SIZE 10000000
 #define DEFAULT_CHUNK_SIZE 1000000
-//#define DEFAULT_CHUNK_SIZE 5000   // used when turn of DYNAMIC_NUM_SPLIT_QPS and DEFAULT_NUM_SPLIT_QPS = 2
+//#define DEFAULT_CHUNK_SIZE 5000
 #define BIG_CHUNK_SIZE 1000000
 //#define DEFAULT_BATCH_OPS 5000    // xl170 (when using 10Gbps link)
 //#define DEFAULT_BATCH_OPS 667     // Conflux
@@ -394,7 +394,6 @@ static void generate_fetch_tokens()
 */
 //// end of FETCH TOKEN loop
 
-        printf("temp = %d\n", temp);
         if ((temp = __atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED)))   // yiwen: is it necessary to check virtual cap = 0?
         {
             if ((num_big = __atomic_load_n(&cb.sb->num_active_big_flows, __ATOMIC_RELAXED)))
@@ -409,7 +408,7 @@ static void generate_fetch_tokens()
             {
                 chunk_size = DEFAULT_CHUNK_SIZE;
             }
-            printf("num big flows = %d; chunk_size = %d\n", num_big, chunk_size);
+            //printf("num big flows = %d; chunk_size = %d\n", num_big, chunk_size);
             __atomic_store_n(&cb.sb->active_chunk_size, chunk_size, __ATOMIC_RELAXED);
             //__atomic_store_n(&cb.sb->active_batch_ops, DEFAULT_BATCH_OPS * chunk_size/DEFAULT_CHUNK_SIZE, __ATOMIC_RELAXED);  // not used
             __atomic_store_n(&cb.sb->active_batch_ops, DEFAULT_BATCH_OPS, __ATOMIC_RELAXED);
@@ -423,7 +422,6 @@ static void generate_fetch_tokens()
             //struct timeval tt1, tt2;
 #endif
             while (1) {
-                printf("pupu\n");
                 if (!__atomic_load_n(&cb.sb->flows[i].read, __ATOMIC_RELAXED) && __atomic_load_n(&cb.sb->flows[i].pending, __ATOMIC_RELAXED)) {
                     if (try_fetch_a_token()) {
                         __atomic_store_n(&cb.sb->flows[i].pending, 0, __ATOMIC_RELAXED);
@@ -438,7 +436,7 @@ static void generate_fetch_tokens()
                         //gettimeofday(&tt2,NULL);
                         //printf("elaspsed time = %d us\n", tt2.tv_usec - tt1.tv_usec);
                         ////
-                        printf("fetched for flow %d\n", i);
+                        //printf("fetched for flow %d\n", i);
                         next_idx = (i + 1) % MAX_FLOWS;
                         break;
                     } else {    // out of tokens

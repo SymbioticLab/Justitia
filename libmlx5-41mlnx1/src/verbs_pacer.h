@@ -7,7 +7,9 @@
 unsigned int slot;
 static int registered = 0;
 //// UDS_IMPL
+#ifdef CPU_FRIENDLY
 unsigned int flow_socket = 0;
+#endif
 ////
 
 char *get_sock_path() {
@@ -111,7 +113,9 @@ static void contact_pacer(int join) {
         printf("Received slot number.\n");
     }
     //// UDS_IMPL
+#ifdef CPU_FRIENDLY
     flow_socket = s;
+#endif
     ////
 
     ////close(s);

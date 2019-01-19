@@ -2152,36 +2152,18 @@ static inline int __mlx5_post_send(struct ibv_qp *ibqp, struct ibv_exp_send_wr *
 	FILE *fp = to_mctx(ibqp->context)->dbg_fp;
 #endif
 	////mlx5_lock(&qp->sq.lock);
-    //// UDS_IMPL
-    char str;
-    //struct timeval tt1, tt2;
-    ////
 
 	for (nreq = 0; wr; ++nreq, wr = wr->next) {
 		/* isolation */
+#ifndef CPU_FRIENDLY
 		if (isSmall == 0 && flow) {
 			__atomic_store_n(&flow->pending, 1, __ATOMIC_RELAXED);
-            /*
 			while (__atomic_load_n(&flow->pending, __ATOMIC_RELAXED)) {
 				cpu_relax();
 				//printf("pending: %d\n", flow->pending);
 			}
-            */
-            //// UDS_IMPL
-            //gettimeofday(&tt1,NULL);
-            recv(flow_socket, &str, 1, 0);
-            //gettimeofday(&tt2,NULL);
-            //printf("elaspsed time = %d us\n", (int)(tt2.tv_usec - tt1.tv_usec));
-            /*
-            if (recv(flow_socket, str, 1, 0) > 0) {
-                //printf("received a token\n");
-            } else {
-                printf("Error in recving tokens. Exit\n");
-                exit(1);
-            }
-            */
-            ////
 		}
+#endif
 		/* end */
 		idx = qp->gen_data.scur_post & (qp->sq.wqe_cnt - 1);
 		seg = mlx5_get_send_wqe(qp, idx);
@@ -2230,6 +2212,7 @@ static inline int __mlx5_post_send(struct ibv_qp *ibqp, struct ibv_exp_send_wr *
 #endif
 	}
 	/* isolation */
+//TODO: implement CPU_FRIENDLY version for tput flows
 	if (isSmall == 2 && flow)
 	{
 		// printf("DEBUG enter\n");
@@ -2982,12 +2965,27 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 			return 0;
 
 		} else if (wr->opcode == IBV_WR_RDMA_WRITE || wr->opcode == IBV_WR_RDMA_READ) { 	// One-sided verbs
-
+#ifdef CPU_FRIENDLY
+            char str;
+            struct timeval tt1, tt2;
+			__atomic_store_n(&flow->pending, 1, __ATOMIC_RELAXED);
+            gettimeofday(&tt1,NULL);
+            if (recv(flow_socket, &str, 1, 0) > 0) {
+                //printf("received a token\n");
+            } else {
+                printf("Error in recving tokens. Exit\n");
+                exit(1);
+            }
+            gettimeofday(&tt2,NULL);
+            printf("elaspsed time = %d us\n", (int)(tt2.tv_usec - tt1.tv_usec));
+#endif
             //// Dynamically adjust the number of split QPs (for one-sided verbs)
             int num_split_qp = sb ? __atomic_load_n(&sb->num_active_split_qps, __ATOMIC_RELAXED) : SPLIT_QP_NUM_ONE_SIDED;
 
 			//// calculate num of chunks to split (based on the current(updated) chunk size) (1 + remaining)
 			num_chunks_to_send = ceil_helper((float)orig_sge_length / (float)split_chunk_size);
+
+            //printf("num_split_qp = %d; num_chunks_to_send = %d\n", num_split_qp, num_chunks_to_send);
 
 			if (!SPLIT_USE_LINKED_LIST) {
 				int num_wrs_to_split_qp = num_chunks_to_send - 1;
@@ -3007,7 +3005,12 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 					swr.num_sge = 1;
 					//swr.send_flags = (i == num_wrs_to_split_qp - 1 || (i + 1) % SPLIT_ONE_SIDED_BATCH_SIZE == 0) ? (orig_send_flags | IBV_SEND_SIGNALED) : (orig_send_flags & (~(IBV_SEND_SIGNALED)));
 					if (num_split_qp > 1) {
-						swr.send_flags = (i >= num_wrs_to_split_qp - num_split_qp) ? (orig_send_flags | IBV_SEND_SIGNALED) : (orig_send_flags & (~(IBV_SEND_SIGNALED)));
+#ifdef CPU_FRIENDLY
+                    //swr.send_flags = orig_send_flags | IBV_SEND_SIGNALED;
+                    swr.send_flags = (i >= num_wrs_to_split_qp - num_split_qp) ? (orig_send_flags | IBV_SEND_SIGNALED) : (orig_send_flags & (~(IBV_SEND_SIGNALED)));
+#else
+                    swr.send_flags = (i >= num_wrs_to_split_qp - num_split_qp) ? (orig_send_flags | IBV_SEND_SIGNALED) : (orig_send_flags & (~(IBV_SEND_SIGNALED)));
+#endif
 					} else {
 						swr.send_flags = (i == num_wrs_to_split_qp - 1 || (i + 1) % SPLIT_ONE_SIDED_BATCH_SIZE == 0) ? (orig_send_flags | IBV_SEND_SIGNALED) : (orig_send_flags & (~(IBV_SEND_SIGNALED)));
 					}
@@ -3219,6 +3222,18 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 	}
 
 	//// if not splitting or other atomic verbs, act like normal
+#ifdef CPU_FRIENDLY
+    if (isSmall == 0 && flow) {
+        char str;
+        __atomic_store_n(&flow->pending, 1, __ATOMIC_RELAXED);  // to set the bit as the case where we do inside __mlx5_post_send when CPU_FRIENDLY is not defined
+        if (recv(flow_socket, &str, 1, 0) > 0) {
+            //printf("received a token\n");
+        } else {
+            printf("Error in recving tokens. Exit\n");
+            exit(1);
+        }
+    }
+#endif
 	ret = __mlx5_post_send(ibqp, (struct ibv_exp_send_wr *)wr, (struct ibv_exp_send_wr **)bad_wr, 0);
 
 out:
