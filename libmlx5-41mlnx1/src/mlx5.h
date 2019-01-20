@@ -58,7 +58,7 @@
 #define MANUAL_SPLIT_QPN_DIFF 	1				//// manually set (guess) split qpn/psn or general approcah
 #define SPLIT_QP_NUM_DIFF		1				//// DC if MANUAL_SPLIT is off
 #define SPLIT_USE_EVENT			1				//// event-triggered polling for splitting
-#define SPLIT_USE_LINKED_LIST	0				//// post using a linked list or not (for one-sided verbs) (for testing purposes)
+//#define SPLIT_USE_LINKED_LIST	0				//// post using a linked list or not (for one-sided verbs) (for testing purposes)
 //#define SPLIT_USE_NO_BATCH		0				//// 1 -> post 1 poll 1 at one-sided verbs; DC if SPLIT_USE_LINKED_LIST is 1; 0 -> use batch 
 #define SPLIT_USE_NO_BATCH_2SIDED		1		//// 1 -> post 1 poll 1 at two-sided verbs; 
 #define SPLIT_ONE_SIDED_BATCH_SIZE		1		//// batch rate in one-sided verbs. 1 means no batch
@@ -70,6 +70,7 @@
 #define SPLIT_MAX_CQE			10000
 #define RR_BUFFER_INIT_CAP		1000
 #define CPU_FRIENDLY                            //// Don't not use busy-wait checking for "pending" in shared memory. Use UDS with token enforcement.
+#define SPLIT_BIG_CHUNK_SIZE    1000000	        //// The big chunk size used in CPU_FRIENDLY version. Should be consistent with the value used in Pacer.
 ////
 
 #ifdef __GNUC__
