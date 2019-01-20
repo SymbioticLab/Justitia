@@ -3039,7 +3039,7 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
                     //while (get_cycles() - start_cycle < cpu_mhz * 5000 / 4400)
                     //struct timeval tt1, tt2;
                     //gettimeofday(&tt1,NULL);
-                    while (get_cycles() - start_cycle < cpu_mhz * 5000 / 4400)
+                    while (get_cycles() - start_cycle < cpu_mhz * split_chunk_size / 4400)
                         cpu_relax();
                     //gettimeofday(&tt2,NULL);
                     //printf("elapsed time = %d us\n", (int)(tt2.tv_usec - tt1.tv_usec));
