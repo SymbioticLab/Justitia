@@ -2990,19 +2990,7 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
             //// calculate num of chunks to split (based on the current(updated) chunk size) (1 + remaining)
             num_chunks_to_send = ceil_helper((float)orig_sge_length / (float)split_chunk_size);
 
-#ifdef CPU_FRIENDLY
-/*
-                if (split_chunk_size < SPLIT_BIG_CHUNK_SIZE) {      // if there are big chunks and small chunks
-                    if (orig_sge_length > SPLIT_BIG_CHUNK_SIZE) {   // assume wr->sg_list->length does not change in one-sided splitting
-                        num_chunks_to_send = ceil_helper((float)SPLIT_BIG_CHUNK_SIZE / (float)split_chunk_size);
-                    } else {
-                        num_chunks_to_send = ceil_helper((float)orig_sge_length / (float)split_chunk_size);
-                    }
-                }
-*/
-#endif
             //printf("ENTER: orig_sge_length = %d; split_chunk_size = %d\n", orig_sge_length, split_chunk_size);
-            //printf("num_split_qp = %d; num_chunks_to_send = %d\n", num_split_qp, num_chunks_to_send);
 
             int num_wrs_to_split_qp = num_chunks_to_send - 1;
             //struct ibv_exp_send_wr swr;
@@ -3029,13 +3017,14 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
                 num_chunks_to_send = ceil_helper((float)orig_sge_length / (float)split_chunk_size);
             }
             //printf("PUPU num_big_chunks = %d\n", num_big_chunks_to_send);
+            //printf("num_split_qp = %d; num_chunks_to_send = %d\n", num_split_qp, num_chunks_to_send);
 
             for (split_idx = 0; split_idx < num_big_chunks_to_send; split_idx++) {
                 // very last chunk go to user's own QP
                 num_wrs_to_split_qp = (num_big_chunks_to_send == 1) ? num_chunks_to_send - 1 : num_chunks_to_send;
-                //printf("num_wrs_to_split_qp at iteration %d = %d\n", num_wrs_to_split_qp, split_idx);
+                //printf("num_wrs_to_split_qp at iteration %d = %d\n", split_idx, num_wrs_to_split_qp);
 
-                if (token_enforcement) {
+                if (token_enforcement) {    // has to turn on pacer
                     __atomic_store_n(&flow->pending, 1, __ATOMIC_RELAXED);
                     if (recv(flow_socket, &str, 1, 0) > 0) {
                         //printf("received a token\n");
@@ -3048,7 +3037,7 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 
 				for (i = 0, j = 0; i < num_wrs_to_split_qp; i++, j++) {
 #ifdef CPU_FRIENDLY
-                    if (!token_enforcement) {
+                    if (!token_enforcement) {   // has to turn on pacer
                         __atomic_store_n(&flow->pending, 1, __ATOMIC_RELAXED);
                         if (recv(flow_socket, &str, 1, 0) > 0) {
                             //printf("received a token\n");
@@ -3126,15 +3115,15 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 						//// selective signalling to poll the wc of the last wr
 						do {
 							ne = mlx5_poll_cq_1(qp->split_send_cq, 1, &wc);
-							printf("ne = %d\n", ne);
+							//printf("ne = %d\n", ne);
 						} while (ne == 0);	
-                        printf("i = %d\n", i);
+                        //printf("i = %d\n", i);
 					}
+                    //printf("i = %d; swr.wr.rdma.remote_addr:%" PRIu64 "\n", i, swr.wr.rdma.remote_addr);
 				}
 
                 current_length -= split_chunk_size * num_wrs_to_split_qp;
 #ifdef CPU_FRIENDLY
-                //orig_sge_length -= SPLIT_BIG_CHUNK_SIZE;
 			} 
 #endif
 
@@ -3144,13 +3133,16 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
             swr.sg_list = &sge;
             swr.num_sge = 1;
             swr.send_flags = orig_send_flags;
-            swr.wr.rdma.remote_addr = wr->wr.rdma.remote_addr + split_chunk_size * num_wrs_to_split_qp;
+            //swr.wr.rdma.remote_addr = wr->wr.rdma.remote_addr + split_chunk_size * num_wrs_to_split_qp;
+	        swr.wr.rdma.remote_addr += split_chunk_size;
             swr.wr.rdma.rkey = wr->wr.rdma.rkey;
             swr.next = NULL;
             //printf("DDDDDDD:  i = %d; current_length = %d\n", num_wrs_to_split_qp, current_length);
+            //printf("last: swr.wr.rdma.remote_addr:%" PRIu64 "\n", swr.wr.rdma.remote_addr);
 
             sge.length = current_length;
-            sge.addr = wr->sg_list->addr + split_chunk_size * num_wrs_to_split_qp;
+            //sge.addr = wr->sg_list->addr + split_chunk_size * num_wrs_to_split_qp;
+            sge.addr += split_chunk_size;
             sge.lkey = wr->sg_list->lkey;
             //printf("sge->addr:%" PRIu64 "; send_flag: %d\n", sge[i].addr, new_wr[i].send_flags);
             //printf("DDDDDDD:  i = %d; current_length = %d\n", i, current_length);
