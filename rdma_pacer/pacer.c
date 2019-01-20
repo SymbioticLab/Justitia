@@ -395,7 +395,7 @@ static void generate_fetch_tokens()
 */
 //// end of FETCH TOKEN loop
 
-        if ((temp = __atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED)))   // yiwen: is it necessary to check virtual cap = 0?
+        if ((temp = __atomic_load_n(&cb.sb->virtual_link_cap, __ATOMIC_RELAXED)))   // yiwen: is it necessary to check virtual cap = 0?
         {
             if ((num_big = __atomic_load_n(&cb.sb->num_active_big_flows, __ATOMIC_RELAXED)))
             {
@@ -604,12 +604,13 @@ int main(int argc, char **argv)
     cb.tokens = 0;
     cb.tokens_read = 0;
     cb.num_big_read_flows = 0;
-    cb.virtual_link_cap = LINE_RATE_MB;
+    //cb.virtual_link_cap = LINE_RATE_MB;
     cb.local_read_rate = LINE_RATE_MB;
     cb.next_slot = 0;
     cb.sb->active_chunk_size = DEFAULT_CHUNK_SIZE;
     cb.sb->active_chunk_size_read = DEFAULT_CHUNK_SIZE;
     cb.sb->active_batch_ops = DEFAULT_BATCH_OPS;
+    cb.sb->virtual_link_cap = LINE_RATE_MB;
 #ifdef DYNAMIC_NUM_SPLIT_QPS
     cb.sb->num_active_split_qps = 1;        /* initially use only 1 split qps */
 #else

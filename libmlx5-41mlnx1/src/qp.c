@@ -3006,6 +3006,7 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
             int split_idx = 0;
             int num_big_chunks_to_send = 0;
             int token_enforcement = 0;
+            uint32_t virtual_link_cap = 0;
             char str;
             // assume split_chunk_size is never greater than SPLIT_BIG_CHUNK_SIZE but only less than or equal to it
             if (split_chunk_size < SPLIT_BIG_CHUNK_SIZE) {      // if token enforcement is needed
@@ -3026,6 +3027,8 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 
                 if (token_enforcement) {    // has to turn on pacer
                     __atomic_store_n(&flow->pending, 1, __ATOMIC_RELAXED);
+                    virtual_link_cap = __atomic_load_n(&sb->virtual_link_cap, __ATOMIC_RELAXED);
+                    //printf("virtual link cap = %u", virtual_link_cap);
                     if (recv(flow_socket, &str, 1, 0) > 0) {
                         //printf("received a token\n");
                     } else {
@@ -3076,9 +3079,9 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
                     if (token_enforcement) {
                         cycles_t start_cycle = get_cycles();
                         //while (get_cycles() - start_cycle < cpu_mhz * 5000 / 4400)
-                        //struct timeval tt1, tt2;
-                        //gettimeofday(&tt1,NULL);
-                        while (get_cycles() - start_cycle < cpu_mhz * split_chunk_size / 4400)
+                        ////while (get_cycles() - start_cycle < cpu_mhz * split_chunk_size / 4400)
+                        ////virtual_link_cap = __atomic_load_n(&sb->virtual_link_cap, __ATOMIC_RELAXED);
+                        while (get_cycles() - start_cycle < cpu_mhz * split_chunk_size / virtual_link_cap)
                             cpu_relax();
                         //gettimeofday(&tt2,NULL);
                         //printf("elapsed time = %d us\n", (int)(tt2.tv_usec - tt1.tv_usec));
@@ -3124,7 +3127,7 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 
                 current_length -= split_chunk_size * num_wrs_to_split_qp;
 #ifdef CPU_FRIENDLY
-			} 
+			}
 #endif
 
             // Very last one with the original send flag post to user's QP so the user can possibly poll its wc

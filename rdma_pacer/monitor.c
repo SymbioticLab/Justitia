@@ -271,7 +271,7 @@ void monitor_latency(void *arg)
             {
                 min_virtual_link_cap = round((double)(num_active_big_flows + num_remote_big_reads) 
                     / (num_active_big_flows + num_active_small_flows + num_remote_big_reads) * LINE_RATE_MB);
-                temp = __atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED);
+                temp = __atomic_load_n(&cb.sb->virtual_link_cap, __ATOMIC_RELAXED);
 
                 if (measured_tail > TAIL)
                 {
@@ -425,7 +425,7 @@ void monitor_latency(void *arg)
 #endif
 
                     /* Additive Increase */
-                    if (__atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED) < LINE_RATE_MB) {
+                    if (__atomic_load_n(&cb.sb->virtual_link_cap, __ATOMIC_RELAXED) < LINE_RATE_MB) {
                         temp++;
                     }
 #ifdef DYNAMIC_NUM_SPLIT_QPS
@@ -462,10 +462,10 @@ void monitor_latency(void *arg)
                     }
                     temp -= new_remote_read_rate;
                 }
-                __atomic_store_n(&cb.virtual_link_cap, temp, __ATOMIC_RELAXED);
+                __atomic_store_n(&cb.sb->virtual_link_cap, temp, __ATOMIC_RELAXED);
             }
             else {  // if no small flows
-                if (__atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED) != LINE_RATE_MB) {   
+                if (__atomic_load_n(&cb.sb->virtual_link_cap, __ATOMIC_RELAXED) != LINE_RATE_MB) {   
                     temp = LINE_RATE_MB;
                 }
 
@@ -495,7 +495,7 @@ void monitor_latency(void *arg)
                     }
                     temp -= new_remote_read_rate;
                 }
-                __atomic_store_n(&cb.virtual_link_cap, temp, __ATOMIC_RELAXED);
+                __atomic_store_n(&cb.sb->virtual_link_cap, temp, __ATOMIC_RELAXED);
 
 #ifdef DYNAMIC_NUM_SPLIT_QPS
                 num_split_qps = __atomic_load_n(&cb.sb->num_active_split_qps, __ATOMIC_RELAXED);    // shouldn't need to load from mem. Just to be safe.
@@ -512,7 +512,7 @@ void monitor_latency(void *arg)
                 }
 #endif
             }
-            //printf(">>>> virtual link cap: %" PRIu32 "\n", __atomic_load_n(&cb.virtual_link_cap, __ATOMIC_RELAXED));
+            //printf(">>>> virtual link cap: %" PRIu32 "\n", __atomic_load_n(&cb.sb->virtual_link_cap, __ATOMIC_RELAXED));
         }
 
 #ifdef TIMEKEEP
