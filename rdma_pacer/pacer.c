@@ -26,7 +26,8 @@ struct control_block cb;
 //uint32_t chunk_size_table[] = {4096, 8192, 16384, 32768, 65536, 1048576, 1048576};
 //uint32_t chunk_size_table[] = {8192, 8192, 100000, 100000, 500000, 1000000, 1000000};
 ////uint32_t chunk_size_table[] = {1000000, 1000000, 1000000, 1000000, 1000000, 1000000, 1000000};	// Use 1048576 in Conflux
-uint32_t chunk_size_table[] = {1000000, 5000, 2000, 1000};	// adjusted based on number of split qps
+//uint32_t chunk_size_table[] = {1000000, 5000, 2000, 1000};	// adjusted based on number of split qps
+uint32_t chunk_size_table[] = {5000, 5000, 5000, 5000};	// adjusted based on number of split qps
 //// UDS_IMPL
 #ifdef CPU_FRIENDLY
 unsigned int flow_sockets[MAX_FLOWS];

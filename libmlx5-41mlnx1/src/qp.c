@@ -2990,12 +2990,10 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
             if (split_chunk_size == SPLIT_BIG_CHUNK_SIZE) {  // handle case for only elephants
                 num_big_chunks_to_send = 1;
             }
+            printf("ENTER: orig_sge_length = %d; split_chunk_size = %d\n", orig_sge_length, split_chunk_size);
             char str;
             for (split_idx = 0; split_idx < num_big_chunks_to_send; split_idx++) {
                 if (split_chunk_size < SPLIT_BIG_CHUNK_SIZE) {      // if there are big chunks and small chunks
-                    if (orig_sge_length > SPLIT_BIG_CHUNK_SIZE) {   // assume wr->sg_list->length does not change in one-sided splitting
-                        orig_sge_length = SPLIT_BIG_CHUNK_SIZE;
-                    }
                     //struct timeval tt1, tt2;
                     __atomic_store_n(&flow->pending, 1, __ATOMIC_RELAXED);
                     //gettimeofday(&tt1,NULL);
@@ -3016,6 +3014,16 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
                 //// calculate num of chunks to split (based on the current(updated) chunk size) (1 + remaining)
                 num_chunks_to_send = ceil_helper((float)orig_sge_length / (float)split_chunk_size);
 
+#ifdef CPU_FRIENDLY
+                if (split_chunk_size < SPLIT_BIG_CHUNK_SIZE) {      // if there are big chunks and small chunks
+                    if (orig_sge_length > SPLIT_BIG_CHUNK_SIZE) {   // assume wr->sg_list->length does not change in one-sided splitting
+                        num_chunks_to_send = ceil_helper((float)SPLIT_BIG_CHUNK_SIZE / (float)split_chunk_size);
+                    } else {
+                        num_chunks_to_send = ceil_helper((float)orig_sge_length / (float)split_chunk_size);
+                    }
+                }
+#endif
+                //printf("PUPU num_big_chunks = %d\n", num_big_chunks_to_send);
                 //printf("num_split_qp = %d; num_chunks_to_send = %d\n", num_split_qp, num_chunks_to_send);
 
 				int num_wrs_to_split_qp = num_chunks_to_send - 1;
@@ -3030,7 +3038,11 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 #ifdef CPU_FRIENDLY
                 swr.wr.rdma.remote_addr += split_idx * SPLIT_BIG_CHUNK_SIZE;
                 sge.addr += split_idx * SPLIT_BIG_CHUNK_SIZE;
+                if (split_idx < num_big_chunks_to_send - 1) {
+                    num_wrs_to_split_qp = num_chunks_to_send;
+                }
 #endif
+                //printf("num_wrs_to_split_qp = %d\n", num_wrs_to_split_qp);
 
 				for (i = 0, j = 0; i < num_wrs_to_split_qp; i++, j++) {
 #ifdef CPU_FRIENDLY
