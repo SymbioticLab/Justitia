@@ -2984,37 +2984,14 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 			return 0;
 
 		} else if (wr->opcode == IBV_WR_RDMA_WRITE || wr->opcode == IBV_WR_RDMA_READ) { 	// One-sided verbs
-#ifdef CPU_FRIENDLY
-            int split_idx;
-            int num_big_chunks_to_send = ceil_helper((float)orig_sge_length / (float)SPLIT_BIG_CHUNK_SIZE);
-            if (split_chunk_size == SPLIT_BIG_CHUNK_SIZE) {  // handle case for only elephants
-                num_big_chunks_to_send = 1;
-            }
-            printf("ENTER: orig_sge_length = %d; split_chunk_size = %d\n", orig_sge_length, split_chunk_size);
-            char str;
-            for (split_idx = 0; split_idx < num_big_chunks_to_send; split_idx++) {
-                if (split_chunk_size < SPLIT_BIG_CHUNK_SIZE) {      // if there are big chunks and small chunks
-                    //struct timeval tt1, tt2;
-                    __atomic_store_n(&flow->pending, 1, __ATOMIC_RELAXED);
-                    //gettimeofday(&tt1,NULL);
-                    if (recv(flow_socket, &str, 1, 0) > 0) {
-                        //printf("received a token\n");
-                    } else {
-                        printf("Error in recving tokens. Exit\n");
-                        exit(1);
-                    }
-                    //gettimeofday(&tt2,NULL);
-                    //printf("elapsed time = %d us\n", (int)(tt2.tv_usec - tt1.tv_usec));
-                }
+            //// Dynamically adjust the number of split QPs (for one-sided verbs)
+            int num_split_qp = sb ? __atomic_load_n(&sb->num_active_split_qps, __ATOMIC_RELAXED) : SPLIT_QP_NUM_ONE_SIDED;
 
-#endif
-                //// Dynamically adjust the number of split QPs (for one-sided verbs)
-                int num_split_qp = sb ? __atomic_load_n(&sb->num_active_split_qps, __ATOMIC_RELAXED) : SPLIT_QP_NUM_ONE_SIDED;
-
-                //// calculate num of chunks to split (based on the current(updated) chunk size) (1 + remaining)
-                num_chunks_to_send = ceil_helper((float)orig_sge_length / (float)split_chunk_size);
+            //// calculate num of chunks to split (based on the current(updated) chunk size) (1 + remaining)
+            num_chunks_to_send = ceil_helper((float)orig_sge_length / (float)split_chunk_size);
 
 #ifdef CPU_FRIENDLY
+/*
                 if (split_chunk_size < SPLIT_BIG_CHUNK_SIZE) {      // if there are big chunks and small chunks
                     if (orig_sge_length > SPLIT_BIG_CHUNK_SIZE) {   // assume wr->sg_list->length does not change in one-sided splitting
                         num_chunks_to_send = ceil_helper((float)SPLIT_BIG_CHUNK_SIZE / (float)split_chunk_size);
@@ -3022,31 +2999,56 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
                         num_chunks_to_send = ceil_helper((float)orig_sge_length / (float)split_chunk_size);
                     }
                 }
+*/
 #endif
-                //printf("PUPU num_big_chunks = %d\n", num_big_chunks_to_send);
-                //printf("num_split_qp = %d; num_chunks_to_send = %d\n", num_split_qp, num_chunks_to_send);
+            //printf("ENTER: orig_sge_length = %d; split_chunk_size = %d\n", orig_sge_length, split_chunk_size);
+            //printf("num_split_qp = %d; num_chunks_to_send = %d\n", num_split_qp, num_chunks_to_send);
 
-				int num_wrs_to_split_qp = num_chunks_to_send - 1;
-				//struct ibv_exp_send_wr swr;
-				struct ibv_send_wr swr;
-				struct ibv_sge sge;
-				int i, j, qp_idx;
-				struct ibv_wc wc;
-				int ne = 0;
-				struct ibv_cq *ev_cq;
-				void *ev_ctx;
+            int num_wrs_to_split_qp = num_chunks_to_send - 1;
+            //struct ibv_exp_send_wr swr;
+            struct ibv_send_wr swr;
+            struct ibv_sge sge;
+            int i, j, qp_idx;
+            struct ibv_wc wc;
+            int ne = 0;
+            struct ibv_cq *ev_cq;
+            void *ev_ctx;
+
 #ifdef CPU_FRIENDLY
-                swr.wr.rdma.remote_addr += split_idx * SPLIT_BIG_CHUNK_SIZE;
-                sge.addr += split_idx * SPLIT_BIG_CHUNK_SIZE;
-                if (split_idx < num_big_chunks_to_send - 1) {
-                    num_wrs_to_split_qp = num_chunks_to_send;
+            int split_idx = 0;
+            int num_big_chunks_to_send = 0;
+            int token_enforcement = 0;
+            char str;
+            // assume split_chunk_size is never greater than SPLIT_BIG_CHUNK_SIZE but only less than or equal to it
+            if (split_chunk_size < SPLIT_BIG_CHUNK_SIZE) {      // if token enforcement is needed
+                token_enforcement = 1;
+                num_big_chunks_to_send = ceil_helper((float)orig_sge_length / (float)SPLIT_BIG_CHUNK_SIZE);
+                num_chunks_to_send = ceil_helper((float)SPLIT_BIG_CHUNK_SIZE / (float)split_chunk_size);
+            } else {                                            // if no token enforcement (chunk_size = BIG_chunk_size)
+                num_big_chunks_to_send = 1;     // only execute the outter loop once
+                num_chunks_to_send = ceil_helper((float)orig_sge_length / (float)split_chunk_size);
+            }
+            //printf("PUPU num_big_chunks = %d\n", num_big_chunks_to_send);
+
+            for (split_idx = 0; split_idx < num_big_chunks_to_send; split_idx++) {
+                // very last chunk go to user's own QP
+                num_wrs_to_split_qp = (num_big_chunks_to_send == 1) ? num_chunks_to_send - 1 : num_chunks_to_send;
+                //printf("num_wrs_to_split_qp at iteration %d = %d\n", num_wrs_to_split_qp, split_idx);
+
+                if (token_enforcement) {
+                    __atomic_store_n(&flow->pending, 1, __ATOMIC_RELAXED);
+                    if (recv(flow_socket, &str, 1, 0) > 0) {
+                        //printf("received a token\n");
+                    } else {
+                        printf("Error in recving tokens. Exit\n");
+                        exit(1);
+                    }
                 }
 #endif
-                //printf("num_wrs_to_split_qp = %d\n", num_wrs_to_split_qp);
 
 				for (i = 0, j = 0; i < num_wrs_to_split_qp; i++, j++) {
 #ifdef CPU_FRIENDLY
-                    if (split_chunk_size == SPLIT_BIG_CHUNK_SIZE) {      // handle case for only elephants
+                    if (!token_enforcement) {
                         __atomic_store_n(&flow->pending, 1, __ATOMIC_RELAXED);
                         if (recv(flow_socket, &str, 1, 0) > 0) {
                             //printf("received a token\n");
@@ -3061,26 +3063,37 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 					swr.sg_list = &sge;
 					swr.num_sge = 1;
 					//swr.send_flags = (i == num_wrs_to_split_qp - 1 || (i + 1) % SPLIT_ONE_SIDED_BATCH_SIZE == 0) ? (orig_send_flags | IBV_SEND_SIGNALED) : (orig_send_flags & (~(IBV_SEND_SIGNALED)));
+                    // selective signaling
                     swr.send_flags = (i >= num_wrs_to_split_qp - num_split_qp) ? (orig_send_flags | IBV_SEND_SIGNALED) : (orig_send_flags & (~(IBV_SEND_SIGNALED)));
+#ifndef CPU_FRIENDLY
 					swr.wr.rdma.remote_addr = wr->wr.rdma.remote_addr + split_chunk_size * i;
+#else
+					swr.wr.rdma.remote_addr = wr->wr.rdma.remote_addr + split_idx * SPLIT_BIG_CHUNK_SIZE + split_chunk_size * i;
+#endif
 					swr.wr.rdma.rkey = wr->wr.rdma.rkey;
 					swr.next = NULL;
 
 					sge.length = split_chunk_size;
+#ifndef CPU_FRIENDLY
 					sge.addr = wr->sg_list->addr + split_chunk_size * i;
+#else
+					sge.addr = wr->sg_list->addr + split_idx * SPLIT_BIG_CHUNK_SIZE + split_chunk_size * i;
+#endif
 					sge.lkey = wr->sg_list->lkey;
 
 					// those WRs are handled by the split qp
                     ////
 #ifdef CPU_FRIENDLY
-                    cycles_t start_cycle = get_cycles();
-                    //while (get_cycles() - start_cycle < cpu_mhz * 5000 / 4400)
-                    //struct timeval tt1, tt2;
-                    //gettimeofday(&tt1,NULL);
-                    while (get_cycles() - start_cycle < cpu_mhz * split_chunk_size / 4400)
-                        cpu_relax();
-                    //gettimeofday(&tt2,NULL);
-                    //printf("elapsed time = %d us\n", (int)(tt2.tv_usec - tt1.tv_usec));
+                    if (token_enforcement) {
+                        cycles_t start_cycle = get_cycles();
+                        //while (get_cycles() - start_cycle < cpu_mhz * 5000 / 4400)
+                        //struct timeval tt1, tt2;
+                        //gettimeofday(&tt1,NULL);
+                        while (get_cycles() - start_cycle < cpu_mhz * split_chunk_size / 4400)
+                            cpu_relax();
+                        //gettimeofday(&tt2,NULL);
+                        //printf("elapsed time = %d us\n", (int)(tt2.tv_usec - tt1.tv_usec));
+                    }
 #endif
                     ////
 					qp_idx = j % num_split_qp;      // no longer use multiple sqps; qp_idx should always be 0 now.
@@ -3113,42 +3126,42 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 						//// selective signalling to poll the wc of the last wr
 						do {
 							ne = mlx5_poll_cq_1(qp->split_send_cq, 1, &wc);
-							//printf("ne = %d\n", ne);
+							printf("ne = %d\n", ne);
 						} while (ne == 0);	
-                        //printf("i = %d\n", i);
+                        printf("i = %d\n", i);
 					}
 				}
 
-
-				// Very last one with the original send flag post to user's QP so the user can possibly poll its wc
-				current_length -= split_chunk_size * num_wrs_to_split_qp;
-
-				swr.wr_id = wr->wr_id;
-				swr.opcode = wr->opcode;
-				swr.sg_list = &sge;
-				swr.num_sge = 1;
-				swr.send_flags = orig_send_flags;
-				swr.wr.rdma.remote_addr = wr->wr.rdma.remote_addr + split_chunk_size * i;
-				swr.wr.rdma.rkey = wr->wr.rdma.rkey;
-				swr.next = NULL;
-
-				sge.length = current_length;
-				sge.addr = wr->sg_list->addr + split_chunk_size * i;
-				sge.lkey = wr->sg_list->lkey;
-				//printf("sge->addr:%" PRIu64 "; send_flag: %d\n", sge[i].addr, new_wr[i].send_flags);
-				//printf("DDDDDDD:  i = %d; current_length = %d\n", i, current_length);
-
-				ret = __mlx5_post_send(ibqp, (struct ibv_exp_send_wr *)&swr, (struct ibv_exp_send_wr **)bad_wr, 0);
-				if (ret != 0) {
-					errno = ret;
-					//printf("DEBUG POST SEND REALLY BAD!!, errno = %d\n", errno);
-					goto out;
-				}
-
+                current_length -= split_chunk_size * num_wrs_to_split_qp;
 #ifdef CPU_FRIENDLY
-                orig_sge_length -= SPLIT_BIG_CHUNK_SIZE;
+                //orig_sge_length -= SPLIT_BIG_CHUNK_SIZE;
 			} 
 #endif
+
+            // Very last one with the original send flag post to user's QP so the user can possibly poll its wc
+            swr.wr_id = wr->wr_id;
+            swr.opcode = wr->opcode;
+            swr.sg_list = &sge;
+            swr.num_sge = 1;
+            swr.send_flags = orig_send_flags;
+            swr.wr.rdma.remote_addr = wr->wr.rdma.remote_addr + split_chunk_size * num_wrs_to_split_qp;
+            swr.wr.rdma.rkey = wr->wr.rdma.rkey;
+            swr.next = NULL;
+            //printf("DDDDDDD:  i = %d; current_length = %d\n", num_wrs_to_split_qp, current_length);
+
+            sge.length = current_length;
+            sge.addr = wr->sg_list->addr + split_chunk_size * num_wrs_to_split_qp;
+            sge.lkey = wr->sg_list->lkey;
+            //printf("sge->addr:%" PRIu64 "; send_flag: %d\n", sge[i].addr, new_wr[i].send_flags);
+            //printf("DDDDDDD:  i = %d; current_length = %d\n", i, current_length);
+
+            ret = __mlx5_post_send(ibqp, (struct ibv_exp_send_wr *)&swr, (struct ibv_exp_send_wr **)bad_wr, 0);
+            if (ret != 0) {
+                errno = ret;
+                //printf("DEBUG POST SEND REALLY BAD!!, errno = %d\n", errno);
+                goto out;
+            }
+
             mlx5_unlock(&qp->sq.lock);
             return ret;
             /*
