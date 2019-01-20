@@ -54,12 +54,16 @@
 /* isolation */
 #include "verbs_pacer.h"
 #include "pacer.h"
+#include "get_clock.h"
 struct flow_info *flow = NULL;
 struct shared_block *sb = NULL;
 int start_flag = 0;
 //int start_recv = 0;
 int num_active_small_flows = 0;
 int num_active_big_flows = 0;
+#ifdef CPU_FRIENDLY
+double cpu_mhz = 0;
+#endif
 /* end */
 
 int mlx5_single_threaded = 0;
@@ -259,6 +263,9 @@ struct ibv_pd *mlx5_alloc_pd(struct ibv_context *context)
 	struct mlx5_alloc_pd_resp resp;
 	struct mlx5_pd		 *pd;
 
+#ifdef CPU_FRIENDLY
+    cpu_mhz = get_cpu_mhz(1);
+#endif
 	read_init_vars(to_mctx(context));
 	pd = calloc(1, sizeof *pd);
 	if (!pd)

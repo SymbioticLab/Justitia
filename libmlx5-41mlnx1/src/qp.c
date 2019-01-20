@@ -54,7 +54,26 @@ int isSmall = 1; /* 0: elephant flow, 1: mouse flow */
 int isRead = 0;
 int32_t debit = 0;
 /* end */
+////
 //int GLOBAL_CNT = 0;
+#if defined(__x86_64__) || defined(__i386__)
+typedef unsigned long long cycles_t;
+static inline cycles_t get_cycles()
+{
+	unsigned low, high;
+	unsigned long long val;
+	asm volatile ("rdtsc" : "=a" (low), "=d" (high));
+	val = high;
+	val = (val << 32) | low;
+	return val;
+}
+#else
+static inline unsigned long get_cycles()
+{
+	return 0;
+}
+#endif
+////
 
 enum {
 	MLX5_OPCODE_BASIC	= 0x00010000,
@@ -2967,17 +2986,17 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 		} else if (wr->opcode == IBV_WR_RDMA_WRITE || wr->opcode == IBV_WR_RDMA_READ) { 	// One-sided verbs
 #ifdef CPU_FRIENDLY
             char str;
-            struct timeval tt1, tt2;
+            //struct timeval tt1, tt2;
 			__atomic_store_n(&flow->pending, 1, __ATOMIC_RELAXED);
-            gettimeofday(&tt1,NULL);
+            //gettimeofday(&tt1,NULL);
             if (recv(flow_socket, &str, 1, 0) > 0) {
                 //printf("received a token\n");
             } else {
                 printf("Error in recving tokens. Exit\n");
                 exit(1);
             }
-            gettimeofday(&tt2,NULL);
-            printf("elaspsed time = %d us\n", (int)(tt2.tv_usec - tt1.tv_usec));
+            //gettimeofday(&tt2,NULL);
+            //printf("elapsed time = %d us\n", (int)(tt2.tv_usec - tt1.tv_usec));
 #endif
             //// Dynamically adjust the number of split QPs (for one-sided verbs)
             int num_split_qp = sb ? __atomic_load_n(&sb->num_active_split_qps, __ATOMIC_RELAXED) : SPLIT_QP_NUM_ONE_SIDED;
@@ -2998,22 +3017,13 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 				struct ibv_cq *ev_cq;
 				void *ev_ctx;
 
-				for (i = 0, j = 0; i < num_wrs_to_split_qp; i++) {
+				for (i = 0, j = 0; i < num_wrs_to_split_qp; i++, j++) {
 					swr.wr_id = i + 1;
 					swr.opcode = wr->opcode;
 					swr.sg_list = &sge;
 					swr.num_sge = 1;
 					//swr.send_flags = (i == num_wrs_to_split_qp - 1 || (i + 1) % SPLIT_ONE_SIDED_BATCH_SIZE == 0) ? (orig_send_flags | IBV_SEND_SIGNALED) : (orig_send_flags & (~(IBV_SEND_SIGNALED)));
-					if (num_split_qp > 1) {
-#ifdef CPU_FRIENDLY
-                    //swr.send_flags = orig_send_flags | IBV_SEND_SIGNALED;
                     swr.send_flags = (i >= num_wrs_to_split_qp - num_split_qp) ? (orig_send_flags | IBV_SEND_SIGNALED) : (orig_send_flags & (~(IBV_SEND_SIGNALED)));
-#else
-                    swr.send_flags = (i >= num_wrs_to_split_qp - num_split_qp) ? (orig_send_flags | IBV_SEND_SIGNALED) : (orig_send_flags & (~(IBV_SEND_SIGNALED)));
-#endif
-					} else {
-						swr.send_flags = (i == num_wrs_to_split_qp - 1 || (i + 1) % SPLIT_ONE_SIDED_BATCH_SIZE == 0) ? (orig_send_flags | IBV_SEND_SIGNALED) : (orig_send_flags & (~(IBV_SEND_SIGNALED)));
-					}
 					swr.wr.rdma.remote_addr = wr->wr.rdma.remote_addr + split_chunk_size * i;
 					swr.wr.rdma.rkey = wr->wr.rdma.rkey;
 					swr.next = NULL;
@@ -3023,13 +3033,27 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 					sge.lkey = wr->sg_list->lkey;
 
 					// those WRs are handled by the split qp
-					qp_idx = j % num_split_qp;
+                    ////
+#ifdef CPU_FRIENDLY
+                    cycles_t start_cycle = get_cycles();
+                    //while (get_cycles() - start_cycle < cpu_mhz * 5000 / 4400)
+                    //struct timeval tt1, tt2;
+                    //gettimeofday(&tt1,NULL);
+                    while (get_cycles() - start_cycle < cpu_mhz * 5000 / 4400)
+                        cpu_relax();
+                    //gettimeofday(&tt2,NULL);
+                    //printf("elapsed time = %d us\n", (int)(tt2.tv_usec - tt1.tv_usec));
+#endif
+                    ////
+					qp_idx = j % num_split_qp;      // no longer use multiple sqps; qp_idx should always be 0 now.
+					//qp_idx = 0;
 					ret = __mlx5_post_send(qp->split_qp[qp_idx], (struct ibv_exp_send_wr *)&swr, (struct ibv_exp_send_wr **)bad_wr, 0);
 					if (ret != 0) {
 						errno = ret;
 						fprintf(stderr, "error posting one-sided send requests to split qp, errno = %d\n", errno);
 						goto out;
 					}
+                    //printf("qp_idx = %d\n", qp_idx);
 
 					//if (swr.exp_send_flags == (orig_send_flags | IBV_SEND_SIGNALED)) {
 					if (swr.send_flags == (orig_send_flags | IBV_SEND_SIGNALED)) {
@@ -3053,6 +3077,7 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 							ne = mlx5_poll_cq_1(qp->split_send_cq, 1, &wc);
 							//printf("ne = %d\n", ne);
 						} while (ne == 0);	
+                        //printf("i = %d\n", i);
 					}
 				}
 

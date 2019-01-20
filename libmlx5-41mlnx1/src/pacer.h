@@ -49,6 +49,7 @@ extern int num_active_big_flows;   /* initialized in verbs.c */
 //// UDS_IMPL
 #ifdef CPU_FRIENDLY
 extern unsigned int flow_socket;    /* declaration; initialization in verbs_pacer.h */
+extern double cpu_mhz;              /* declaration; initialization in verbs.c */
 #endif
 ////
 

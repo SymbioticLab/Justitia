@@ -9,8 +9,8 @@ EXTRA_DIST += libmlx5.spec
 
 mlx5_version_script = @MLX5_VERSION_SCRIPT@
 
-MLX5_SOURCES = src/buf.c src/cq.c src/dbrec.c src/mlx5.c src/qp.c src/srq.c src/verbs.c src/implicit_lkey.c src/ec.c
-noinst_HEADERS = src/bitmap.h src/doorbell.h src/list.h src/mlx5-abi.h src/mlx5.h src/wqe.h src/implicit_lkey.h src/ec.h src/mlx5dv.h
+MLX5_SOURCES = src/buf.c src/cq.c src/dbrec.c src/mlx5.c src/qp.c src/srq.c src/verbs.c src/implicit_lkey.c src/ec.c src/get_clock.c
+noinst_HEADERS = src/bitmap.h src/doorbell.h src/list.h src/mlx5-abi.h src/mlx5.h src/wqe.h src/implicit_lkey.h src/ec.h src/mlx5dv.h src/get_clock.h
 
 if HAVE_IBV_DEVICE_LIBRARY_EXTENSION
     lib_LTLIBRARIES = src/libmlx5.la
