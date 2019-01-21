@@ -27,7 +27,8 @@ struct control_block cb;
 //uint32_t chunk_size_table[] = {8192, 8192, 100000, 100000, 500000, 1000000, 1000000};
 ////uint32_t chunk_size_table[] = {1000000, 1000000, 1000000, 1000000, 1000000, 1000000, 1000000};	// Use 1048576 in Conflux
 //uint32_t chunk_size_table[] = {1000000, 5000, 2000, 1000};	// adjusted based on number of split qps
-uint32_t chunk_size_table[] = {5000, 5000, 5000, 5000};	// adjusted based on number of split qps
+//uint32_t chunk_size_table[] = {5000, 5000, 5000, 5000};	// adjusted based on number of split qps
+uint32_t chunk_size_table[] = {1000000, 5000};	// adjusted based on split_level
 //// UDS_IMPL
 #ifdef CPU_FRIENDLY
 unsigned int flow_sockets[MAX_FLOWS];
@@ -402,8 +403,14 @@ static void generate_fetch_tokens()
                 //chunk_size = chunk_size_table[temp / num_big / (LINE_RATE_MB/6)];
                 //chunk_size = DEFAULT_CHUNK_SIZE;
 
-                /* adjust chunk size based on num_split_qps */
-                chunk_size = chunk_size_table[__atomic_load_n(&cb.sb->num_active_split_qps, __ATOMIC_RELAXED) - 1];
+                ////chunk_size = chunk_size_table[__atomic_load_n(&cb.sb->num_active_split_qps, __ATOMIC_RELAXED) - 1];
+                /* adjust chunk size based on split_level */
+                chunk_size = chunk_size_table[__atomic_load_n(&cb.sb->split_level, __ATOMIC_RELAXED) - 1];
+                if (__atomic_load_n(&cb.sb->split_level, __ATOMIC_RELAXED) > 1) {
+                    chunk_size = chunk_size_table[0];
+                } else {
+                    chunk_size = chunk_size_table[1];
+                }
             }
             else
             {
@@ -501,8 +508,14 @@ static void generate_tokens_read()
             {
                 //TODO: note the table is no longer used
                 //chunk_size = chunk_size_table[temp / num_read / 1000];
-                /* adjust chunk size based on num_split_qps */
-                chunk_size = chunk_size_table[__atomic_load_n(&cb.sb->num_active_split_qps, __ATOMIC_RELAXED) - 1];
+                ////chunk_size = chunk_size_table[__atomic_load_n(&cb.sb->num_active_split_qps, __ATOMIC_RELAXED) - 1];
+                /* adjust chunk size based on split_level */
+                chunk_size = chunk_size_table[__atomic_load_n(&cb.sb->split_level, __ATOMIC_RELAXED) - 1];
+                if (__atomic_load_n(&cb.sb->split_level, __ATOMIC_RELAXED) > 1) {
+                    chunk_size = chunk_size_table[0];
+                } else {
+                    chunk_size = chunk_size_table[1];
+                }
 
                 __atomic_store_n(&cb.sb->active_chunk_size_read, chunk_size, __ATOMIC_RELAXED);
                 // __atomic_fetch_add(&cb.tokens, 10, __ATOMIC_RELAXED);
@@ -611,10 +624,12 @@ int main(int argc, char **argv)
     cb.sb->active_chunk_size_read = DEFAULT_CHUNK_SIZE;
     cb.sb->active_batch_ops = DEFAULT_BATCH_OPS;
     cb.sb->virtual_link_cap = LINE_RATE_MB;
-#ifdef DYNAMIC_NUM_SPLIT_QPS
-    cb.sb->num_active_split_qps = 1;        /* initially use only 1 split qps */
+    //cb.sb->num_active_split_qps = DEFAULT_NUM_SPLIT_QPS;    /* should always be 1 for now */
+#ifdef DYNAMIC_CPU_OPT
+    cb.sb->split_level = 1;        /* starts with 0 waiting interval */
 #else
-    cb.sb->num_active_split_qps = DEFAULT_NUM_SPLIT_QPS;        /* should always be 2 */
+    ////cb.sb->num_active_split_qps = DEFAULT_NUM_SPLIT_QPS;
+    cb.sb->split_level = DEFAULT_SPLIT_LEVEL;        /* starts with 0 waiting interval */
 #endif
     cb.sb->num_active_big_flows = 0;
     cb.sb->num_active_small_flows = 0; /* cancel out pacer's monitor flow */

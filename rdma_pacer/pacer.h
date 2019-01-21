@@ -33,9 +33,12 @@
 //#define USE_TIMEFRAME
 //#define DYNAMIC_NUM_SPLIT_QPS
 //#define DEFAULT_NUM_SPLIT_QPS 2     // default vaule when not use DYNAMIC_NUM_SPLIT_QPS
-#define DEFAULT_NUM_SPLIT_QPS 1     // default vaule when not use DYNAMIC_NUM_SPLIT_QPS
+#define DEFAULT_NUM_SPLIT_QPS 1     // Now never use more than 1 SQPs
 #define MAX_NUM_SPLIT_QPS 4         // qp = 3, 4 or above is not very helpful
 #define CPU_FRIENDLY                //// Don't not use busy-wait checking for "pending" in shared memory. Use UDS with token enforcement.
+//#define DYNAMIC_CPU_OPT           // dymanically change shaper local busy waiting interval; similar to dynamical num split qps adjustment
+#define MAX_SPLIT_LEVEL 5
+#define DEFAULT_SPLIT_LEVEL 3
 
 struct flow_info {
     uint8_t pending;
@@ -49,9 +52,10 @@ struct shared_block {
     uint32_t active_chunk_size_read;
     uint32_t active_batch_ops;
     uint32_t virtual_link_cap;
-    uint16_t num_active_split_qps;         /* added to dynamically change number of split qps */
+    //uint16_t num_active_split_qps;         /* added to dynamically change number of split qps */
     uint16_t num_active_big_flows;         /* incremented when an elephant first sends a message */
     uint16_t num_active_small_flows;       /* incremented when a mouse first sends a message */
+    uint16_t split_level;
 };
 
 struct control_block {

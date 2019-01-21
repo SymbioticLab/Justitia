@@ -63,7 +63,7 @@
 #define SPLIT_USE_NO_BATCH_2SIDED		1		//// 1 -> post 1 poll 1 at two-sided verbs; 
 #define SPLIT_ONE_SIDED_BATCH_SIZE		1		//// batch rate in one-sided verbs. 1 means no batch
 #define SPLIT_USE_SELECTIVE_SIGNALING	1		//// use selective signaling (only last chunk signaled) or not when sending split chunks 
-#define SPLIT_QP_NUM_ONE_SIDED			2		//// Default number of split_QPs used to send split chunks in one-sided verbs
+//#define SPLIT_QP_NUM_ONE_SIDED			2		//// Default number of split_QPs used to send split chunks in one-sided verbs
 #define MAX_SPLIT_QP_NUM_ONE_SIDED		4	    //// Maximum number of split_QPs used to send split chunks in one-sided verbs
 #define SPLIT_MAX_SEND_WR 		6000
 #define SPLIT_MAX_RECV_WR 		6000

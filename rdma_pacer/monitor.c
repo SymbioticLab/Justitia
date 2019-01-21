@@ -40,10 +40,13 @@ static inline void cpu_relax()
 void monitor_latency(void *arg)
 {
     printf(">>>starting monitor_latency...\n");
-#ifdef DYNAMIC_NUM_SPLIT_QPS
-    printf("Dynamic num_split_qps adjustment: ON\n");
+////#ifdef DYNAMIC_NUM_SPLIT_QPS
+#ifdef DYNAMIC_CPU_OPT
+    ////printf("Dynamic num_split_qps adjustment: ON\n");
+    printf("Dynamic CPU Optimization: ON\n");
 #else
-    printf("Dynamic num_split_qps adjustment: OFF\n");
+    ////printf("Dynamic num_split_qps adjustment: OFF\n");
+    printf("Dynamic CPU Optimization: OFF\n");
 #endif
 #ifdef TIMEKEEP
     int arr_idx = 0;
@@ -143,8 +146,10 @@ void monitor_latency(void *arg)
     uint32_t min_virtual_link_cap = 0;
     uint16_t num_active_big_flows = 0;
     uint16_t num_active_small_flows = 0;
-#ifdef DYNAMIC_NUM_SPLIT_QPS
-    uint16_t num_split_qps = 1;
+////#ifdef DYNAMIC_NUM_SPLIT_QPS
+#ifdef DYNAMIC_CPU_OPT
+    ////uint16_t num_split_qps = 1;
+    uint16_t split_level = 1;
     cycles_t target_unmet_counter_start = 0;
     cycles_t target_unmet_counter_end = 0;
     cycles_t started_counting_target_unmet = 0;
@@ -284,7 +289,8 @@ void monitor_latency(void *arg)
                         temp = min_virtual_link_cap;
                     }
 
-#ifdef DYNAMIC_NUM_SPLIT_QPS
+////#ifdef DYNAMIC_NUM_SPLIT_QPS
+#ifdef DYNAMIC_CPU_OPT
                     num_samples_target_met = 0;
                     num_samples++;
                     if (!started_counting_target_unmet) {
@@ -296,37 +302,37 @@ void monitor_latency(void *arg)
                         target_unmet_counter_end = get_cycles();
                         started_counting_target_unmet = 0;
 
-                        num_split_qps = __atomic_load_n(&cb.sb->num_active_split_qps, __ATOMIC_RELAXED);    // shouldn't need to load from mem. Just to be safe.
+                        split_level = __atomic_load_n(&cb.sb->split_level, __ATOMIC_RELAXED);    // shouldn't need to load from mem. Just to be safe.
                         if (!found_split_level) {
-                            if (num_split_qps == 1) {
-                                num_split_qps++;
-                                __atomic_store_n(&cb.sb->num_active_split_qps, num_split_qps, __ATOMIC_RELAXED);
-                                printf("Elapsed time is %.2f us; Increase num_split_qps to %d\n", (target_unmet_counter_end - target_unmet_counter_start) / cpu_mhz, num_split_qps);
+                            if (split_level == 1) {
+                                split_level++;
+                                __atomic_store_n(&cb.sb->split_level, split_level, __ATOMIC_RELAXED);
+                                printf("Elapsed time is %.2f us; Increase split_level to %d\n", (target_unmet_counter_end - target_unmet_counter_start) / cpu_mhz, split_level);
                                 prev_tail = measured_tail;
 
                             } else {    // num_split_qps > 1
                                 if (measured_tail < prev_tail && (prev_tail - measured_tail)/prev_tail > improvement_factor) {
-                                    if (num_split_qps < MAX_NUM_SPLIT_QPS) {
-                                        printf("Elapsed time is %.2f us; num_split_qps = %d performs well with %.2f improvement. (prev, curr) = (%.2f, %.2f). Increase num_split_qps to %d to see if we can do even better\n",
-                                            (target_unmet_counter_end - target_unmet_counter_start) / cpu_mhz, num_split_qps, (prev_tail - measured_tail)/prev_tail, prev_tail, measured_tail, num_split_qps + 1);
-                                        num_split_qps++;
-                                        __atomic_store_n(&cb.sb->num_active_split_qps, num_split_qps, __ATOMIC_RELAXED);
+                                    if (split_level < MAX_SPLIT_LEVEL) {
+                                        printf("Elapsed time is %.2f us; split_level = %d performs well with %.2f improvement. (prev, curr) = (%.2f, %.2f). Increase split_level to %d to see if we can do even better\n",
+                                            (target_unmet_counter_end - target_unmet_counter_start) / cpu_mhz, split_level, (prev_tail - measured_tail)/prev_tail, prev_tail, measured_tail, split_level + 1);
+                                        split_level++;
+                                        __atomic_store_n(&cb.sb->split_level, split_level, __ATOMIC_RELAXED);
                                     } else {
-                                        printf("Elapsed time is %.2f us; num_split_qps = %d performs well with %.2f improvement. (prev, curr) = (%.2f, %.2f). Want to but cannot increase num_split_qps above MAX_NUM_SPLIT_QPS = %d.\n",
-                                            (target_unmet_counter_end - target_unmet_counter_start) / cpu_mhz, num_split_qps, (prev_tail - measured_tail)/prev_tail, prev_tail, measured_tail, MAX_NUM_SPLIT_QPS);
+                                        printf("Elapsed time is %.2f us; split_level = %d performs well with %.2f improvement. (prev, curr) = (%.2f, %.2f). Want to but cannot increase split_level above MAX_SPLIT_LEVEL = %d.\n",
+                                            (target_unmet_counter_end - target_unmet_counter_start) / cpu_mhz, split_level, (prev_tail - measured_tail)/prev_tail, prev_tail, measured_tail, MAX_SPLIT_LEVEL);
                                     }
                                     prev_tail = measured_tail;        
                                     found_split_level = 0;
 
                                 } else {
-                                    if (num_split_qps > 1) {    // actually unnecessary to check > 1 here.
-                                        printf("Elapsed time is %.2f us; num_split_qps = %d does not perform well with %.2f improvement. (prev, curr) = (%.2f, %.2f). Decreae num_split_qps back to %d and stays there\n",
-                                            (target_unmet_counter_end - target_unmet_counter_start) / cpu_mhz, num_split_qps, (prev_tail - measured_tail)/prev_tail, prev_tail, measured_tail, num_split_qps - 1);
-                                        num_split_qps--;
-                                        __atomic_store_n(&cb.sb->num_active_split_qps, num_split_qps, __ATOMIC_RELAXED);
+                                    if (split_level > 1) {    // actually unnecessary to check > 1 here.
+                                        printf("Elapsed time is %.2f us; split_level = %d does not perform well with %.2f improvement. (prev, curr) = (%.2f, %.2f). Decreae split_level back to %d and stays there\n",
+                                            (target_unmet_counter_end - target_unmet_counter_start) / cpu_mhz, split_level, (prev_tail - measured_tail)/prev_tail, prev_tail, measured_tail, split_level - 1);
+                                        split_level--;
+                                        __atomic_store_n(&cb.sb->split_level, split_level, __ATOMIC_RELAXED);
                                     } else {
-                                        printf("Elapsed time is %.2f us; num_split_qps = %d performs well with %.2f improvement. (prev, curr) = (%.2f, %.2f). Want to but cannot not decrease num_split_qps below 1.\n",
-                                            (target_unmet_counter_end - target_unmet_counter_start) / cpu_mhz, num_split_qps, (prev_tail - measured_tail)/prev_tail, prev_tail, measured_tail);
+                                        printf("Elapsed time is %.2f us; split_level = %d performs well with %.2f improvement. (prev, curr) = (%.2f, %.2f). Want to but cannot not decrease split_level below 1.\n",
+                                            (target_unmet_counter_end - target_unmet_counter_start) / cpu_mhz, split_level, (prev_tail - measured_tail)/prev_tail, prev_tail, measured_tail);
                                     }
                                     prev_tail = measured_tail;        
                                     found_split_level = 1;
@@ -337,11 +343,11 @@ void monitor_latency(void *arg)
                             if (measured_tail < prev_tail) {    // better than before but still above target
                                 //if ((prev_tail - measured_tail)/prev_tail > elasticity_factor) {
                                 if ((prev_tail - measured_tail)/prev_tail > improvement_factor) {
-                                    if (num_split_qps > 1) {
-                                        printf("After found a level; num_split_qps = %d performs well with %.2f improvement. (prev, curr) = (%.2f, %.2f). Decrease num_split_qps to %d to minimize cost\n",
-                                            num_split_qps, (prev_tail - measured_tail)/prev_tail, prev_tail, measured_tail, num_split_qps - 1);
-                                        num_split_qps--;
-                                        __atomic_store_n(&cb.sb->num_active_split_qps, num_split_qps, __ATOMIC_RELAXED);
+                                    if (split_level > 1) {
+                                        printf("After found a level; split_level = %d performs well with %.2f improvement. (prev, curr) = (%.2f, %.2f). Decrease split_level to %d to minimize cost\n",
+                                            split_level, (prev_tail - measured_tail)/prev_tail, prev_tail, measured_tail, split_level - 1);
+                                        split_level--;
+                                        __atomic_store_n(&cb.sb->split_level, split_level, __ATOMIC_RELAXED);
                                     }
                                     prev_tail = measured_tail;        
                                 }
@@ -349,12 +355,12 @@ void monitor_latency(void *arg)
                             } else {    // worse than before and still above target
                                 //if ((measured_tail - prev_tail)/prev_tail > elasticity_factor) {
                                 if ((measured_tail - prev_tail)/prev_tail > improvement_factor) {
-                                    if (num_split_qps < MAX_NUM_SPLIT_QPS) {
-                                        printf("After found a level; num_split_qps = %d does not perform well with %.2f degradation. (prev, curr) = (%.2f, %.2f). Increase num_split_qps to %d to improve isolation\n",
-                                            num_split_qps, (prev_tail - measured_tail)/prev_tail, prev_tail, measured_tail, num_split_qps + 1);
+                                    if (split_level < MAX_SPLIT_LEVEL) {
+                                        printf("After found a level; split_level = %d does not perform well with %.2f degradation. (prev, curr) = (%.2f, %.2f). Increase split_level to %d to improve isolation\n",
+                                            split_level, (prev_tail - measured_tail)/prev_tail, prev_tail, measured_tail, split_level + 1);
                                         printf("num_active_small_flows = %d\n", __atomic_load_n(&cb.sb->num_active_small_flows, __ATOMIC_RELAXED));
-                                        num_split_qps++;
-                                        __atomic_store_n(&cb.sb->num_active_split_qps, num_split_qps, __ATOMIC_RELAXED);
+                                        split_level++;
+                                        __atomic_store_n(&cb.sb->split_level, split_level, __ATOMIC_RELAXED);
                                     }
                                     prev_tail = measured_tail;        
                                 }
@@ -384,7 +390,8 @@ void monitor_latency(void *arg)
                 else    // target met
                 {
                     //printf("Target Met!\n");
-#ifdef DYNAMIC_NUM_SPLIT_QPS
+////#ifdef DYNAMIC_NUM_SPLIT_QPS
+#ifdef DYNAMIC_CPU_OPT
                     if (prev_tail > TAIL && !first_target_met_flag) {
                         prev_tail = measured_tail;
                         first_target_met_flag = 1;
@@ -394,16 +401,16 @@ void monitor_latency(void *arg)
                     num_samples_target_met++;
                     if (num_samples_target_met == WINDOW_SIZE) {
                         num_samples_target_met = 0;
-                        num_split_qps = __atomic_load_n(&cb.sb->num_active_split_qps, __ATOMIC_RELAXED);    // shouldn't need to load from mem. Just to be safe.
+                        split_level = __atomic_load_n(&cb.sb->split_level, __ATOMIC_RELAXED);    // shouldn't need to load from mem. Just to be safe.
 
                         if (measured_tail < prev_tail) {    // better than before and still below target
                             //if ((prev_tail - measured_tail)/prev_tail > elasticity_factor) {
                             if ((prev_tail - measured_tail)/prev_tail > improvement_factor) {
-                                if (num_split_qps > 1) {
-                                    printf("Target Met; num_split_qps = %d performs well with %.2f improvement. (prev, curr) = (%.2f, %.2f). Decrease num_split_qps to %d to minimize cost\n",
-                                        num_split_qps, (prev_tail - measured_tail)/prev_tail, prev_tail, measured_tail, num_split_qps - 1);
-                                    num_split_qps--;
-                                    __atomic_store_n(&cb.sb->num_active_split_qps, num_split_qps, __ATOMIC_RELAXED);
+                                if (split_level > 1) {
+                                    printf("Target Met; split_level = %d performs well with %.2f improvement. (prev, curr) = (%.2f, %.2f). Decrease split_level to %d to minimize cost\n",
+                                        split_level, (prev_tail - measured_tail)/prev_tail, prev_tail, measured_tail, split_level - 1);
+                                    split_level--;
+                                    __atomic_store_n(&cb.sb->split_level, split_level, __ATOMIC_RELAXED);
                                 }
                                 prev_tail = measured_tail;        
                             }
@@ -411,11 +418,11 @@ void monitor_latency(void *arg)
                         } else {    // worse than before but still below target
                             //if ((measured_tail - prev_tail)/prev_tail > elasticity_factor) {
                             if ((measured_tail - prev_tail)/prev_tail > improvement_factor) {
-                                if (num_split_qps < MAX_NUM_SPLIT_QPS) {
-                                    printf("After found a level; num_split_qps = %d does not perform well with %.2f degradation. (prev, curr) = (%.2f, %.2f). Increase num_split_qps to %d to improve isolation\n",
-                                        num_split_qps, (prev_tail - measured_tail)/prev_tail, prev_tail, measured_tail, num_split_qps + 1);
-                                    num_split_qps++;
-                                    __atomic_store_n(&cb.sb->num_active_split_qps, num_split_qps, __ATOMIC_RELAXED);
+                                if (split_level < MAX_SPLIT_LEVEL) {
+                                    printf("After found a level; split_level = %d does not perform well with %.2f degradation. (prev, curr) = (%.2f, %.2f). Increase split_level to %d to improve isolation\n",
+                                        split_level, (prev_tail - measured_tail)/prev_tail, prev_tail, measured_tail, split_level + 1);
+                                    split_level++;
+                                    __atomic_store_n(&cb.sb->split_level, split_level, __ATOMIC_RELAXED);
                                 }
                                 prev_tail = measured_tail;        
                             }
@@ -428,7 +435,8 @@ void monitor_latency(void *arg)
                     if (__atomic_load_n(&cb.sb->virtual_link_cap, __ATOMIC_RELAXED) < LINE_RATE_MB) {
                         temp++;
                     }
-#ifdef DYNAMIC_NUM_SPLIT_QPS
+//#ifdef DYNAMIC_NUM_SPLIT_QPS
+#ifdef DYNAMIC_CPU_OPT
                     //// invalidate latency target counter
                     started_counting_target_unmet = 0;
 #endif
@@ -497,18 +505,19 @@ void monitor_latency(void *arg)
                 }
                 __atomic_store_n(&cb.sb->virtual_link_cap, temp, __ATOMIC_RELAXED);
 
-#ifdef DYNAMIC_NUM_SPLIT_QPS
-                num_split_qps = __atomic_load_n(&cb.sb->num_active_split_qps, __ATOMIC_RELAXED);    // shouldn't need to load from mem. Just to be safe.
-                if (num_split_qps != 1) {
-                    /* decrease num_split_qps back to 1 when no small flow present; chunk size will change accordingly */
-                    __atomic_store_n(&cb.sb->num_active_split_qps, 1, __ATOMIC_RELAXED);
-                    num_split_qps = 1;
+////#ifdef DYNAMIC_NUM_SPLIT_QPS
+#ifdef DYNAMIC_CPU_OPT
+                split_level = __atomic_load_n(&cb.sb->split_level, __ATOMIC_RELAXED);    // shouldn't need to load from mem. Just to be safe.
+                if (split_level != 1) {
+                    /* decrease split_level back to 1 when no small flow present; chunk size will change accordingly */
+                    __atomic_store_n(&cb.sb->split_level, 1, __ATOMIC_RELAXED);
+                    split_level = 1;
                     started_counting_target_unmet = 0;
                     num_samples = 0;
                     num_samples_target_met = 0;
                     found_split_level = 0;
                     first_target_met_flag = 0;
-                    printf("No small flows are present. Decrease num_split_qps to 1.\n");
+                    printf("No small flows are present. Decrease split_level to 1.\n");
                 }
 #endif
             }

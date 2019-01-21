@@ -53,6 +53,10 @@
 int isSmall = 1; /* 0: elephant flow, 1: mouse flow */
 int isRead = 0;
 int32_t debit = 0;
+//double cpu_factor_table[] = {0,0.25,0.5,0.75,1};
+double cpu_factor_table[] = {0.5,0.5,0.5,0.5,0.5};
+//double cpu_factor_table[] = {1,1,1,1,1};
+
 /* end */
 ////
 //int GLOBAL_CNT = 0;
@@ -2985,7 +2989,8 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 
 		} else if (wr->opcode == IBV_WR_RDMA_WRITE || wr->opcode == IBV_WR_RDMA_READ) { 	// One-sided verbs
             //// Dynamically adjust the number of split QPs (for one-sided verbs)
-            int num_split_qp = sb ? __atomic_load_n(&sb->num_active_split_qps, __ATOMIC_RELAXED) : SPLIT_QP_NUM_ONE_SIDED;
+            ////int num_split_qp = sb ? __atomic_load_n(&sb->num_active_split_qps, __ATOMIC_RELAXED) : SPLIT_QP_NUM_ONE_SIDED;
+            int num_split_qp = 1;
 
             //// calculate num of chunks to split (based on the current(updated) chunk size) (1 + remaining)
             num_chunks_to_send = ceil_helper((float)orig_sge_length / (float)split_chunk_size);
@@ -3007,6 +3012,7 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
             int num_big_chunks_to_send = 0;
             int token_enforcement = 0;
             uint32_t virtual_link_cap = 0;
+            double cpu_factor = 0;
             char str;
             // assume split_chunk_size is never greater than SPLIT_BIG_CHUNK_SIZE but only less than or equal to it
             if (split_chunk_size < SPLIT_BIG_CHUNK_SIZE) {      // if token enforcement is needed
@@ -3028,6 +3034,9 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
                 if (token_enforcement) {    // has to turn on pacer
                     __atomic_store_n(&flow->pending, 1, __ATOMIC_RELAXED);
                     virtual_link_cap = __atomic_load_n(&sb->virtual_link_cap, __ATOMIC_RELAXED);
+                    cpu_factor = cpu_factor_table[__atomic_load_n(&sb->split_level, __ATOMIC_RELAXED)];
+                    //printf("cpu_factor = %.2f\n", cpu_factor);
+
                     //printf("virtual link cap = %u", virtual_link_cap);
                     if (recv(flow_socket, &str, 1, 0) > 0) {
                         //printf("received a token\n");
@@ -3081,7 +3090,7 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
                         //while (get_cycles() - start_cycle < cpu_mhz * 5000 / 4400)
                         ////while (get_cycles() - start_cycle < cpu_mhz * split_chunk_size / 4400)
                         ////virtual_link_cap = __atomic_load_n(&sb->virtual_link_cap, __ATOMIC_RELAXED);
-                        while (get_cycles() - start_cycle < cpu_mhz * split_chunk_size / virtual_link_cap)
+                        while (get_cycles() - start_cycle < cpu_mhz * cpu_factor * split_chunk_size / virtual_link_cap)
                             cpu_relax();
                         //gettimeofday(&tt2,NULL);
                         //printf("elapsed time = %d us\n", (int)(tt2.tv_usec - tt1.tv_usec));

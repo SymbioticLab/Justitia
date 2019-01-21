@@ -35,9 +35,10 @@ struct shared_block {
     uint32_t active_chunk_size_read;
     uint32_t active_batch_ops;
     uint32_t virtual_link_cap;
-    uint16_t num_active_split_qps;         /* added to dynamically change number of split qps */
+    //uint16_t num_active_split_qps;         /* added to dynamically change number of split qps */
     uint16_t num_active_big_flows;         /* incremented when an elephant first sends a message */
     uint16_t num_active_small_flows;       /* incremented when a mouse first sends a message */
+    uint16_t split_level;
 };
 
 extern struct flow_info *flow;     /* declaration; initialization in verbs.c */
