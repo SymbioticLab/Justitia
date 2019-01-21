@@ -2236,6 +2236,126 @@ static inline int __mlx5_post_send(struct ibv_qp *ibqp, struct ibv_exp_send_wr *
 	}
 	/* isolation */
 //TODO: implement CPU_FRIENDLY version for tput flows
+#ifndef CPU_FRIENDLY
+	if (isSmall == 2 && flow)
+	{
+		// printf("DEBUG enter\n");
+		while (debit <= 0)
+		{
+			// printf("DEBUG REQUEST TOKEN\n");
+			__atomic_store_n(&flow->pending, 1, __ATOMIC_RELAXED);
+			while (__atomic_load_n(&flow->pending, __ATOMIC_RELAXED))
+				cpu_relax();
+			debit += __atomic_load_n(&sb->active_batch_ops, __ATOMIC_RELAXED);
+			// printf("DEBUG DEBIT %d\n", debit);
+		}
+		debit -= nreq;
+	}
+#endif
+	/* end */
+out:
+	if (likely(nreq)) {
+		qp->sq.head += nreq;
+
+		if (unlikely(qp->gen_data.create_flags
+					& CREATE_FLAG_NO_DOORBELL)) {
+			/* Controlled or peer-direct qp */
+			wmb();
+			if (qp->peer_enabled)
+				qp->peer_ctrl_seg = wqe2ring;
+			goto post_send_no_db;
+		}
+
+		__ring_db(qp, qp->gen_data.bf->db_method, qp->gen_data.scur_post & 0xffff, wqe2ring, (size + 3) / 4);
+	}
+
+post_send_no_db:
+
+	////mlx5_unlock(&qp->sq.lock);
+
+	return err;
+}
+
+//// Original __mlx5_post_send without lock; used by big flows in CPU_FRIENDLY
+static inline int __mlx5_post_send_BIG(struct ibv_qp *ibqp, struct ibv_exp_send_wr *wr,
+				   struct ibv_exp_send_wr **bad_wr, int is_exp_wr) __attribute__((always_inline));
+static inline int __mlx5_post_send_BIG(struct ibv_qp *ibqp, struct ibv_exp_send_wr *wr,
+				   struct ibv_exp_send_wr **bad_wr, int is_exp_wr)
+{
+	struct mlx5_qp *qp = to_mqp(ibqp);
+	void *uninitialized_var(seg);
+	void *uninitialized_var(wqe2ring);
+	int nreq;
+	int err = 0;
+	int size;
+	unsigned idx;
+	uint64_t exp_send_flags;
+#ifdef MLX5_DEBUG
+	FILE *fp = to_mctx(ibqp->context)->dbg_fp;
+#endif
+	////mlx5_lock(&qp->sq.lock);
+
+	for (nreq = 0; wr; ++nreq, wr = wr->next) {
+		/* isolation */
+        if (isSmall == 0 && flow) {
+            char str;
+            __atomic_store_n(&flow->pending, 1, __ATOMIC_RELAXED);  // to set the bit as the case where we do inside __mlx5_post_send when CPU_FRIENDLY is not defined
+            if (recv(flow_socket, &str, 1, 0) > 0) {
+                //printf("received a token\n");
+            } else {
+                printf("Error in recving tokens. Exit\n");
+                exit(1);
+            }
+        }
+		/* end */
+		idx = qp->gen_data.scur_post & (qp->sq.wqe_cnt - 1);
+		seg = mlx5_get_send_wqe(qp, idx);
+
+		//exp_send_flags = is_exp_wr ? wr->exp_send_flags : ((struct ibv_send_wr *)wr)->send_flags;
+		exp_send_flags = ((struct ibv_send_wr *)wr)->send_flags;
+
+		if (unlikely(!(qp->gen_data.create_flags & IBV_EXP_QP_CREATE_IGNORE_SQ_OVERFLOW) &&
+			     mlx5_wq_overflow(0, nreq, qp))) {
+			mlx5_dbg(fp, MLX5_DBG_QP_SEND, "work queue overflow\n");
+			errno = ENOMEM;
+			err = errno;
+			*bad_wr = wr;
+			goto out;
+		}
+
+		if (unlikely(wr->num_sge > qp->sq.max_gs)) {
+			mlx5_dbg(fp, MLX5_DBG_QP_SEND, "max gs exceeded %d (max = %d)\n",
+				 wr->num_sge, qp->sq.max_gs);
+			errno = ENOMEM;
+			err = errno;
+			*bad_wr = wr;
+			goto out;
+		}
+
+
+
+		err = qp->gen_data.post_send_one(wr, qp, exp_send_flags, seg, &size);
+		if (unlikely(err)) {
+			errno = err;
+			*bad_wr = wr;
+			goto out;
+		}
+
+
+
+		qp->sq.wrid[idx] = wr->wr_id;
+		qp->gen_data.wqe_head[idx] = qp->sq.head + nreq;
+		qp->gen_data.scur_post += DIV_ROUND_UP(size * 16, MLX5_SEND_WQE_BB);
+
+		wqe2ring = seg;
+
+#ifdef MLX5_DEBUG
+		if (mlx5_debug_mask & MLX5_DBG_QP_SEND)
+			dump_wqe(to_mctx(ibqp->context)->dbg_fp, idx, size, qp);
+#endif
+	}
+	/* isolation */
+//TODO: implement CPU_FRIENDLY version for tput flows
 	if (isSmall == 2 && flow)
 	{
 		// printf("DEBUG enter\n");
@@ -3309,18 +3429,10 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 
 	//// if not splitting or other atomic verbs, act like normal
 #ifdef CPU_FRIENDLY
-    if (isSmall == 0 && flow) {
-        char str;
-        __atomic_store_n(&flow->pending, 1, __ATOMIC_RELAXED);  // to set the bit as the case where we do inside __mlx5_post_send when CPU_FRIENDLY is not defined
-        if (recv(flow_socket, &str, 1, 0) > 0) {
-            //printf("received a token\n");
-        } else {
-            printf("Error in recving tokens. Exit\n");
-            exit(1);
-        }
-    }
-#endif
+	ret = __mlx5_post_send_BIG(ibqp, (struct ibv_exp_send_wr *)wr, (struct ibv_exp_send_wr **)bad_wr, 0);
+#else
 	ret = __mlx5_post_send(ibqp, (struct ibv_exp_send_wr *)wr, (struct ibv_exp_send_wr **)bad_wr, 0);
+#endif
 
 out:
 	mlx5_unlock(&qp->sq.lock);
