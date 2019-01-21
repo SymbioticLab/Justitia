@@ -54,7 +54,7 @@ int isSmall = 1; /* 0: elephant flow, 1: mouse flow */
 int isRead = 0;
 int32_t debit = 0;
 //double cpu_factor_table[] = {0,0.25,0.5,0.75,1};
-double cpu_factor_table[] = {0.5,0.5,0.5,0.5,0.5};
+double cpu_factor_table[] = {0,0.5,0.5,0.7,0.9};    //value for first level is a don't-care (for 1MB chunks)
 //double cpu_factor_table[] = {1,1,1,1,1};
 
 /* end */

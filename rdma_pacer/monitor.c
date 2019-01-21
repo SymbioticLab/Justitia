@@ -274,6 +274,15 @@ void monitor_latency(void *arg)
         {
             if (num_active_small_flows)
             {
+#ifdef DYNAMIC_CPU_OPT
+                /* set split_level to at least 2 when small flows are present */
+                split_level = __atomic_load_n(&cb.sb->split_level, __ATOMIC_RELAXED);
+                if (split_level <= MIN_SPLIT_LEVEL) {
+                    split_level = MIN_SPLIT_LEVEL;
+                    __atomic_store_n(&cb.sb->split_level, split_level, __ATOMIC_RELAXED);
+                    //printf("Small flow joins. Set split_level to %d\n", split_level);
+                }
+#endif
                 min_virtual_link_cap = round((double)(num_active_big_flows + num_remote_big_reads) 
                     / (num_active_big_flows + num_active_small_flows + num_remote_big_reads) * LINE_RATE_MB);
                 temp = __atomic_load_n(&cb.sb->virtual_link_cap, __ATOMIC_RELAXED);
@@ -302,9 +311,8 @@ void monitor_latency(void *arg)
                         target_unmet_counter_end = get_cycles();
                         started_counting_target_unmet = 0;
 
-                        split_level = __atomic_load_n(&cb.sb->split_level, __ATOMIC_RELAXED);    // shouldn't need to load from mem. Just to be safe.
                         if (!found_split_level) {
-                            if (split_level == 1) {
+                            if (split_level == MIN_SPLIT_LEVEL) {
                                 split_level++;
                                 __atomic_store_n(&cb.sb->split_level, split_level, __ATOMIC_RELAXED);
                                 printf("Elapsed time is %.2f us; Increase split_level to %d\n", (target_unmet_counter_end - target_unmet_counter_start) / cpu_mhz, split_level);
@@ -325,25 +333,27 @@ void monitor_latency(void *arg)
                                     found_split_level = 0;
 
                                 } else {
-                                    if (split_level > 1) {    // actually unnecessary to check > 1 here.
+                                    if (split_level > MIN_SPLIT_LEVEL) {
                                         printf("Elapsed time is %.2f us; split_level = %d does not perform well with %.2f improvement. (prev, curr) = (%.2f, %.2f). Decreae split_level back to %d and stays there\n",
                                             (target_unmet_counter_end - target_unmet_counter_start) / cpu_mhz, split_level, (prev_tail - measured_tail)/prev_tail, prev_tail, measured_tail, split_level - 1);
                                         split_level--;
                                         __atomic_store_n(&cb.sb->split_level, split_level, __ATOMIC_RELAXED);
                                     } else {
-                                        printf("Elapsed time is %.2f us; split_level = %d performs well with %.2f improvement. (prev, curr) = (%.2f, %.2f). Want to but cannot not decrease split_level below 1.\n",
-                                            (target_unmet_counter_end - target_unmet_counter_start) / cpu_mhz, split_level, (prev_tail - measured_tail)/prev_tail, prev_tail, measured_tail);
+                                        printf("Elapsed time is %.2f us; split_level = %d performs well with %.2f improvement. (prev, curr) = (%.2f, %.2f). Want to but cannot not decrease split_level below MIN_SPLIT_LEVEL=%d.\n",
+                                            (target_unmet_counter_end - target_unmet_counter_start) / cpu_mhz, split_level, (prev_tail - measured_tail)/prev_tail, prev_tail, measured_tail, MIN_SPLIT_LEVEL);
                                     }
                                     prev_tail = measured_tail;        
                                     found_split_level = 1;
                                 }
 
                             }
-                        } else {    // if has stabalized at a split level
+                        } 
+                        /*
+                        else {    // if has stabalized at a split level
                             if (measured_tail < prev_tail) {    // better than before but still above target
                                 //if ((prev_tail - measured_tail)/prev_tail > elasticity_factor) {
                                 if ((prev_tail - measured_tail)/prev_tail > improvement_factor) {
-                                    if (split_level > 1) {
+                                    if (split_level > MIN_SPLIT_LEVEL) {
                                         printf("After found a level; split_level = %d performs well with %.2f improvement. (prev, curr) = (%.2f, %.2f). Decrease split_level to %d to minimize cost\n",
                                             split_level, (prev_tail - measured_tail)/prev_tail, prev_tail, measured_tail, split_level - 1);
                                         split_level--;
@@ -358,7 +368,7 @@ void monitor_latency(void *arg)
                                     if (split_level < MAX_SPLIT_LEVEL) {
                                         printf("After found a level; split_level = %d does not perform well with %.2f degradation. (prev, curr) = (%.2f, %.2f). Increase split_level to %d to improve isolation\n",
                                             split_level, (prev_tail - measured_tail)/prev_tail, prev_tail, measured_tail, split_level + 1);
-                                        printf("num_active_small_flows = %d\n", __atomic_load_n(&cb.sb->num_active_small_flows, __ATOMIC_RELAXED));
+                                        //printf("num_active_small_flows = %d\n", __atomic_load_n(&cb.sb->num_active_small_flows, __ATOMIC_RELAXED));
                                         split_level++;
                                         __atomic_store_n(&cb.sb->split_level, split_level, __ATOMIC_RELAXED);
                                     }
@@ -366,6 +376,7 @@ void monitor_latency(void *arg)
                                 }
                             }
                         }
+                        */
                     }
 
 #endif
@@ -406,7 +417,7 @@ void monitor_latency(void *arg)
                         if (measured_tail < prev_tail) {    // better than before and still below target
                             //if ((prev_tail - measured_tail)/prev_tail > elasticity_factor) {
                             if ((prev_tail - measured_tail)/prev_tail > improvement_factor) {
-                                if (split_level > 1) {
+                                if (split_level > MIN_SPLIT_LEVEL) {
                                     printf("Target Met; split_level = %d performs well with %.2f improvement. (prev, curr) = (%.2f, %.2f). Decrease split_level to %d to minimize cost\n",
                                         split_level, (prev_tail - measured_tail)/prev_tail, prev_tail, measured_tail, split_level - 1);
                                     split_level--;
