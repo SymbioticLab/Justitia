@@ -7,7 +7,7 @@
 // DEFAULT_CHUNK_SIZE is the initial chunk size when num_split_qps = 1
 //#define DEFAULT_CHUNK_SIZE 10000000
 #define DEFAULT_CHUNK_SIZE 1000000
-//#define DEFAULT_CHUNK_SIZE 5000
+#define SMALL_CHUNK_SIZE 5000
 #define BIG_CHUNK_SIZE 1000000
 //#define DEFAULT_BATCH_OPS 5000    // xl170 (when using 10Gbps link)
 //#define DEFAULT_BATCH_OPS 667     // Conflux
@@ -375,7 +375,8 @@ static void generate_fetch_tokens()
      * from virtual_link_cap and active chunk size 
      */
     uint32_t temp, chunk_size = DEFAULT_CHUNK_SIZE;
-    uint16_t num_big;
+    //uint16_t num_big;
+    uint16_t num_small;
     __atomic_store_n(&cb.sb->active_chunk_size, chunk_size, __ATOMIC_RELAXED);
     //__atomic_store_n(&cb.sb->active_batch_ops, chunk_size/DEFAULT_CHUNK_SIZE*DEFAULT_BATCH_OPS, __ATOMIC_RELAXED);
     __atomic_store_n(&cb.sb->active_batch_ops, DEFAULT_BATCH_OPS, __ATOMIC_RELAXED);
@@ -398,19 +399,23 @@ static void generate_fetch_tokens()
 
         if ((temp = __atomic_load_n(&cb.sb->virtual_link_cap, __ATOMIC_RELAXED)))   // yiwen: is it necessary to check virtual cap = 0?
         {
-            if ((num_big = __atomic_load_n(&cb.sb->num_active_big_flows, __ATOMIC_RELAXED)))
+            //if ((num_big = __atomic_load_n(&cb.sb->num_active_big_flows, __ATOMIC_RELAXED)))
+            if ((num_small = __atomic_load_n(&cb.sb->num_active_small_flows, __ATOMIC_RELAXED)))
             {
                 //chunk_size = chunk_size_table[temp / num_big / (LINE_RATE_MB/6)];
                 //chunk_size = DEFAULT_CHUNK_SIZE;
 
                 ////chunk_size = chunk_size_table[__atomic_load_n(&cb.sb->num_active_split_qps, __ATOMIC_RELAXED) - 1];
                 /* adjust chunk size based on split_level */
+                /*
                 chunk_size = chunk_size_table[__atomic_load_n(&cb.sb->split_level, __ATOMIC_RELAXED) - 1];
                 if (__atomic_load_n(&cb.sb->split_level, __ATOMIC_RELAXED) > 1) {
                     chunk_size = chunk_size_table[1];
                 } else {
                     chunk_size = chunk_size_table[0];
                 }
+                */
+                chunk_size = SMALL_CHUNK_SIZE;
             }
             else
             {
