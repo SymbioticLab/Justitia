@@ -407,16 +407,16 @@ static void generate_fetch_tokens()
                 /* adjust chunk size based on split_level */
                 chunk_size = chunk_size_table[__atomic_load_n(&cb.sb->split_level, __ATOMIC_RELAXED) - 1];
                 if (__atomic_load_n(&cb.sb->split_level, __ATOMIC_RELAXED) > 1) {
-                    chunk_size = chunk_size_table[0];
-                } else {
                     chunk_size = chunk_size_table[1];
+                } else {
+                    chunk_size = chunk_size_table[0];
                 }
             }
             else
             {
                 chunk_size = DEFAULT_CHUNK_SIZE;
             }
-            //printf("num big flows = %d; chunk_size = %d\n", num_big, chunk_size);
+            //printf("num big flows = %d; split_level = %d; chunk_size = %d\n", num_big, __atomic_load_n(&cb.sb->split_level, __ATOMIC_RELAXED), chunk_size);
             __atomic_store_n(&cb.sb->active_chunk_size, chunk_size, __ATOMIC_RELAXED);
             //__atomic_store_n(&cb.sb->active_batch_ops, DEFAULT_BATCH_OPS * chunk_size/DEFAULT_CHUNK_SIZE, __ATOMIC_RELAXED);  // not used
             __atomic_store_n(&cb.sb->active_batch_ops, DEFAULT_BATCH_OPS, __ATOMIC_RELAXED);
