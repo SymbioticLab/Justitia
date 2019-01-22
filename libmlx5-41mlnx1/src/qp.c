@@ -2299,7 +2299,7 @@ static inline int __mlx5_post_send_BIG(struct ibv_qp *ibqp, struct ibv_exp_send_
 		/* isolation */
         if (isSmall == 0 && flow) {
             char str;
-            __atomic_store_n(&flow->pending, 1, __ATOMIC_RELAXED);  // to set the bit as the case where we do inside __mlx5_post_send when CPU_FRIENDLY is not defined
+            __atomic_store_n(&flow->pending, 1, __ATOMIC_RELAXED);
             if (recv(flow_socket, &str, 1, 0) > 0) {
                 //printf("received a token\n");
             } else {
@@ -2361,10 +2361,14 @@ static inline int __mlx5_post_send_BIG(struct ibv_qp *ibqp, struct ibv_exp_send_
 		// printf("DEBUG enter\n");
 		while (debit <= 0)
 		{
-			// printf("DEBUG REQUEST TOKEN\n");
-			__atomic_store_n(&flow->pending, 1, __ATOMIC_RELAXED);
-			while (__atomic_load_n(&flow->pending, __ATOMIC_RELAXED))
-				cpu_relax();
+            char str;
+            __atomic_store_n(&flow->pending, 1, __ATOMIC_RELAXED);
+            if (recv(flow_socket, &str, 1, 0) > 0) {
+                //printf("received a token\n");
+            } else {
+                printf("Error in recving tokens. Exit\n");
+                exit(1);
+            }
 			debit += __atomic_load_n(&sb->active_batch_ops, __ATOMIC_RELAXED);
 			// printf("DEBUG DEBIT %d\n", debit);
 		}
