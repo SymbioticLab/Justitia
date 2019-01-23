@@ -2235,7 +2235,6 @@ static inline int __mlx5_post_send(struct ibv_qp *ibqp, struct ibv_exp_send_wr *
 #endif
 	}
 	/* isolation */
-//TODO: implement CPU_FRIENDLY version for tput flows
 #ifndef CPU_FRIENDLY
 	if (isSmall == 2 && flow)
 	{
@@ -2276,7 +2275,7 @@ post_send_no_db:
 	return err;
 }
 
-//// Original __mlx5_post_send without lock; used by big flows in CPU_FRIENDLY
+//// Original __mlx5_post_send without lock; used by big flows split into BIG chunks or normal small flows in CPU_FRIENDLY
 static inline int __mlx5_post_send_BIG(struct ibv_qp *ibqp, struct ibv_exp_send_wr *wr,
 				   struct ibv_exp_send_wr **bad_wr, int is_exp_wr) __attribute__((always_inline));
 static inline int __mlx5_post_send_BIG(struct ibv_qp *ibqp, struct ibv_exp_send_wr *wr,
@@ -2355,7 +2354,6 @@ static inline int __mlx5_post_send_BIG(struct ibv_qp *ibqp, struct ibv_exp_send_
 #endif
 	}
 	/* isolation */
-//TODO: implement CPU_FRIENDLY version for tput flows
 	if (isSmall == 2 && flow)
 	{
 		// printf("DEBUG enter\n");
