@@ -1400,6 +1400,7 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 					num_active_big_flows++;
 					printf("DEBUG POST SEND: INDEED increment BIG flow counter\n");
 					__atomic_fetch_add(&sb->num_active_big_flows, 1, __ATOMIC_RELAXED);
+				    __atomic_fetch_add(&sb->num_active_bw_flows, 1, __ATOMIC_RELAXED);
 				}
 				break;
 			}
@@ -1415,6 +1416,7 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 			{
 				isSmall = 2;
 				num_active_big_flows++;
+                __atomic_fetch_add(&sb->num_active_big_flows, 1, __ATOMIC_RELAXED);
 				// num_active_small_flows++;
 				// printf("DEBUG POST SEND: INDEED increment SMALL flow counter\n");
 				// __atomic_fetch_add(&sb->num_active_small_flows, 1, __ATOMIC_RELAXED);

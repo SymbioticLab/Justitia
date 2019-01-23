@@ -38,6 +38,7 @@ struct shared_block {
     //uint16_t num_active_split_qps;         /* added to dynamically change number of split qps */
     uint16_t num_active_big_flows;         /* incremented when an elephant first sends a message */
     uint16_t num_active_small_flows;       /* incremented when a mouse first sends a message */
+    uint16_t num_active_bw_flows;         /* incremented when an elephant first sends a message */
     uint16_t split_level;
 };
 

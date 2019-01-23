@@ -145,6 +145,7 @@ void monitor_latency(void *arg)
     /* monitor loop */
     uint32_t min_virtual_link_cap = 0;
     uint16_t num_active_big_flows = 0;
+    uint16_t num_active_bw_flows = 0;
     uint16_t num_active_small_flows = 0;
 ////#ifdef DYNAMIC_NUM_SPLIT_QPS
 #ifdef DYNAMIC_CPU_OPT
@@ -258,6 +259,7 @@ void monitor_latency(void *arg)
 
         num_active_big_flows = __atomic_load_n(&cb.sb->num_active_big_flows, __ATOMIC_RELAXED);
         num_active_small_flows = __atomic_load_n(&cb.sb->num_active_small_flows, __ATOMIC_RELAXED);
+        num_active_bw_flows = __atomic_load_n(&cb.sb->num_active_bw_flows, __ATOMIC_RELAXED);
         //printf("num_active_big_flows = %d\n", num_active_big_flows);
         //printf("num_active_small_flows = %d\n", num_active_small_flows);
 #ifdef FAVOR_BIG_FLOW
@@ -272,7 +274,7 @@ void monitor_latency(void *arg)
 #endif
         if (num_active_big_flows + num_remote_big_reads)
         {
-            if (num_active_small_flows)
+            if (num_active_small_flows && num_active_bw_flows)
             {
 #ifdef DYNAMIC_CPU_OPT
                 /* set split_level to at least 2 when small flows are present */
