@@ -67,6 +67,9 @@ int start_flag = 0;
 //int start_recv = 0;
 int num_active_small_flows = 0;
 int num_active_big_flows = 0;
+#ifdef CPU_FRIENDLY
+double cpu_mhz = 0;
+#endif
 /* end */
 
 int __mlx4_query_device(uint64_t raw_fw_ver,
@@ -184,6 +187,9 @@ struct ibv_pd *mlx4_alloc_pd(struct ibv_context *context)
 	struct mlx4_alloc_pd_resp resp;
 	struct mlx4_pd		 *pd;
 
+#ifdef CPU_FRIENDLY
+    cpu_mhz = get_cpu_mhz(1);
+#endif
 	read_init_vars(to_mctx(context));
 	pd = malloc(sizeof *pd);
 	if (!pd)

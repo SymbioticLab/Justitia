@@ -6,6 +6,9 @@
 
 unsigned int slot;
 static int registered = 0;
+#ifdef CPU_FRIENDLY
+unsigned int flow_socket = 0;
+#endif
 
 char *get_sock_path() {
     FILE *fp;
@@ -109,7 +112,10 @@ static void contact_pacer(int join) {
         slot = strtol(str, NULL, 10);
         printf("Received slot number.\n");
     }
-    close(s);
+#ifdef CPU_FRIENDLY
+    flow_socket = s;
+#endif
+    ////close(s);
 }
 
 static void set_inactive_on_exit() {
