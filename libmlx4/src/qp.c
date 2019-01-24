@@ -49,6 +49,7 @@
 /* isolation */
 #include "qp_pacer.h"
 #include <inttypes.h>
+#include <sys/time.h>
 int isSmall = 1; /* 0: elephant flow, 1: mouse flow */
 int isRead = 0;
 int32_t debit = 0;
@@ -1240,7 +1241,7 @@ out:
 }
 ////
 
-//// original __mlx4_post_send without lock; used by big flows split into BIG chunks or normal small flows in CPU_FRIENDLY
+//// original __mlx4_post_send without lock; used by big flows with no splitting or normal small flows in CPU_FRIENDLY
 int __mlx4_post_send_BIG(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 					 struct ibv_send_wr **bad_wr)
 {
@@ -1262,6 +1263,7 @@ int __mlx4_post_send_BIG(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 
 	ind = qp->sq.head;
 
+    //struct timeval tt1, tt2;
 	for (nreq = 0; wr; ++nreq, wr = wr->next)
 	{
 		/* isolation */
@@ -1269,12 +1271,15 @@ int __mlx4_post_send_BIG(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 		{
             char str;
             __atomic_store_n(&flow->pending, 1, __ATOMIC_RELAXED);
+            //gettimeofday(&tt1,NULL);
             if (recv(flow_socket, &str, 1, 0) > 0) {
                 //printf("received a token\n");
             } else {
                 printf("Error in recving tokens. Exit\n");
                 exit(1);
             }
+            //gettimeofday(&tt2,NULL);
+            //printf("__send_BIG: elaspsed time = %d us\n", (int)(tt2.tv_usec - tt1.tv_usec));
 		}
 		/* end */
 		//printf("ORIG POST SEND: wr->sg_list->length = %d\n", wr->sg_list->length);
@@ -2222,16 +2227,20 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
                 }
 #endif
 
+                //struct timeval tt1, tt2;
 				for (i = 0, j = 0; i < num_wrs_to_split_qp; i++, j++) {
 #ifdef CPU_FRIENDLY
                     if (!token_enforcement) {   // has to turn on pacer
                         __atomic_store_n(&flow->pending, 1, __ATOMIC_RELAXED);
+                        //gettimeofday(&tt1,NULL);
                         if (recv(flow_socket, &str, 1, 0) > 0) {
                             //printf("received a token\n");
                         } else {
                             printf("Error in recving tokens. Exit\n");
                             exit(1);
                         }
+                        //gettimeofday(&tt2,NULL);
+                        //printf("elapsed time = %d us\n", (int)(tt2.tv_usec - tt1.tv_usec));
                     }
 #endif
 					swr.wr_id = i + 1;
@@ -2239,8 +2248,16 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 					swr.sg_list = &sge;
 					swr.num_sge = 1;
 					//swr.send_flags = (i == num_wrs_to_split_qp - 1 || (i + 1) % SPLIT_ONE_SIDED_BATCH_SIZE == 0) ? (orig_send_flags | IBV_SEND_SIGNALED) : (orig_send_flags & (~(IBV_SEND_SIGNALED)));
-                    // selective signaling
-                    swr.send_flags = (i >= num_wrs_to_split_qp - num_split_qp) ? (orig_send_flags | IBV_SEND_SIGNALED) : (orig_send_flags & (~(IBV_SEND_SIGNALED)));
+#ifdef CPU_FRIENDLY
+                    if (!token_enforcement) {
+                        swr.send_flags = (orig_send_flags | IBV_SEND_SIGNALED);
+                    } else {
+                        // selective signaling
+                        swr.send_flags = (i >= num_wrs_to_split_qp - num_split_qp) ? (orig_send_flags | IBV_SEND_SIGNALED) : (orig_send_flags & (~(IBV_SEND_SIGNALED)));
+                    }
+#endif
+
+
 #ifndef CPU_FRIENDLY
 					swr.wr.rdma.remote_addr = wr->wr.rdma.remote_addr + split_chunk_size * i;
 #else
@@ -2332,7 +2349,11 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
             //printf("sge->addr:%" PRIu64 "; send_flag: %d\n", sge[i].addr, new_wr[i].send_flags);
             //printf("DDDDDDD:  i = %d; current_length = %d\n", i, current_length);
 
+#ifdef CPU_FRIENDLY
+            ret = __mlx4_post_send_BIG(ibqp, &swr, bad_wr);
+#else
             ret = __mlx4_post_send(ibqp, &swr, bad_wr);
+#endif
             if (ret != 0)
             {
                 errno = ret;
