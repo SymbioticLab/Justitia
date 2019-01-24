@@ -79,6 +79,17 @@ static inline cycles_t get_cycles()
 	val = (val << 32) | low;
 	return val;
 }
+#elif defined(__PPC__) || defined(__PPC64__)
+/* Note: only PPC CPUs which have mftb instruction are supported. */
+/* PPC64 has mftb */
+typedef unsigned long cycles_t;
+static inline cycles_t get_cycles()
+{
+	cycles_t ret;
+
+	__asm__ __volatile__ ("\n\t isync" "\n\t mftb %0" : "=r"(ret));
+	return ret;
+}
 #else
 static inline unsigned long get_cycles()
 {
