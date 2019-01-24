@@ -7,8 +7,10 @@
 // DEFAULT_CHUNK_SIZE is the initial chunk size when num_split_qps = 1
 //#define DEFAULT_CHUNK_SIZE 10000000
 #define DEFAULT_CHUNK_SIZE 1000000
+//#define DEFAULT_CHUNK_SIZE 1048576
 #define SMALL_CHUNK_SIZE 5000
 #define BIG_CHUNK_SIZE 1000000
+//#define BIG_CHUNK_SIZE 1048576
 //#define DEFAULT_BATCH_OPS 5000    // xl170 (when using 10Gbps link)
 //#define DEFAULT_BATCH_OPS 667     // Conflux
 //#define DEFAULT_BATCH_OPS 1500    // c6220
