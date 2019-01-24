@@ -2275,7 +2275,7 @@ post_send_no_db:
 	return err;
 }
 
-//// Original __mlx5_post_send without lock; used by big flows split into BIG chunks or normal small flows in CPU_FRIENDLY
+//// Original __mlx5_post_send without lock; used by big flows with no splitting or normal small flows in CPU_FRIENDLY
 static inline int __mlx5_post_send_BIG(struct ibv_qp *ibqp, struct ibv_exp_send_wr *wr,
 				   struct ibv_exp_send_wr **bad_wr, int is_exp_wr) __attribute__((always_inline));
 static inline int __mlx5_post_send_BIG(struct ibv_qp *ibqp, struct ibv_exp_send_wr *wr,
@@ -3188,7 +3188,16 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 					swr.num_sge = 1;
 					//swr.send_flags = (i == num_wrs_to_split_qp - 1 || (i + 1) % SPLIT_ONE_SIDED_BATCH_SIZE == 0) ? (orig_send_flags | IBV_SEND_SIGNALED) : (orig_send_flags & (~(IBV_SEND_SIGNALED)));
                     // selective signaling
-                    swr.send_flags = (i >= num_wrs_to_split_qp - num_split_qp) ? (orig_send_flags | IBV_SEND_SIGNALED) : (orig_send_flags & (~(IBV_SEND_SIGNALED)));
+                    //swr.send_flags = (i >= num_wrs_to_split_qp - num_split_qp) ? (orig_send_flags | IBV_SEND_SIGNALED) : (orig_send_flags & (~(IBV_SEND_SIGNALED)));
+#ifdef CPU_FRIENDLY
+                    if (!token_enforcement) {
+                        swr.send_flags = (orig_send_flags | IBV_SEND_SIGNALED);
+                    } else {
+                        // selective signaling
+                        swr.send_flags = (i >= num_wrs_to_split_qp - num_split_qp) ? (orig_send_flags | IBV_SEND_SIGNALED) : (orig_send_flags & (~(IBV_SEND_SIGNALED)));
+                    }
+#endif
+
 #ifndef CPU_FRIENDLY
 					swr.wr.rdma.remote_addr = wr->wr.rdma.remote_addr + split_chunk_size * i;
 #else
@@ -3282,7 +3291,15 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
             //printf("sge->addr:%" PRIu64 "; send_flag: %d\n", sge[i].addr, new_wr[i].send_flags);
             //printf("DDDDDDD:  i = %d; current_length = %d\n", i, current_length);
 
+#ifdef CPU_FRIENDLY
+            if (!token_enforcement) {
+                ret = __mlx5_post_send_BIG(ibqp, (struct ibv_exp_send_wr *)&swr, (struct ibv_exp_send_wr **)bad_wr, 0);
+            } else {
+                ret = __mlx5_post_send(ibqp, (struct ibv_exp_send_wr *)&swr, (struct ibv_exp_send_wr **)bad_wr, 0);
+            }
+#else
             ret = __mlx5_post_send(ibqp, (struct ibv_exp_send_wr *)&swr, (struct ibv_exp_send_wr **)bad_wr, 0);
+#endif
             if (ret != 0) {
                 errno = ret;
                 //printf("DEBUG POST SEND REALLY BAD!!, errno = %d\n", errno);

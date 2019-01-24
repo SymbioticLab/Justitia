@@ -2258,7 +2258,6 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
                     }
 #endif
 
-
 #ifndef CPU_FRIENDLY
 					swr.wr.rdma.remote_addr = wr->wr.rdma.remote_addr + split_chunk_size * i;
 #else
