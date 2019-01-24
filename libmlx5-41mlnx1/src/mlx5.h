@@ -71,6 +71,7 @@
 #define RR_BUFFER_INIT_CAP		1000
 #define CPU_FRIENDLY                            //// Don't not use busy-wait checking for "pending" in shared memory. Use UDS with token enforcement.
 #define SPLIT_BIG_CHUNK_SIZE    1000000	        //// The big chunk size used in CPU_FRIENDLY version. Should be consistent with the value used in Pacer.
+//#define SPLIT_BIG_CHUNK_SIZE    1048576	        //// The big chunk size used in CPU_FRIENDLY version. Should be consistent with the value used in Pacer.
 ////
 
 #ifdef __GNUC__
