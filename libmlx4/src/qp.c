@@ -2248,6 +2248,7 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 					swr.sg_list = &sge;
 					swr.num_sge = 1;
 					//swr.send_flags = (i == num_wrs_to_split_qp - 1 || (i + 1) % SPLIT_ONE_SIDED_BATCH_SIZE == 0) ? (orig_send_flags | IBV_SEND_SIGNALED) : (orig_send_flags & (~(IBV_SEND_SIGNALED)));
+                    //swr.send_flags = (i >= num_wrs_to_split_qp - num_split_qp) ? (orig_send_flags | IBV_SEND_SIGNALED) : (orig_send_flags & (~(IBV_SEND_SIGNALED)));
 #ifdef CPU_FRIENDLY
                     if (!token_enforcement) {
                         swr.send_flags = (orig_send_flags | IBV_SEND_SIGNALED);
@@ -2350,7 +2351,11 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
             //printf("DDDDDDD:  i = %d; current_length = %d\n", i, current_length);
 
 #ifdef CPU_FRIENDLY
-            ret = __mlx4_post_send_BIG(ibqp, &swr, bad_wr);
+            if (!token_enforcement) {
+                ret = __mlx4_post_send_BIG(ibqp, &swr, bad_wr);
+            } else {
+                ret = __mlx4_post_send(ibqp, &swr, bad_wr);
+            }
 #else
             ret = __mlx4_post_send(ibqp, &swr, bad_wr);
 #endif
