@@ -2286,6 +2286,7 @@ post_send_no_db:
 	return err;
 }
 
+#ifdef CPU_FRIENDLY
 //// Original __mlx5_post_send without lock; used by big flows with no splitting or normal small flows in CPU_FRIENDLY
 static inline int __mlx5_post_send_BIG(struct ibv_qp *ibqp, struct ibv_exp_send_wr *wr,
 				   struct ibv_exp_send_wr **bad_wr, int is_exp_wr) __attribute__((always_inline));
@@ -2406,6 +2407,7 @@ post_send_no_db:
 
 	return err;
 }
+#endif
 
 //// ceil helper
 int ceil_helper(float num_chunks) {
@@ -3157,7 +3159,7 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
                 num_big_chunks_to_send = 1;     // only execute the outter loop once
                 num_chunks_to_send = ceil_helper((float)orig_sge_length / (float)split_chunk_size);
             }
-            //printf("PUPU num_big_chunks = %d\n", num_big_chunks_to_send);
+            //printf("PUPU split_chunk_size = %d; num_big_chunks = %d\n", split_chunk_size, num_big_chunks_to_send);
             //printf("num_split_qp = %d; num_chunks_to_send = %d\n", num_split_qp, num_chunks_to_send);
 
             for (split_idx = 0; split_idx < num_big_chunks_to_send; split_idx++) {
@@ -3207,6 +3209,9 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
                         // selective signaling
                         swr.send_flags = (i >= num_wrs_to_split_qp - num_split_qp) ? (orig_send_flags | IBV_SEND_SIGNALED) : (orig_send_flags & (~(IBV_SEND_SIGNALED)));
                     }
+#else
+                    // selective signaling
+                    swr.send_flags = (i >= num_wrs_to_split_qp - num_split_qp) ? (orig_send_flags | IBV_SEND_SIGNALED) : (orig_send_flags & (~(IBV_SEND_SIGNALED)));
 #endif
 
 #ifndef CPU_FRIENDLY

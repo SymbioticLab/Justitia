@@ -1252,6 +1252,7 @@ out:
 }
 ////
 
+#ifdef CPU_FRIENDLY
 //// original __mlx4_post_send without lock; used by big flows with no splitting or normal small flows in CPU_FRIENDLY
 int __mlx4_post_send_BIG(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 					 struct ibv_send_wr **bad_wr)
@@ -1387,6 +1388,7 @@ out:
 	return ret;
 }
 ////
+#endif
 
 //// new version with both one-sided and two-sided verbs using split qp
 int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
@@ -2267,6 +2269,10 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
                         // selective signaling
                         swr.send_flags = (i >= num_wrs_to_split_qp - num_split_qp) ? (orig_send_flags | IBV_SEND_SIGNALED) : (orig_send_flags & (~(IBV_SEND_SIGNALED)));
                     }
+#else
+                    // selective signaling
+                    swr.send_flags = (i >= num_wrs_to_split_qp - num_split_qp) ? (orig_send_flags | IBV_SEND_SIGNALED) : (orig_send_flags & (~(IBV_SEND_SIGNALED)));
+
 #endif
 
 #ifndef CPU_FRIENDLY

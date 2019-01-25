@@ -937,8 +937,10 @@ void mlx4_init_qp_indices(struct mlx4_qp *qp);
 void mlx4_qp_init_sq_ownership(struct mlx4_qp *qp);
 int __mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 		   struct ibv_send_wr **bad_wr) __MLX4_ALGN_FUNC__;
+#ifdef CPU_FRIENDLY
 int __mlx4_post_send_BIG(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 		   struct ibv_send_wr **bad_wr) __MLX4_ALGN_FUNC__;
+#endif
 int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 		   struct ibv_send_wr **bad_wr) __MLX4_ALGN_FUNC__;
 int orig_mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
