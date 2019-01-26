@@ -31,7 +31,7 @@ struct control_block cb;
 ////uint32_t chunk_size_table[] = {1000000, 1000000, 1000000, 1000000, 1000000, 1000000, 1000000};	// Use 1048576 in Conflux
 //uint32_t chunk_size_table[] = {1000000, 5000, 2000, 1000};	// adjusted based on number of split qps
 //uint32_t chunk_size_table[] = {5000, 5000, 5000, 5000};	// adjusted based on number of split qps
-uint32_t chunk_size_table[] = {1000000, 5000};	// adjusted based on split_level
+uint32_t chunk_size_table[] = {1000000, 5000};	// adjusted based on split_level ; don't delete for now for RDMA READ's sake
 //// UDS_IMPL
 #ifdef CPU_FRIENDLY
 unsigned int flow_sockets[MAX_FLOWS];
@@ -422,7 +422,8 @@ static void generate_fetch_tokens()
             }
             else
             {
-                chunk_size = DEFAULT_CHUNK_SIZE;
+                //chunk_size = DEFAULT_CHUNK_SIZE;
+                chunk_size = SMALL_CHUNK_SIZE;      // READ hack
             }
             //printf("num big flows = %d; split_level = %d; chunk_size = %d\n", num_big, __atomic_load_n(&cb.sb->split_level, __ATOMIC_RELAXED), chunk_size);
             __atomic_store_n(&cb.sb->active_chunk_size, chunk_size, __ATOMIC_RELAXED);
@@ -589,8 +590,8 @@ int main(int argc, char **argv)
     atexit(rm_shmem_on_exit);
 
     int fd_shm, i;
-    pthread_t th1, th2, th3;
-    //pthread_t th1, th2, th3, th4, th5;
+    //pthread_t th1, th2, th3;
+    pthread_t th1, th2, th3, th4, th5;
     struct monitor_param param;
     char *endPtr;
     param.addr = argv[1];
@@ -669,7 +670,6 @@ int main(int argc, char **argv)
         error("pthread_create: generate_fetch_tokens");
     }
 
-    /*
     printf("starting thread for token generating for read...\n");
     if (pthread_create(&th4, NULL, (void *(*)(void *)) & generate_tokens_read, NULL))
     {
@@ -679,9 +679,8 @@ int main(int argc, char **argv)
     printf("starting thread for rate limiting big read flows...\n");
     if (pthread_create(&th5, NULL, (void *(*)(void *)) & rate_limit_read, NULL))
     {
-        error("pthread_create: generate_tokens_read");
+        error("pthread_create: rate_limit_read");
     }
-    */
 
     /* logging thread */
     /*

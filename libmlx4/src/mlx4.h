@@ -81,7 +81,7 @@
 #define CMH_U 24
 #define CMH_GRAN 4
 #define CMH_WINDOW_SIZE 10000
-#define CPU_FRIENDLY                            //// Don't not use busy-wait checking for "pending" in shared memory. Use UDS with token enforcement.
+//#define CPU_FRIENDLY                            //// Don't not use busy-wait checking for "pending" in shared memory. Use UDS with token enforcement.
 #define SPLIT_BIG_CHUNK_SIZE    1000000	        //// The big chunk size used in CPU_FRIENDLY version. Should be consistent with the value used in Pacer.
 //
 ////

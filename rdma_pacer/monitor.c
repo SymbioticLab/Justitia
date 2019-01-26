@@ -272,9 +272,16 @@ void monitor_latency(void *arg)
             continue;
         }
 #endif
-        if (num_active_big_flows + num_remote_big_reads)
+        // TODO: remove this hardcode for bw write vs lat read
+        //// READ HACK
+        __atomic_store_n(&cb.sb->virtual_link_cap, 3000, __ATOMIC_RELAXED);
+        __atomic_store_n(&cb.sb->split_level, 2, __ATOMIC_RELAXED);
+        continue;
+        ////
+        if (num_active_big_flows + num_remote_big_reads)        // TODO: simplfiy the logic here later (can just check num_active_bw_flows + num_remote_big_reads)
         {
-            if (num_active_small_flows && num_active_bw_flows)
+            ////if (num_active_small_flows && (num_active_bw_flows || num_remote_big_reads))    // READ HACK
+            if (num_active_small_flows && num_active_bw_flows))
             {
 #ifdef DYNAMIC_CPU_OPT
                 /* set split_level to at least 2 when small flows are present */
@@ -461,6 +468,9 @@ void monitor_latency(void *arg)
                 if (num_remote_big_reads) {
                     new_remote_read_rate = round((double)num_remote_big_reads
                         / (num_remote_big_reads + num_active_big_flows) * temp);
+                    //// READ HACK
+                    new_remote_read_rate = 3000;    // TODO: fix HARDCODE later
+                    ////
                     if (new_remote_read_rate != cb.remote_read_rate) {
                         cb.remote_read_rate = new_remote_read_rate;
                         memset((char *)ctx->local_read_buf + BUF_READ_SIZE, 0, BUF_READ_SIZE);
