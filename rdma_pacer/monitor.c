@@ -283,7 +283,7 @@ void monitor_latency(void *arg)
         if (num_active_big_flows + num_remote_big_reads)        // TODO: simplfiy the logic here later (can just check num_active_bw_flows + num_remote_big_reads)
         {
             ////if (num_active_small_flows && (num_active_bw_flows || num_remote_big_reads))    // READ HACK
-            if (num_active_small_flows && num_active_bw_flows))
+            if (num_active_small_flows && num_active_bw_flows)
             {
 #ifdef DYNAMIC_CPU_OPT
                 /* set split_level to at least 2 when small flows are present */
