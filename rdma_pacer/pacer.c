@@ -590,8 +590,8 @@ int main(int argc, char **argv)
     atexit(rm_shmem_on_exit);
 
     int fd_shm, i;
-    //pthread_t th1, th2, th3;
-    pthread_t th1, th2, th3, th4, th5;
+    pthread_t th1, th2, th3;
+    //pthread_t th1, th2, th3, th4, th5;
     struct monitor_param param;
     char *endPtr;
     param.addr = argv[1];
@@ -670,6 +670,7 @@ int main(int argc, char **argv)
         error("pthread_create: generate_fetch_tokens");
     }
 
+    /*
     printf("starting thread for token generating for read...\n");
     if (pthread_create(&th4, NULL, (void *(*)(void *)) & generate_tokens_read, NULL))
     {
@@ -681,6 +682,7 @@ int main(int argc, char **argv)
     {
         error("pthread_create: rate_limit_read");
     }
+    */
 
     /* logging thread */
     /*
