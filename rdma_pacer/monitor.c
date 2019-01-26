@@ -12,8 +12,8 @@
 #define DEPTH 16
 #define U 24
 #define GRAN 4
-//#define WINDOW_SIZE 10000
-#define WINDOW_SIZE 1000
+#define WINDOW_SIZE 10000
+//#define WINDOW_SIZE 1000
 // Time to wait in milliseconds when latency target can't not be met (before giving back bandwidth)
 #define LAT_TARGET_WAIT_TIME 5000
 // Time to wait in milliseconds when latency target can't not be met before increasing num_split_qps
