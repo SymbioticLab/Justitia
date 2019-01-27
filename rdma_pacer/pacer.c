@@ -424,6 +424,9 @@ static void generate_fetch_tokens()
             {
                 chunk_size = DEFAULT_CHUNK_SIZE;
                 //chunk_size = SMALL_CHUNK_SIZE;      // READ hack
+#ifdef INCAST_HACK
+                chunk_size = INCAST_ACTIVE_CHUNK_SIZE;
+#endif
             }
             //printf("num big flows = %d; split_level = %d; chunk_size = %d\n", num_big, __atomic_load_n(&cb.sb->split_level, __ATOMIC_RELAXED), chunk_size);
             __atomic_store_n(&cb.sb->active_chunk_size, chunk_size, __ATOMIC_RELAXED);
@@ -656,12 +659,17 @@ int main(int argc, char **argv)
         error("pthread_create: flow_handler");
     }
 
+#ifndef INCAST_HACK
     /* start monitoring thread */
     printf("starting thread for latency monitoring...\n");
     if (pthread_create(&th2, NULL, (void *(*)(void *)) & monitor_latency, (void *)&param))
     {
         error("pthread_create: monitor_latency");
     }
+#else
+    __atomic_store_n(&cb.sb->split_level, INCAST_SPLIT_LEVEL, __ATOMIC_RELAXED);
+    __atomic_store_n(&cb.sb->virtual_link_cap, INCAST_SAFEUTIL, __ATOMIC_RELAXED);
+#endif
 
     /* start token generating thread */
     printf("starting thread for token generating...\n");
@@ -695,6 +703,9 @@ int main(int argc, char **argv)
 
     void *res;
     pthread_join(th2, &res);
+#ifdef INCAST_HACK
+    while (1) {}
+#endif
     /* main loop: fetch token */
     /* 
     while (1)

@@ -40,6 +40,11 @@
 #define MAX_SPLIT_LEVEL 5           // maximum possible split level
 #define DEFAULT_SPLIT_LEVEL 2       // default split level used when DYNAMIC_CPU_OPT is OFF
 #define MIN_SPLIT_LEVEL 2           // minimun split level when small flows are present (so always use smaller chunks in such cases)
+#define INCAST_HACK
+#define INCAST_ACTIVE_CHUNK_SIZE 1000
+#define INCAST_SAFEUTIL 550
+//#define INCAST_SAFEUTIL 1100
+#define INCAST_SPLIT_LEVEL 2
 
 struct flow_info {
     uint8_t pending;
