@@ -422,8 +422,8 @@ static void generate_fetch_tokens()
             }
             else
             {
-                //chunk_size = DEFAULT_CHUNK_SIZE;
-                chunk_size = SMALL_CHUNK_SIZE;      // READ hack
+                chunk_size = DEFAULT_CHUNK_SIZE;
+                //chunk_size = SMALL_CHUNK_SIZE;      // READ hack
             }
             //printf("num big flows = %d; split_level = %d; chunk_size = %d\n", num_big, __atomic_load_n(&cb.sb->split_level, __ATOMIC_RELAXED), chunk_size);
             __atomic_store_n(&cb.sb->active_chunk_size, chunk_size, __ATOMIC_RELAXED);
