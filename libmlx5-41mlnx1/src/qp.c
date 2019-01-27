@@ -3231,6 +3231,7 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 					sge.lkey = wr->sg_list->lkey;
 
 					// those WRs are handled by the split qp
+                    //struct timeval tt1, tt2;
                     ////
 #ifdef CPU_FRIENDLY
                     if (token_enforcement) {
@@ -3238,6 +3239,7 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
                         //while (get_cycles() - start_cycle < cpu_mhz * 5000 / 4400)
                         ////while (get_cycles() - start_cycle < cpu_mhz * split_chunk_size / 4400)
                         ////virtual_link_cap = __atomic_load_n(&sb->virtual_link_cap, __ATOMIC_RELAXED);
+                        //gettimeofday(&tt1,NULL);
                         while (get_cycles() - start_cycle < cpu_mhz * cpu_factor * split_chunk_size / virtual_link_cap)
                             cpu_relax();
                         //gettimeofday(&tt2,NULL);
@@ -3250,7 +3252,7 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 					ret = __mlx5_post_send(qp->split_qp[qp_idx], (struct ibv_exp_send_wr *)&swr, (struct ibv_exp_send_wr **)bad_wr, 0);
 					if (ret != 0) {
 						errno = ret;
-						fprintf(stderr, "error posting one-sided send requests to split qp, errno = %d\n", errno);
+						fprintf(stderr, "error posting one-sided send requests to split qp, errno = %d: %s\n", errno, strerror(errno));
 						goto out;
 					}
                     //printf("qp_idx = %d\n", qp_idx);
