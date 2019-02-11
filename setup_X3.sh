@@ -1,5 +1,5 @@
 sudo apt-get update
-sudo apt-get install -y pkg-config libnl-3-dev libnl-route-3-dev libibumad-dev
+sudo apt-get install -y pkg-config libnl-3-dev libnl-route-3-dev libibumad-dev librdmacm-dev
 cd ~/frdma/libibverbs-41mlnx1/
 ./autogen.sh
 ./configure --prefix=/usr libdir=/usr/lib64
