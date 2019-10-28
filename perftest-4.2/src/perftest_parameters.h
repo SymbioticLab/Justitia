@@ -434,6 +434,8 @@ struct perftest_parameters {
 	cycles_t			*tcompleted;
 	cycles_t			*tposted2;
 	cycles_t			*tcompleted2;
+    cycles_t            tpoll;
+    cycles_t            total_time;
 	int				use_mcg;
 	int 				use_rdma_cm;
 	int				is_reversed;

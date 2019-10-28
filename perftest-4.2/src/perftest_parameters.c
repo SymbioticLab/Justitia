@@ -3155,6 +3155,9 @@ void print_report_lat (struct perftest_parameters *user_param)
 		printf("%.2f\n", delta[iters_99] / cycles_rtt_quotient);
 		printf("%.2f\n", delta[iters_99_9] / cycles_rtt_quotient);
 		printf("%.2f\n", delta[iters_99_99] / cycles_rtt_quotient);
+        printf("total time: %.2f\n", user_param->total_time / cycles_to_units);
+        printf("poll time : %.2f\n", user_param->tpoll / cycles_to_units);
+        printf("poll time ratio: %.2f%%\n", (double)user_param->tpoll / user_param->total_time * 100);
 	}
 
 	if (user_param->iters < 100000000 && !user_param->log_off) {

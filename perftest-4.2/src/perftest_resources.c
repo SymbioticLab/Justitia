@@ -4323,6 +4323,7 @@ int run_iter_lat_write(struct pingpong_context *ctx,struct perftest_parameters *
 			catch_alarm(0);
 	}
 
+    ////cycles_t start_time = get_cycles();
 	/* Done with setup. Start the test. */
 	while (scnt < user_param->iters || ccnt < user_param->iters /*|| rcnt < user_param->iters */
 			|| ((user_param->test_type == DURATION && user_param->state != END_STATE))) {
@@ -4365,7 +4366,9 @@ int run_iter_lat_write(struct pingpong_context *ctx,struct perftest_parameters *
 
 		if (ccnt < user_param->iters || user_param->test_type == DURATION) {
 
+            ////cycles_t bpoll = get_cycles();
 			do { ne = ibv_poll_cq(ctx->send_cq, 1, &wc); } while (ne == 0);
+            ////user_param->tpoll += get_cycles() - bpoll;
 
 			if(ne > 0) {
 
@@ -4384,6 +4387,7 @@ int run_iter_lat_write(struct pingpong_context *ctx,struct perftest_parameters *
 			}
 		}
 	}
+    ////user_param->total_time = get_cycles() - start_time;
 	return 0;
 }
 
