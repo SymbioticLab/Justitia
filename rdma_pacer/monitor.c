@@ -294,8 +294,13 @@ void monitor_latency(void *arg)
                     //printf("Small flow joins. Set split_level to %d\n", split_level);
                 }
 #endif
+#ifndef TREAT_L_AS_ONE
                 min_virtual_link_cap = round((double)(num_active_big_flows + num_remote_big_reads) 
                     / (num_active_big_flows + num_active_small_flows + num_remote_big_reads) * LINE_RATE_MB);
+#else
+                min_virtual_link_cap = round((double)(num_active_big_flows + num_remote_big_reads) 
+                    / (num_active_big_flows + 1 + num_remote_big_reads) * LINE_RATE_MB);
+#endif
                 temp = __atomic_load_n(&cb.sb->virtual_link_cap, __ATOMIC_RELAXED);
 
                 if (measured_tail > TAIL)

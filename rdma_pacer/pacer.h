@@ -45,6 +45,7 @@
 #define INCAST_SAFEUTIL 550
 //#define INCAST_SAFEUTIL 1100
 #define INCAST_SPLIT_LEVEL 2
+#define TREAT_L_AS_ONE
 
 struct flow_info {
     uint8_t pending;
