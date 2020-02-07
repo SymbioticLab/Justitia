@@ -16,7 +16,7 @@ lat_iter=1000000
 port_base=8887
 lat_port_base=9000
 cnt=1
-# N-1 big flows & 1 small flow
+# N-1 big flows & 8 small flows
 num_flows=9
 
 if [ "$#" -ne 1 ]; then
