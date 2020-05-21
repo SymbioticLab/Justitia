@@ -32,6 +32,7 @@ struct pingpong_context {
 	struct ibv_mr			*recv_mr;
 	struct ibv_mr 			*local_read_mr;
 	struct ibv_mr           *remote_read_mr;
+	struct ibv_comp_channel	*channel;
 	struct ibv_cq			*cq;
 	struct ibv_qp			*qp;
 	struct ibv_cq           *cq_send;

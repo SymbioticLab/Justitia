@@ -158,22 +158,35 @@ static struct pingpong_context *alloc_monitor_qp() {
         fprintf(stderr, "Couldn't register REMOTE_READ_MR\n");
         goto clean_local_read_mr;
     }
+    
+    /* monitor comp event channel */
+    ctx->channel = ibv_create_comp_channel(ctx->context);
+    if (!ctx->channel) {
+        fprintf(stderr, "Couldn't create completion channel\n");
+        exit(1);
+    }
 
     /* monitor qp's cq */
-    ctx->cq = ibv_create_cq(ctx->context, 2, NULL, NULL, 0);
+    //ctx->cq = ibv_create_cq(ctx->context, 2, NULL, NULL, 0);
+    ctx->cq = ibv_create_cq(ctx->context, 2, NULL, ctx->channel, 0);
     if (!ctx->cq) {
         fprintf(stderr, "Couldn't create CQ\n");
         goto clean_remote_read_mr;
     }
 
+    if (ibv_req_notify_cq(ctx->cq, 0)) {
+        fprintf(stderr, "Couldn't request CQ notification\n");
+        exit(1);
+    }
+
     /* send/recv qp's cq */
-    ctx->cq_send = ibv_create_cq(ctx->context, 2, NULL, NULL, 0);
+    ctx->cq_send = ibv_create_cq(ctx->context, 2, NULL, NULL, 0);       //TODO: add event channel
     if (!ctx->cq_send) {
         fprintf(stderr, "Couldn't create CQ_SEND\n");
         goto clean_cq;
     }
 
-    ctx->cq_recv = ibv_create_cq(ctx->context, 2, NULL, NULL, 0);
+    ctx->cq_recv = ibv_create_cq(ctx->context, 2, NULL, NULL, 0);       //TODO: add event channel
     if (!ctx->cq_recv) {
         fprintf(stderr, "Coundln't create CQ_RECV\n");
         goto clean_cq_send;

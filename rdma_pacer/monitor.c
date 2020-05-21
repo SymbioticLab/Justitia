@@ -8,6 +8,10 @@
 
 #define TAIL 2
 
+#define EVENT_POLL 1    // use event-triggered polling (or busy polling) for reference flow
+#define CS_OFFSET 4     // context switch offset
+#define EWMA 0.5
+
 #define WIDTH 32768
 #define DEPTH 16
 #define U 24
@@ -23,7 +27,7 @@
 //#define TIMEKEEP
 #define NUM_SAMPLE 2000 // sampling interval (seconds) for timekeeping
 #define SAMPLE_INTERVAL 0.04
-#define USE_CMH
+//#define USE_CMH
 //#define CMH_PERCENTILE  0.99    // pencentile ask from CMH
 #define CMH_PERCENTILE  0.99    // pencentile ask from CMH
 #define improvement_factor 0.25  // improvement of current measured tail over previous tail that needs to be achieved to keep the current num_split_qps
@@ -61,7 +65,12 @@ void monitor_latency(void *arg)
     int stop_timekeep = 0;
 #endif
 
-    double measured_tail;
+    double latency_target = TAIL;
+    if (EVENT_POLL) {
+        latency_target += CS_OFFSET;
+    }
+    double measured_tail = 0;
+    double prev_measured_tail = 0;
 
     int lat; // in nanoseconds
     cycles_t start_cycle, end_cycle;
@@ -172,6 +181,7 @@ void monitor_latency(void *arg)
 #endif
     while (1)
     {
+        usleep(200);
 #ifdef TIMEKEEP
         loop_start = get_cycles();
 #endif
@@ -189,6 +199,21 @@ void monitor_latency(void *arg)
         {
             perror("ibv_post_send");
             break;
+        }
+
+		void *ev_ctx;
+        if (EVENT_POLL) {
+            if (ibv_get_cq_event(ctx->channel, &ctx->cq, &ev_ctx)) {
+                fprintf(stderr, "Failed to get CQ event.\n");
+                break;
+            }
+
+            ibv_ack_cq_events(ctx->cq, 1);
+
+            if (ibv_req_notify_cq(ctx->cq, 0)) {
+                fprintf(stderr, "Couldn't request CQ notification\n");
+                break;
+            }
         }
 
         do
@@ -227,6 +252,9 @@ void monitor_latency(void *arg)
 #else
         lat = (end_cycle - start_cycle) / cpu_mhz * 1000;
         measured_tail = (double)lat / 1000;
+        measured_tail = EWMA * measured_tail + (1 - EWMA) * prev_measured_tail;
+        prev_measured_tail = measured_tail;
+        //printf("measured_tail = %.1f \n", measured_tail);
 #endif
         seq++;
         wr.wr_id = seq;
@@ -303,7 +331,7 @@ void monitor_latency(void *arg)
 #endif
                 temp = __atomic_load_n(&cb.sb->virtual_link_cap, __ATOMIC_RELAXED);
 
-                if (measured_tail > TAIL)
+                if (measured_tail > latency_target)
                 {
 #ifdef SMART_RMF
                     lat_above_target = 1;
@@ -419,7 +447,7 @@ void monitor_latency(void *arg)
                     //printf("Target Met!\n");
 ////#ifdef DYNAMIC_NUM_SPLIT_QPS
 #ifdef DYNAMIC_CPU_OPT
-                    if (prev_tail > TAIL && !first_target_met_flag) {
+                    if (prev_tail > latency_target && !first_target_met_flag) {
                         prev_tail = measured_tail;
                         first_target_met_flag = 1;
                     }
@@ -488,7 +516,7 @@ void monitor_latency(void *arg)
                             perror("ibv_post_send: remote read rate");
                         }
                         do {
-                            num_comp = ibv_poll_cq(ctx->cq_send, 1, &send_wc);
+                            num_comp = ibv_poll_cq(ctx->cq_send, 1, &send_wc);      //TODO: event-triggered polling
                         } while(num_comp == 0);
                         if (num_comp < 0) {
                             perror("ibv_poll_cq: send_wr");
@@ -521,7 +549,7 @@ void monitor_latency(void *arg)
                             perror("ibv_post_send: remote read rate");
                         }
                         do {
-                            num_comp = ibv_poll_cq(ctx->cq_send, 1, &send_wc);
+                            num_comp = ibv_poll_cq(ctx->cq_send, 1, &send_wc);      //TODO: event-triggered polling
                         } while(num_comp == 0);
                         if (num_comp < 0) {
                             perror("ibv_poll_cq: send_wr");
