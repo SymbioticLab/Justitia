@@ -81,9 +81,17 @@ static void contact_pacer(int join) {
             exit(1);
         }
 
-        /* recv pid prompt */
+        /* recv sender/receiver prompt (instead of "pid") */
         if ((len = recv(s, str, MSG_LEN, 0)) > 0) {
             str[len] = '\0';
+            if (strcmp(str, "sender") == 0) {
+                printf("I'm a sender.\n");
+            } else if (strcmp(str, "recver") == 0) {
+                printf("I'm a receiver.\n");
+            } else {
+                printf("unrecognized string. must be \"sender\" or \"recver\"\n");
+                exit(1);
+            }
         } else {
             if (len < 0) perror("recv");
             else printf("Server closed connection\n");
@@ -124,11 +132,13 @@ static void set_inactive_on_exit() {
             __atomic_fetch_sub(&sb->num_active_small_flows, num_active_small_flows, __ATOMIC_RELAXED);
             printf("DEBUG decrement SMALL counter by %d\n", num_active_small_flows);
         } else if (__atomic_load_n(&flow->read, __ATOMIC_RELAXED)) {
+            //TODO: fix READ exit later
             __atomic_store_n(&flow->read, 0, __ATOMIC_RELAXED);
             contact_pacer(0);
         } else {
             __atomic_fetch_sub(&sb->num_active_big_flows, num_active_big_flows, __ATOMIC_RELAXED);
             printf("DEBUG decrement BIG counter by %d\n", num_active_big_flows);
+            contact_pacer(0);
         }
         __atomic_store_n(&flow->pending, 0, __ATOMIC_RELAXED);
         __atomic_store_n(&flow->active, 0, __ATOMIC_RELAXED);
