@@ -23,26 +23,35 @@
 
 static const int BUF_SIZE = 10;	//TODO test size = 16
 static const int BUF_READ_SIZE = 5;
+static const int UPDATE_BUF_SIZE = 16;
 
 struct pingpong_context {
 	struct ibv_context		*context;
 	struct ibv_pd			*pd;
 	struct ibv_pd           *pd_read;
+	struct ibv_pd           *pd_update;
 	struct ibv_mr			*send_mr;
 	struct ibv_mr			*recv_mr;
 	struct ibv_mr 			*local_read_mr;
 	struct ibv_mr           *remote_read_mr;
+	struct ibv_mr			*update_send_mr;
+	struct ibv_mr			*update_recv_mr;
 	struct ibv_comp_channel	*channel;
 	struct ibv_cq			*cq;
 	struct ibv_qp			*qp;
 	struct ibv_cq           *cq_send;
 	struct ibv_cq           *cq_recv;
+	struct ibv_cq           *cq_update_send;
+	struct ibv_cq           *cq_update_recv;
 	struct ibv_qp			*qp_read;
+	struct ibv_qp			*qp_update;		// used for receiver-side updates to the sender
 	struct pingpong_dest 	*rem_dest;
 	void			    	*send_buf;
 	void					*recv_buf;
 	void                    *local_read_buf;
 	void                    *remote_read_buf;
+	void			    	*update_send_buf;
+	void					*update_recv_buf;
 	struct ibv_port_attr	portinfo;
 };
 
@@ -50,6 +59,7 @@ struct pingpong_dest {
     int lid;
 	int qpn;
 	int qpn_read;
+	int qpn_update;
 	int psn;
 	unsigned rkey;
 	unsigned long long vaddr;

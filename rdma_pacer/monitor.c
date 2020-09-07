@@ -81,16 +81,18 @@ void monitor_latency(void *arg)
 
     uint64_t seq = 0;
     struct pingpong_context *ctx = NULL;
-    struct ibv_send_wr wr, send_wr, *bad_wr = NULL;
-    struct ibv_recv_wr recv_wr, *bad_recv_wr = NULL;
-    struct ibv_sge sge, send_sge, recv_sge;
-    struct ibv_wc wc, recv_wc, send_wc;
+    struct ibv_send_wr wr, send_wr, update_send_wr, *bad_wr = NULL;
+    struct ibv_recv_wr recv_wr, update_recv_wr, *bad_recv_wr = NULL;
+    struct ibv_sge sge, send_sge, recv_sge, update_send_sge, update_recv_sge;
+    struct ibv_wc wc, recv_wc, send_wc, update_send_wc, update_recv_wc;
     const char *servername = ((struct monitor_param *)arg)->addr;
     int isclient = ((struct monitor_param *)arg)->isclient;
     int gid_idx = ((struct monitor_param *)arg)->gid_idx;
     int num_comp;
     int num_remote_big_reads = 0;
+    int num_receiver_fan_in = 0;        // Note: won't test with remote reads for now
     uint32_t received_read_rate;
+    uint32_t current_receiver_fan_in = 0;
     uint32_t temp, new_remote_read_rate;
     int found_split_level = 0;
 
@@ -135,12 +137,37 @@ void monitor_latency(void *arg)
     recv_wr.num_sge = 1;
     recv_wr.sg_list = &recv_sge;
 
-    memset(&recv_sge, 0, sizeof send_sge);
+    memset(&recv_sge, 0, sizeof recv_sge);
     memset(ctx->remote_read_buf, 0, BUF_READ_SIZE);
     recv_sge.addr = (uintptr_t)ctx->remote_read_buf;
     recv_sge.length = BUF_READ_SIZE;
     recv_sge.lkey = ctx->remote_read_mr->lkey;
     ibv_post_recv(ctx->qp_read, &recv_wr, &bad_recv_wr);
+
+    /* UPDATE SEND WR */
+    memset(&update_send_wr, 0, sizeof update_send_wr);
+    update_send_wr.opcode = IBV_WR_SEND;
+    update_send_wr.sg_list = &update_send_sge;
+    update_send_wr.num_sge = 1;
+    update_send_wr.send_flags = IBV_SEND_INLINE | IBV_SEND_SIGNALED;
+
+    memset(&update_send_sge, 0, sizeof update_send_sge);
+    memset((char *)ctx->update_send_buf + UPDATE_BUF_SIZE, 0, UPDATE_BUF_SIZE);
+    update_send_sge.addr = (uintptr_t)((char *)ctx->update_send_buf + UPDATE_BUF_SIZE);
+    update_send_sge.length = UPDATE_BUF_SIZE;
+    update_send_sge.lkey = ctx->update_send_mr->lkey;
+
+    /* UPDATE RECV WR */
+    memset(&update_recv_wr, 0, sizeof update_recv_wr);
+    update_recv_wr.num_sge = 1;
+    update_recv_wr.sg_list = &update_recv_sge;
+
+    memset(&update_recv_sge, 0, sizeof update_recv_sge);
+    memset(ctx->update_recv_buf, 0, UPDATE_BUF_SIZE);
+    update_recv_sge.addr = (uintptr_t)ctx->update_recv_buf;
+    update_recv_sge.length = UPDATE_BUF_SIZE;
+    update_recv_sge.lkey = ctx->update_recv_mr->lkey;
+    ibv_post_recv(ctx->qp_update, &update_recv_wr, &bad_recv_wr);
 
 #ifdef USE_CMH
     cmh = CMH_Init(WIDTH, DEPTH, U, GRAN, WINDOW_SIZE);
@@ -282,6 +309,40 @@ void monitor_latency(void *arg)
         } else if (num_comp < 0) {
             perror("ibv_poll_cq: recv_wc");
             break;
+        }
+
+
+        /* check for receiver-side updates */
+        if (!isclient) {
+            num_comp = ibv_poll_cq(ctx->cq_update_recv, 1, &update_recv_wc);
+            if (num_comp > 0) {
+                while (num_comp > 0) {
+                    if (update_recv_wc.status != IBV_WC_SUCCESS) {
+                        fprintf(stderr, "error bad update_recv_wc status: %u.%s\n", update_recv_wc.status, ibv_wc_status_str(update_recv_wc.status));
+                        break;
+                    }
+
+                    //remote_receiver_fan_in = (uint32_t)strtol((const char *)ctx->update_recv_buf, NULL, 10);
+                    if (strcmp(ctx->update_recv_buf, "send_inc") == 0) {
+                        current_receiver_fan_in++;
+                    } else if (strcmp(ctx->update_recv_buf, "send_dec") == 0) {
+                        current_receiver_fan_in--;
+                    } else {
+                        printf("Unrecognized receiver-update msg. exit\n");
+                        exit(1);
+                    }
+
+                    num_comp--;
+                } 
+                printf("current receiver fan in: %" PRIu32 "\n", current_receiver_fan_in);
+
+                if (ibv_post_recv(ctx->qp_update, &update_recv_wr, &bad_recv_wr)) {
+                    perror("ibv_post_recv: recv_wr");
+                }
+            } else if (num_comp < 0) {
+                perror("ibv_poll_cq: update_recv_wc");
+                break;
+            }
         }
 
 

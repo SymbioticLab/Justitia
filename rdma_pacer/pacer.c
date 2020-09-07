@@ -221,7 +221,7 @@ int find_next_slot(pid_t pid)
 }
 
 /* handle incoming flows one by one; assign a slot to an incoming flow */
-static void flow_handler()
+static void flow_handler(void *arg)
 {
     /* prepare unix domain socket communication */
     printf("starting flow_handler...\n");
@@ -229,6 +229,7 @@ static void flow_handler()
     struct sockaddr_un local, remote;
     char buf[MSG_LEN];
     char buf_pid[MSG_LEN];
+    //char buf_update[UPDATE_BUF_SIZE];
     char *sock_path = get_sock_path();
     pid_t pid;
 
@@ -259,6 +260,9 @@ static void flow_handler()
     if (listen(s, 10))
         error("listen");
 
+
+    int isclient = ((struct monitor_param *)arg)->isclient;
+
     /* handling loop */
     while (1)
     {
@@ -273,10 +277,17 @@ static void flow_handler()
         printf("message is %s.\n", buf);
         if (strcmp(buf, "join") == 0)
         {
-            /* prompt for pid */
-            if (send(s2, "pid", 3, 0) == -1) {
-                perror("error sending pid prompt: ");
-                exit(1);
+            /* send if the node is a sender or receiver (instead of sending "pid" to prompt for pid) */
+            if (isclient) {
+                if (send(s2, "sender", 6, 0) == -1) {
+                    perror("error sending sender info: ");
+                    exit(1);
+                }
+            } else {
+                if (send(s2, "recver", 6, 0) == -1) {
+                    perror("error sending receiver info: ");
+                    exit(1);
+                }
             }
 
             /* receive pid from process */
@@ -312,6 +323,21 @@ static void flow_handler()
                 cb.next_slot = (cb.next_slot + 1) % MAX_FLOWS;
             }
             */
+
+
+            /* As a sender, tell the receiver (since WRITE operates passively) that I contribute to one of the fan-in (# of sending apps increase by 1) */
+            if (isclient) {
+                send_sge.addr = (uintptr_t)cb.ctx->update_send_buf;
+                send_sge.length = UPDATE_BUF_SIZE;
+                send_sge.lkey = cb.ctx->update_send_mr->lkey;
+
+                //sprintf(buf_update, "send_inc=%d", 1);
+                strcpy(cb.ctx->update_send_buf, "send_inc");
+                if (ibv_post_send(cb.ctx->qp_update, &send_wr, &bad_wr)) {
+                    perror("ibv_post_send: increment num_sender for remote receiver");
+                }
+                printf("sent a msg to remote receiver on WRITE ARRIVAL\n");
+            }
         }
         else if (strcmp(buf, "read") == 0)
         {
@@ -325,9 +351,31 @@ static void flow_handler()
         }
         else if (strcmp(buf, "exit") == 0)
         {
+            /* As a sender, tell the receriver that # of the sending apps has decreased by 1 */
+            if (isclient) {
+                send_sge.addr = (uintptr_t)cb.ctx->update_send_buf;
+                send_sge.length = UPDATE_BUF_SIZE;
+                send_sge.lkey = cb.ctx->update_send_mr->lkey;
+
+                //sprintf(buf_update, "send_dec", 1);
+                strcpy(cb.ctx->update_send_buf, "send_dec");
+                if (ibv_post_send(cb.ctx->qp_update, &send_wr, &bad_wr)) {
+                    perror("ibv_post_send: increment num_sender for remote receiver");
+                }
+                printf("sent a msg to remote receiver on WRITE EXIT\n");
+            }
+
+            // TODO: hanlde read exit later
+            /*
+            send_sge.addr = (uintptr_t)cb.ctx->local_read_buf;
+            send_sge.length = BUF_READ_SIZE;
+            send_sge.lkey = cb.ctx->local_read_mr->lkey;
+
             strcpy(cb.ctx->local_read_buf, buf);
             ibv_post_send(cb.ctx->qp_read, &send_wr, &bad_wr);
             __atomic_fetch_sub(&cb.num_big_read_flows, 1, __ATOMIC_RELAXED);
+            */
+
         }
     }
 }
@@ -654,7 +702,7 @@ int main(int argc, char **argv)
 
     /* start thread handling incoming flows */
     printf("starting thread for flow handling...\n");
-    if (pthread_create(&th1, NULL, (void *(*)(void *)) & flow_handler, NULL))
+    if (pthread_create(&th1, NULL, (void *(*)(void *)) & flow_handler, (void *)&param))
     {
         error("pthread_create: flow_handler");
     }
