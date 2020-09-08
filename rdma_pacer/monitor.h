@@ -1,9 +1,13 @@
 #ifndef MONITOR_H
 #define MONITOR_H
 
+#define MAX_CLIENTS 32
+
 struct monitor_param {
-    char *addr;
-    int isclient;      // yiwen: isclient now is also used to indicate whether the node acts as a "receiver"; TODO: make this more general later
+    int is_client;
+    const char *server_addr;
+    const char *client_addrs[MAX_CLIENTS];
+    int num_clients;
     int gid_idx;
 };
 

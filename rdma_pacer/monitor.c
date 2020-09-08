@@ -81,13 +81,11 @@ void monitor_latency(void *arg)
 
     uint64_t seq = 0;
     struct pingpong_context *ctx = NULL;
-    struct ibv_send_wr wr, send_wr, update_send_wr, *bad_wr = NULL;
-    struct ibv_recv_wr recv_wr, update_recv_wr, *bad_recv_wr = NULL;
-    struct ibv_sge sge, send_sge, recv_sge, update_send_sge, update_recv_sge;
-    struct ibv_wc wc, recv_wc, send_wc, update_send_wc, update_recv_wc;
-    const char *servername = ((struct monitor_param *)arg)->addr;
-    int isclient = ((struct monitor_param *)arg)->isclient;
-    int gid_idx = ((struct monitor_param *)arg)->gid_idx;
+    struct ibv_send_wr wr, send_wr, *bad_wr = NULL;
+    struct ibv_recv_wr recv_wr, *bad_recv_wr = NULL;
+    struct ibv_sge sge, send_sge, recv_sge;
+    struct ibv_wc wc, recv_wc, send_wc;
+    struct monitor_param *params = (struct monitor_param *)arg;
     int num_comp;
     int num_remote_big_reads = 0;
     int num_receiver_fan_in = 0;        // Note: won't test with remote reads for now
@@ -96,7 +94,8 @@ void monitor_latency(void *arg)
     uint32_t temp, new_remote_read_rate;
     int found_split_level = 0;
 
-    ctx = init_monitor_chan(servername, isclient, gid_idx);
+    //ctx = init_monitor_chan(servername, isclient, gid_idx);
+    ctx = init_monitor_chan(params);
     if (!ctx)
     {
         fprintf(stderr, "failed to allocate pingpong context. exiting monitor_latency\n");
@@ -105,7 +104,7 @@ void monitor_latency(void *arg)
     cb.ctx = ctx;
     cpu_mhz = get_cpu_mhz(no_cpu_freq_warn);
 
-    /* SEND WR */
+    /* REF FLOW WRITE WR */
     memset(&wr, 0, sizeof wr);
     wr.opcode = IBV_WR_RDMA_WRITE;
     wr.sg_list = &sge;
@@ -119,7 +118,7 @@ void monitor_latency(void *arg)
     sge.length = BUF_SIZE;
     sge.lkey = ctx->send_mr->lkey;
 
-    /* READ SEND WR */
+    /* UPDATE SEND WR */
     memset(&send_wr, 0, sizeof send_wr);
     send_wr.opcode = IBV_WR_SEND;
     send_wr.sg_list = &send_sge;
@@ -127,47 +126,24 @@ void monitor_latency(void *arg)
     send_wr.send_flags = IBV_SEND_INLINE | IBV_SEND_SIGNALED;
 
     memset(&send_sge, 0, sizeof send_sge);
-    memset((char *)ctx->local_read_buf + BUF_READ_SIZE, 0, BUF_READ_SIZE);
-    send_sge.addr = (uintptr_t)((char *)ctx->local_read_buf + BUF_READ_SIZE);
-    send_sge.length = BUF_READ_SIZE;
-    send_sge.lkey = ctx->local_read_mr->lkey;
+    memset((char *)ctx->send_buf + BUF_SIZE, 0, BUF_SIZE);
+    send_sge.addr = (uintptr_t)ctx->send_buf;
+    ////send_sge.addr = (uintptr_t)((char *)ctx->send_buf + BUF_SIZE);
+    send_sge.length = BUF_SIZE;
+    send_sge.lkey = ctx->send_mr->lkey;
 
-    /* READ RECV WR */
+    /* UPDATE RECV WR */
     memset(&recv_wr, 0, sizeof recv_wr);
     recv_wr.num_sge = 1;
     recv_wr.sg_list = &recv_sge;
 
     memset(&recv_sge, 0, sizeof recv_sge);
-    memset(ctx->remote_read_buf, 0, BUF_READ_SIZE);
-    recv_sge.addr = (uintptr_t)ctx->remote_read_buf;
-    recv_sge.length = BUF_READ_SIZE;
-    recv_sge.lkey = ctx->remote_read_mr->lkey;
-    ibv_post_recv(ctx->qp_read, &recv_wr, &bad_recv_wr);
+    memset(ctx->recv_buf, 0, BUF_SIZE);
+    recv_sge.addr = (uintptr_t)ctx->recv_buf;
+    recv_sge.length = BUF_SIZE;
+    recv_sge.lkey = ctx->recv_mr->lkey;
+    ibv_post_recv(ctx->qp, &recv_wr, &bad_recv_wr);
 
-    /* UPDATE SEND WR */
-    memset(&update_send_wr, 0, sizeof update_send_wr);
-    update_send_wr.opcode = IBV_WR_SEND;
-    update_send_wr.sg_list = &update_send_sge;
-    update_send_wr.num_sge = 1;
-    update_send_wr.send_flags = IBV_SEND_INLINE | IBV_SEND_SIGNALED;
-
-    memset(&update_send_sge, 0, sizeof update_send_sge);
-    memset((char *)ctx->update_send_buf + UPDATE_BUF_SIZE, 0, UPDATE_BUF_SIZE);
-    update_send_sge.addr = (uintptr_t)((char *)ctx->update_send_buf + UPDATE_BUF_SIZE);
-    update_send_sge.length = UPDATE_BUF_SIZE;
-    update_send_sge.lkey = ctx->update_send_mr->lkey;
-
-    /* UPDATE RECV WR */
-    memset(&update_recv_wr, 0, sizeof update_recv_wr);
-    update_recv_wr.num_sge = 1;
-    update_recv_wr.sg_list = &update_recv_sge;
-
-    memset(&update_recv_sge, 0, sizeof update_recv_sge);
-    memset(ctx->update_recv_buf, 0, UPDATE_BUF_SIZE);
-    update_recv_sge.addr = (uintptr_t)ctx->update_recv_buf;
-    update_recv_sge.length = UPDATE_BUF_SIZE;
-    update_recv_sge.lkey = ctx->update_recv_mr->lkey;
-    ibv_post_recv(ctx->qp_update, &update_recv_wr, &bad_recv_wr);
 
 #ifdef USE_CMH
     cmh = CMH_Init(WIDTH, DEPTH, U, GRAN, WINDOW_SIZE);
@@ -230,14 +206,14 @@ void monitor_latency(void *arg)
 
 		void *ev_ctx;
         if (EVENT_POLL) {
-            if (ibv_get_cq_event(ctx->channel, &ctx->cq, &ev_ctx)) {
+            if (ibv_get_cq_event(ctx->send_channel, &ctx->send_cq, &ev_ctx)) {
                 fprintf(stderr, "Failed to get CQ event.\n");
                 break;
             }
 
-            ibv_ack_cq_events(ctx->cq, 1);
+            ibv_ack_cq_events(ctx->send_cq, 1);
 
-            if (ibv_req_notify_cq(ctx->cq, 0)) {
+            if (ibv_req_notify_cq(ctx->send_cq, 0)) {
                 fprintf(stderr, "Couldn't request CQ notification\n");
                 break;
             }
@@ -245,7 +221,7 @@ void monitor_latency(void *arg)
 
         do
         {
-            num_comp = ibv_poll_cq(ctx->cq, 1, &wc);
+            num_comp = ibv_poll_cq(ctx->send_cq, 1, &wc);
         } while (num_comp == 0);
 
         if (num_comp < 0 || wc.status != IBV_WC_SUCCESS)
@@ -286,7 +262,9 @@ void monitor_latency(void *arg)
         seq++;
         wr.wr_id = seq;
 
+        //TODO: fix READ impl later
         /* check if any remote read is registered or if read rate is received */
+        /*
         num_comp = ibv_poll_cq(ctx->cq_recv, 1, &recv_wc);
         if (num_comp == 1) {
             if (recv_wc.status != IBV_WC_SUCCESS) {
@@ -310,22 +288,23 @@ void monitor_latency(void *arg)
             perror("ibv_poll_cq: recv_wc");
             break;
         }
+        */
 
 
         /* check for receiver-side updates */
-        if (!isclient) {
-            num_comp = ibv_poll_cq(ctx->cq_update_recv, 1, &update_recv_wc);
+        if (!params->is_client) {
+            num_comp = ibv_poll_cq(ctx->recv_cq, 1, &recv_wc);
             if (num_comp > 0) {
                 while (num_comp > 0) {
-                    if (update_recv_wc.status != IBV_WC_SUCCESS) {
-                        fprintf(stderr, "error bad update_recv_wc status: %u.%s\n", update_recv_wc.status, ibv_wc_status_str(update_recv_wc.status));
+                    if (recv_wc.status != IBV_WC_SUCCESS) {
+                        fprintf(stderr, "error bad update_recv_wc status: %u.%s\n", recv_wc.status, ibv_wc_status_str(recv_wc.status));
                         break;
                     }
 
                     //remote_receiver_fan_in = (uint32_t)strtol((const char *)ctx->update_recv_buf, NULL, 10);
-                    if (strcmp(ctx->update_recv_buf, "send_inc") == 0) {
+                    if (strcmp(ctx->recv_buf, "send_inc") == 0) {
                         current_receiver_fan_in++;
-                    } else if (strcmp(ctx->update_recv_buf, "send_dec") == 0) {
+                    } else if (strcmp(ctx->recv_buf, "send_dec") == 0) {
                         current_receiver_fan_in--;
                     } else {
                         printf("Unrecognized receiver-update msg. exit\n");
@@ -336,7 +315,7 @@ void monitor_latency(void *arg)
                 } 
                 printf("current receiver fan in: %" PRIu32 "\n", current_receiver_fan_in);
 
-                if (ibv_post_recv(ctx->qp_update, &update_recv_wr, &bad_recv_wr)) {
+                if (ibv_post_recv(ctx->qp, &recv_wr, &bad_recv_wr)) {
                     perror("ibv_post_recv: recv_wr");
                 }
             } else if (num_comp < 0) {
@@ -562,6 +541,8 @@ void monitor_latency(void *arg)
 #endif
                 }
                 if (num_remote_big_reads) {
+                    //TODO: fix READ impl later
+                    /*
                     new_remote_read_rate = round((double)num_remote_big_reads
                         / (num_remote_big_reads + num_active_big_flows) * temp);
                     //// READ HACK
@@ -588,6 +569,7 @@ void monitor_latency(void *arg)
                         }
                     }
                     temp -= new_remote_read_rate;
+                    */
                 }
                 __atomic_store_n(&cb.sb->virtual_link_cap, temp, __ATOMIC_RELAXED);
             }
@@ -598,6 +580,8 @@ void monitor_latency(void *arg)
 
                 //TODO: figure out what's going on with the big read logic here. Why handle big reads only if there is no small flows?
                 if (num_remote_big_reads) {
+                    //TODO: fix READ impl later
+                    /*
                     new_remote_read_rate = round((double)num_remote_big_reads
                         / (num_remote_big_reads + num_active_big_flows) * temp);
                     if (new_remote_read_rate != cb.remote_read_rate) {
@@ -621,6 +605,7 @@ void monitor_latency(void *arg)
                         }
                     }
                     temp -= new_remote_read_rate;
+                    */
                 }
                 __atomic_store_n(&cb.sb->virtual_link_cap, temp, __ATOMIC_RELAXED);
 

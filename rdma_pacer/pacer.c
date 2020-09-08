@@ -46,7 +46,8 @@ static void error(char *msg)
 
 static void usage()
 {
-    printf("Usage: program remote-addr isclient [gid_idx]\n");
+    //printf("Usage: program remote-addr is_client [gid_idx]\n");
+    printf("Usage: program is_client server_addr [gid_idx]\n");
 }
 
 static inline void cpu_relax() __attribute__((always_inline));
@@ -229,7 +230,6 @@ static void flow_handler(void *arg)
     struct sockaddr_un local, remote;
     char buf[MSG_LEN];
     char buf_pid[MSG_LEN];
-    //char buf_update[UPDATE_BUF_SIZE];
     char *sock_path = get_sock_path();
     pid_t pid;
 
@@ -261,7 +261,7 @@ static void flow_handler(void *arg)
         error("listen");
 
 
-    int isclient = ((struct monitor_param *)arg)->isclient;
+    int is_client = ((struct monitor_param *)arg)->is_client;
 
     /* handling loop */
     while (1)
@@ -278,7 +278,7 @@ static void flow_handler(void *arg)
         if (strcmp(buf, "join") == 0)
         {
             /* send if the node is a sender or receiver (instead of sending "pid" to prompt for pid) */
-            if (isclient) {
+            if (is_client) {
                 if (send(s2, "sender", 6, 0) == -1) {
                     perror("error sending sender info: ");
                     exit(1);
@@ -326,14 +326,14 @@ static void flow_handler(void *arg)
 
 
             /* As a sender, tell the receiver (since WRITE operates passively) that I contribute to one of the fan-in (# of sending apps increase by 1) */
-            if (isclient) {
-                send_sge.addr = (uintptr_t)cb.ctx->update_send_buf;
-                send_sge.length = UPDATE_BUF_SIZE;
-                send_sge.lkey = cb.ctx->update_send_mr->lkey;
+            if (is_client) {
+                send_sge.addr = (uintptr_t)cb.ctx->send_buf;
+                send_sge.length = BUF_SIZE;
+                send_sge.lkey = cb.ctx->send_mr->lkey;
 
                 //sprintf(buf_update, "send_inc=%d", 1);
-                strcpy(cb.ctx->update_send_buf, "send_inc");
-                if (ibv_post_send(cb.ctx->qp_update, &send_wr, &bad_wr)) {
+                strcpy(cb.ctx->send_buf, "send_inc");
+                if (ibv_post_send(cb.ctx->qp, &send_wr, &bad_wr)) {
                     perror("ibv_post_send: increment num_sender for remote receiver");
                 }
                 printf("sent a msg to remote receiver on WRITE ARRIVAL\n");
@@ -341,6 +341,8 @@ static void flow_handler(void *arg)
         }
         else if (strcmp(buf, "read") == 0)
         {
+            // TODO: fix READ impl later
+            /*
             send_sge.addr = (uintptr_t)cb.ctx->local_read_buf;
             send_sge.length = BUF_READ_SIZE;
             send_sge.lkey = cb.ctx->local_read_mr->lkey;
@@ -348,18 +350,19 @@ static void flow_handler(void *arg)
             strcpy(cb.ctx->local_read_buf, buf);
             ibv_post_send(cb.ctx->qp_read, &send_wr, &bad_wr);
             __atomic_fetch_add(&cb.num_big_read_flows, 1, __ATOMIC_RELAXED);
+            */
         }
         else if (strcmp(buf, "exit") == 0)
         {
             /* As a sender, tell the receriver that # of the sending apps has decreased by 1 */
-            if (isclient) {
-                send_sge.addr = (uintptr_t)cb.ctx->update_send_buf;
-                send_sge.length = UPDATE_BUF_SIZE;
-                send_sge.lkey = cb.ctx->update_send_mr->lkey;
+            if (is_client) {
+                send_sge.addr = (uintptr_t)cb.ctx->send_buf;
+                send_sge.length = BUF_SIZE;
+                send_sge.lkey = cb.ctx->send_mr->lkey;
 
                 //sprintf(buf_update, "send_dec", 1);
-                strcpy(cb.ctx->update_send_buf, "send_dec");
-                if (ibv_post_send(cb.ctx->qp_update, &send_wr, &bad_wr)) {
+                strcpy(cb.ctx->send_buf, "send_dec");
+                if (ibv_post_send(cb.ctx->qp, &send_wr, &bad_wr)) {
                     perror("ibv_post_send: increment num_sender for remote receiver");
                 }
                 printf("sent a msg to remote receiver on WRITE EXIT\n");
@@ -643,21 +646,39 @@ int main(int argc, char **argv)
     int fd_shm, i;
     pthread_t th1, th2, th3;
     //pthread_t th1, th2, th3, th4, th5;
-    struct monitor_param param;
+    struct monitor_param params;
+    params.num_clients = 0;
     char *endPtr;
-    param.addr = argv[1];
-    param.gid_idx = -1;
-    if (argc == 3)
-    {
-        param.isclient = strtol(argv[2], &endPtr, 10);
+
+    /*
+    FILE* fp = fopen(argv[2], "r");
+    char line[256];
+    if (params.is_client) {
+        fgets(line, sizeof(line), fp);
+        strcpy(params.server_addr, line);
+        printf("server address: %s\n", params.server_addr);
+    } else {
+        printf("client addresses:\n");
+        while (fgets(line, sizeof(line), fp)) {
+            strcpy(params.client_addrs[params.num_clients], line);
+            printf("%s\n", params.client_addrs[params.num_clients]);
+            params.num_clients++;
+        }
+        printf("num_clients = %d\n", params.num_clients);
     }
-    else if (argc == 4)
-    {
-        param.isclient = strtol(argv[2], &endPtr, 10);
-        param.gid_idx = strtol(argv[3], NULL, 10);
+    */
+
+    params.gid_idx = -1;
+
+    if (argc == 4) {
+        params.is_client = strtol(argv[1], &endPtr, 10);
+        params.server_addr = argv[2];   // for server, it is DC; type something random
+        params.gid_idx = strtol(argv[3], NULL, 10);
     }
-    else
-    {
+    else if (argc == 3) {
+        params.is_client = strtol(argv[1], &endPtr, 10);
+        params.server_addr = argv[2];   // for server, it is DC; type something random
+    } else {
         usage();
         exit(1);
     }
@@ -702,7 +723,7 @@ int main(int argc, char **argv)
 
     /* start thread handling incoming flows */
     printf("starting thread for flow handling...\n");
-    if (pthread_create(&th1, NULL, (void *(*)(void *)) & flow_handler, (void *)&param))
+    if (pthread_create(&th1, NULL, (void *(*)(void *)) & flow_handler, (void *)&params))
     {
         error("pthread_create: flow_handler");
     }
@@ -710,7 +731,7 @@ int main(int argc, char **argv)
 #ifndef INCAST_HACK
     /* start monitoring thread */
     printf("starting thread for latency monitoring...\n");
-    if (pthread_create(&th2, NULL, (void *(*)(void *)) & monitor_latency, (void *)&param))
+    if (pthread_create(&th2, NULL, (void *(*)(void *)) & monitor_latency, (void *)&params))
     {
         error("pthread_create: monitor_latency");
     }
