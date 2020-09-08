@@ -730,11 +730,21 @@ int main(int argc, char **argv)
     }
 
 #ifndef INCAST_HACK
-    /* start monitoring thread */
-    printf("starting thread for latency monitoring...\n");
-    if (pthread_create(&th2, NULL, (void *(*)(void *)) & monitor_latency, (void *)&params))
-    {
-        error("pthread_create: monitor_latency");
+    if (params.is_client) {
+        /* start monitoring thread */
+        printf("starting thread for latency monitoring...\n");
+        if (pthread_create(&th2, NULL, (void *(*)(void *)) & monitor_latency, (void *)&params))
+        {
+            error("pthread_create: monitor_latency");
+        }
+    } else {
+        /* start server loop thread */
+        printf("starting thread for server loop...\n");
+        if (pthread_create(&th2, NULL, (void *(*)(void *)) & server_loop, (void *)&params))
+        {
+            error("pthread_create: server_loop");
+        }
+
     }
 #else
     __atomic_store_n(&cb.sb->split_level, INCAST_SPLIT_LEVEL, __ATOMIC_RELAXED);

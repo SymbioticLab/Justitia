@@ -9,5 +9,6 @@ struct monitor_param {
 };
 
 void monitor_latency(void *);
+void server_loop(void *);
 
 #endif
