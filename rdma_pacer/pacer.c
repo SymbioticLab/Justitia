@@ -46,8 +46,7 @@ static void error(char *msg)
 
 static void usage()
 {
-    //printf("Usage: program remote-addr is_client [gid_idx]\n");
-    printf("Usage: program is_client server_addr [gid_idx]\n");
+    printf("Usage: program is_client server_addr num_clients [gid_idx]\n");
 }
 
 static inline void cpu_relax() __attribute__((always_inline));
@@ -670,14 +669,16 @@ int main(int argc, char **argv)
 
     params.gid_idx = -1;
 
-    if (argc == 4) {
+    if (argc == 5) {
         params.is_client = strtol(argv[1], &endPtr, 10);
         params.server_addr = argv[2];   // for server, it is DC; type something random
-        params.gid_idx = strtol(argv[3], NULL, 10);
+        params.num_clients = strtol(argv[3], &endPtr, 10);      // for client, it is DC
+        params.gid_idx = strtol(argv[4], NULL, 10);
     }
-    else if (argc == 3) {
+    else if (argc == 4) {
         params.is_client = strtol(argv[1], &endPtr, 10);
         params.server_addr = argv[2];   // for server, it is DC; type something random
+        params.num_clients = strtol(argv[3], &endPtr, 10);      // for client, it is DC
     } else {
         usage();
         exit(1);

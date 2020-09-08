@@ -5,6 +5,7 @@
 #include "countmin.h"
 #include <inttypes.h>
 #include <math.h>
+#include <assert.h>
 
 #define TAIL 2
 
@@ -17,21 +18,8 @@
 #define U 24
 #define GRAN 4
 #define WINDOW_SIZE 10000
-//#define WINDOW_SIZE 1000
-// Time to wait in milliseconds when latency target can't not be met (before giving back bandwidth)
-#define LAT_TARGET_WAIT_TIME 5000
-// Time to wait in milliseconds when latency target can't not be met before increasing num_split_qps
-#define LAT_TARGET_UNMET_WAIT_TIME 2
-// Time to wait in microseconds when latency target is met
-#define RMF_FREQENCY 800
-//#define TIMEKEEP
-#define NUM_SAMPLE 2000 // sampling interval (seconds) for timekeeping
-#define SAMPLE_INTERVAL 0.04
 //#define USE_CMH
-//#define CMH_PERCENTILE  0.99    // pencentile ask from CMH
 #define CMH_PERCENTILE  0.99    // pencentile ask from CMH
-#define improvement_factor 0.25  // improvement of current measured tail over previous tail that needs to be achieved to keep the current num_split_qps
-#define elasticity_factor 0.25  // (currently not in use) same as improvement_factor, but used after a level is found or a target is met
 
 CMH_type *cmh = NULL;
 
@@ -44,26 +32,6 @@ static inline void cpu_relax()
 void monitor_latency(void *arg)
 {
     printf(">>>starting monitor_latency...\n");
-////#ifdef DYNAMIC_NUM_SPLIT_QPS
-#ifdef DYNAMIC_CPU_OPT
-    ////printf("Dynamic num_split_qps adjustment: ON\n");
-    printf("Dynamic CPU Optimization: ON\n");
-#else
-    ////printf("Dynamic num_split_qps adjustment: OFF\n");
-    printf("Dynamic CPU Optimization: OFF\n");
-#endif
-#ifdef TIMEKEEP
-    int arr_idx = 0;
-    double time_arr[NUM_SAMPLE] = {0};  // array of timestamps (in seconds)
-    double lat_arr[NUM_SAMPLE] = {0};   // array of actual latency measured by monitor (in microseconds)
-    double tail_arr[NUM_SAMPLE] = {0};   // array of tail latency estimated by CMH (in microseconds)
-    double curr_time = 0;       // current time in microseconds
-    double loop_time = 0;       // used to keep track of when we reach the next sample interval (unit is microsecond)
-    cycles_t loop_start = 0, loop_end = 0;
-    int big_flow_flag = 0;
-    double initial_wait_time = 0;   // initial wait time before an elephant came in
-    int stop_timekeep = 0;
-#endif
 
     double latency_target = TAIL;
     if (EVENT_POLL) {
@@ -80,7 +48,7 @@ void monitor_latency(void *arg)
     double cpu_mhz = get_cpu_mhz(no_cpu_freq_warn);
 
     uint64_t seq = 0;
-    struct pingpong_context *ctx = NULL;
+    struct pingpong_context *ctx = NULL;        // managed by each client
     struct ibv_send_wr wr, send_wr, *bad_wr = NULL;
     struct ibv_recv_wr recv_wr, *bad_recv_wr = NULL;
     struct ibv_sge sge, send_sge, recv_sge;
@@ -95,12 +63,24 @@ void monitor_latency(void *arg)
     int found_split_level = 0;
 
     //ctx = init_monitor_chan(servername, isclient, gid_idx);
-    ctx = init_monitor_chan(params);
-    if (!ctx)
-    {
-        fprintf(stderr, "failed to allocate pingpong context. exiting monitor_latency\n");
-        exit(1);
+    if (params->is_client) {
+        ctx = init_monitor_chan(params);
+        if (!ctx) {
+            fprintf(stderr, "failed to allocate pingpong context. exiting monitor_latency\n");
+            exit(1);
+        }
+    } else {
+        int i = 0;
+        for (i = 0; i < params->num_clients; i++) {
+            ctx = init_monitor_chan(params);        // server will get stuck in socket listen()
+            if (!ctx) {
+                fprintf(stderr, "failed to allocate pingpong context. exiting monitor_latency\n");
+                exit(1);
+            }
+            cb.ctx_per_client[i] = ctx;
+        }
     }
+
     cb.ctx = ctx;
     cpu_mhz = get_cpu_mhz(no_cpu_freq_warn);
 
@@ -155,51 +135,52 @@ void monitor_latency(void *arg)
 #endif
 
     /* monitor loop */
+    /* for server */
+    if (!params->is_client) {
+        while (1) {
+            //TODO: poll via channel
+            /* check for receiver-side updates */
+            num_comp = ibv_poll_cq(ctx->recv_cq, 1, &recv_wc);
+            if (num_comp > 0) {
+                while (num_comp > 0) {
+                    if (recv_wc.status != IBV_WC_SUCCESS) {
+                        fprintf(stderr, "error bad update_recv_wc status: %u.%s\n", recv_wc.status, ibv_wc_status_str(recv_wc.status));
+                        break;
+                    }
+
+                    //remote_receiver_fan_in = (uint32_t)strtol((const char *)ctx->update_recv_buf, NULL, 10);
+                    if (strcmp(ctx->recv_buf, "send_inc") == 0) {
+                        current_receiver_fan_in++;
+                    } else if (strcmp(ctx->recv_buf, "send_dec") == 0) {
+                        current_receiver_fan_in--;
+                    } else {
+                        printf("Unrecognized receiver-update msg. exit\n");
+                        exit(1);
+                    }
+
+                    num_comp--;
+                }
+                printf("current receiver fan in: %" PRIu32 "\n", current_receiver_fan_in);
+
+                if (ibv_post_recv(ctx->qp, &recv_wr, &bad_recv_wr)) {
+                    perror("ibv_post_recv: recv_wr");
+                }
+            } else if (num_comp < 0) {
+                perror("ibv_poll_cq: update_recv_wc");
+                exit(1);
+            }
+        }
+    }
+
+    /* for client */
     uint32_t min_virtual_link_cap = 0;
     uint16_t num_active_big_flows = 0;
     uint16_t num_active_bw_flows = 0;
     uint16_t num_active_small_flows = 0;
-////#ifdef DYNAMIC_NUM_SPLIT_QPS
-#ifdef DYNAMIC_CPU_OPT
-    ////uint16_t num_split_qps = 1;
-    uint16_t split_level = 1;
-    cycles_t target_unmet_counter_start = 0;
-    cycles_t target_unmet_counter_end = 0;
-    cycles_t started_counting_target_unmet = 0;
-    uint32_t num_samples = 0;
-    uint32_t num_samples_target_met = 0;
-    double prev_tail = 0;
-    int first_target_met_flag = 0;
-#endif
-#ifdef FAVOR_BIG_FLOW
-    uint16_t prev_num_small_flows = 0;
-    cycles_t counter_start = 0;
-    cycles_t counter_end = 0;
-    cycles_t started_counting = 0;
-    int AIMD_off = 0;
-#endif
-#ifdef SMART_RMF
-    int lat_above_target = 0;
-    cycles_t counter_rmf = 0;
-#endif
-    while (1)
-    {
+    while (1) {
         usleep(200);
-#ifdef TIMEKEEP
-        loop_start = get_cycles();
-#endif
-#ifdef SMART_RMF
-        if (lat_above_target) {
-            counter_rmf = get_cycles();
-
-            while ((get_cycles() - counter_rmf) / cpu_mhz < RMF_FREQENCY)
-                cpu_relax();
-            lat_above_target = 0;
-        }
-#endif
         start_cycle = get_cycles();
-        if (ibv_post_send(ctx->qp, &wr, &bad_wr))
-        {
+        if (ibv_post_send(ctx->qp, &wr, &bad_wr)) {
             perror("ibv_post_send");
             break;
         }
@@ -219,13 +200,11 @@ void monitor_latency(void *arg)
             }
         }
 
-        do
-        {
+        do {
             num_comp = ibv_poll_cq(ctx->send_cq, 1, &wc);
         } while (num_comp == 0);
 
-        if (num_comp < 0 || wc.status != IBV_WC_SUCCESS)
-        {
+        if (num_comp < 0 || wc.status != IBV_WC_SUCCESS) {
             perror("ibv_poll_cq");
             break;
         }
@@ -234,8 +213,7 @@ void monitor_latency(void *arg)
 
 #ifdef USE_CMH
         lat = round((end_cycle - start_cycle) / cpu_mhz * 1000);
-        if (CMH_Update(cmh, lat))
-        {
+        if (CMH_Update(cmh, lat)) {
             fprintf(stderr, "CMH_Update failed\n");
             break;
         }
@@ -291,55 +269,12 @@ void monitor_latency(void *arg)
         */
 
 
-        /* check for receiver-side updates */
-        if (!params->is_client) {
-            num_comp = ibv_poll_cq(ctx->recv_cq, 1, &recv_wc);
-            if (num_comp > 0) {
-                while (num_comp > 0) {
-                    if (recv_wc.status != IBV_WC_SUCCESS) {
-                        fprintf(stderr, "error bad update_recv_wc status: %u.%s\n", recv_wc.status, ibv_wc_status_str(recv_wc.status));
-                        break;
-                    }
-
-                    //remote_receiver_fan_in = (uint32_t)strtol((const char *)ctx->update_recv_buf, NULL, 10);
-                    if (strcmp(ctx->recv_buf, "send_inc") == 0) {
-                        current_receiver_fan_in++;
-                    } else if (strcmp(ctx->recv_buf, "send_dec") == 0) {
-                        current_receiver_fan_in--;
-                    } else {
-                        printf("Unrecognized receiver-update msg. exit\n");
-                        exit(1);
-                    }
-
-                    num_comp--;
-                } 
-                printf("current receiver fan in: %" PRIu32 "\n", current_receiver_fan_in);
-
-                if (ibv_post_recv(ctx->qp, &recv_wr, &bad_recv_wr)) {
-                    perror("ibv_post_recv: recv_wr");
-                }
-            } else if (num_comp < 0) {
-                perror("ibv_poll_cq: update_recv_wc");
-                break;
-            }
-        }
-
 
         num_active_big_flows = __atomic_load_n(&cb.sb->num_active_big_flows, __ATOMIC_RELAXED);
         num_active_small_flows = __atomic_load_n(&cb.sb->num_active_small_flows, __ATOMIC_RELAXED);
         num_active_bw_flows = __atomic_load_n(&cb.sb->num_active_bw_flows, __ATOMIC_RELAXED);
         //printf("num_active_big_flows = %d\n", num_active_big_flows);
         //printf("num_active_small_flows = %d\n", num_active_small_flows);
-#ifdef FAVOR_BIG_FLOW
-        if (num_active_small_flows > prev_num_small_flows) {
-            AIMD_off = 0;
-        }
-        prev_num_small_flows = num_active_small_flows;
-        //// If can't meet latency target in a given interval, keep the current virtual link cap which was set to LINE_RATE
-        if (AIMD_off) {
-            continue;
-        }
-#endif
         // TODO: remove this hardcode for bw write vs lat read
         //// READ HACK
         /*
@@ -353,15 +288,6 @@ void monitor_latency(void *arg)
             ////if (num_active_small_flows && (num_active_bw_flows || num_remote_big_reads))    // READ HACK
             if (num_active_small_flows && num_active_bw_flows)
             {
-#ifdef DYNAMIC_CPU_OPT
-                /* set split_level to at least 2 when small flows are present */
-                split_level = __atomic_load_n(&cb.sb->split_level, __ATOMIC_RELAXED);
-                if (split_level <= MIN_SPLIT_LEVEL) {
-                    split_level = MIN_SPLIT_LEVEL;
-                    __atomic_store_n(&cb.sb->split_level, split_level, __ATOMIC_RELAXED);
-                    //printf("Small flow joins. Set split_level to %d\n", split_level);
-                }
-#endif
 #ifndef TREAT_L_AS_ONE
                 min_virtual_link_cap = round((double)(num_active_big_flows + num_remote_big_reads) 
                     / (num_active_big_flows + num_active_small_flows + num_remote_big_reads) * LINE_RATE_MB);
@@ -373,172 +299,18 @@ void monitor_latency(void *arg)
 
                 if (measured_tail > latency_target)
                 {
-#ifdef SMART_RMF
-                    lat_above_target = 1;
-#endif
                     /* Multiplicative Decrease */
                     temp >>= 1;
                     if (ELEPHANT_HAS_LOWER_BOUND && temp < min_virtual_link_cap) {
                         temp = min_virtual_link_cap;
                     }
-
-////#ifdef DYNAMIC_NUM_SPLIT_QPS
-#ifdef DYNAMIC_CPU_OPT
-                    num_samples_target_met = 0;
-                    num_samples++;
-                    if (!started_counting_target_unmet) {
-                        target_unmet_counter_start = get_cycles();
-                        started_counting_target_unmet = 1;
-                    }
-                    if (num_samples == WINDOW_SIZE) {
-                        num_samples = 0;
-                        target_unmet_counter_end = get_cycles();
-                        started_counting_target_unmet = 0;
-
-                        if (!found_split_level) {
-                            if (split_level == MIN_SPLIT_LEVEL) {
-                                split_level++;
-                                __atomic_store_n(&cb.sb->split_level, split_level, __ATOMIC_RELAXED);
-                                printf("Elapsed time is %.2f us; Increase split_level to %d\n", (target_unmet_counter_end - target_unmet_counter_start) / cpu_mhz, split_level);
-                                prev_tail = measured_tail;
-
-                            } else {    // num_split_qps > 1
-                                if (measured_tail < prev_tail && (prev_tail - measured_tail)/prev_tail > improvement_factor) {
-                                    if (split_level < MAX_SPLIT_LEVEL) {
-                                        printf("Elapsed time is %.2f us; split_level = %d performs well with %.2f improvement. (prev, curr) = (%.2f, %.2f). Increase split_level to %d to see if we can do even better\n",
-                                            (target_unmet_counter_end - target_unmet_counter_start) / cpu_mhz, split_level, (prev_tail - measured_tail)/prev_tail, prev_tail, measured_tail, split_level + 1);
-                                        split_level++;
-                                        __atomic_store_n(&cb.sb->split_level, split_level, __ATOMIC_RELAXED);
-                                    } else {
-                                        printf("Elapsed time is %.2f us; split_level = %d performs well with %.2f improvement. (prev, curr) = (%.2f, %.2f). Want to but cannot increase split_level above MAX_SPLIT_LEVEL = %d.\n",
-                                            (target_unmet_counter_end - target_unmet_counter_start) / cpu_mhz, split_level, (prev_tail - measured_tail)/prev_tail, prev_tail, measured_tail, MAX_SPLIT_LEVEL);
-                                    }
-                                    prev_tail = measured_tail;        
-                                    found_split_level = 0;
-
-                                } else {
-                                    if (split_level > MIN_SPLIT_LEVEL) {
-                                        printf("Elapsed time is %.2f us; split_level = %d does not perform well with %.2f improvement. (prev, curr) = (%.2f, %.2f). Decreae split_level back to %d and stays there\n",
-                                            (target_unmet_counter_end - target_unmet_counter_start) / cpu_mhz, split_level, (prev_tail - measured_tail)/prev_tail, prev_tail, measured_tail, split_level - 1);
-                                        split_level--;
-                                        __atomic_store_n(&cb.sb->split_level, split_level, __ATOMIC_RELAXED);
-                                    } else {
-                                        printf("Elapsed time is %.2f us; split_level = %d performs well with %.2f improvement. (prev, curr) = (%.2f, %.2f). Want to but cannot not decrease split_level below MIN_SPLIT_LEVEL=%d.\n",
-                                            (target_unmet_counter_end - target_unmet_counter_start) / cpu_mhz, split_level, (prev_tail - measured_tail)/prev_tail, prev_tail, measured_tail, MIN_SPLIT_LEVEL);
-                                    }
-                                    prev_tail = measured_tail;        
-                                    found_split_level = 1;
-                                }
-
-                            }
-                        } 
-                        /*
-                        else {    // if has stabalized at a split level
-                            if (measured_tail < prev_tail) {    // better than before but still above target
-                                //if ((prev_tail - measured_tail)/prev_tail > elasticity_factor) {
-                                if ((prev_tail - measured_tail)/prev_tail > improvement_factor) {
-                                    if (split_level > MIN_SPLIT_LEVEL) {
-                                        printf("After found a level; split_level = %d performs well with %.2f improvement. (prev, curr) = (%.2f, %.2f). Decrease split_level to %d to minimize cost\n",
-                                            split_level, (prev_tail - measured_tail)/prev_tail, prev_tail, measured_tail, split_level - 1);
-                                        split_level--;
-                                        __atomic_store_n(&cb.sb->split_level, split_level, __ATOMIC_RELAXED);
-                                    }
-                                    prev_tail = measured_tail;        
-                                }
-
-                            } else {    // worse than before and still above target
-                                //if ((measured_tail - prev_tail)/prev_tail > elasticity_factor) {
-                                if ((measured_tail - prev_tail)/prev_tail > improvement_factor) {
-                                    if (split_level < MAX_SPLIT_LEVEL) {
-                                        printf("After found a level; split_level = %d does not perform well with %.2f degradation. (prev, curr) = (%.2f, %.2f). Increase split_level to %d to improve isolation\n",
-                                            split_level, (prev_tail - measured_tail)/prev_tail, prev_tail, measured_tail, split_level + 1);
-                                        //printf("num_active_small_flows = %d\n", __atomic_load_n(&cb.sb->num_active_small_flows, __ATOMIC_RELAXED));
-                                        split_level++;
-                                        __atomic_store_n(&cb.sb->split_level, split_level, __ATOMIC_RELAXED);
-                                    }
-                                    prev_tail = measured_tail;        
-                                }
-                            }
-                        }
-                        */
-                    }
-
-#endif
-
-#ifdef FAVOR_BIG_FLOW
-//TODO: will need to modify the favor_big_flow logic after introducing the "dynamically change num_split_qps" feature
-                    //// counter to count the time since we can't meet the latency target
-                    if (!started_counting) {
-                        counter_start = get_cycles();
-                        started_counting = 1;
-                    }
-                    counter_end = get_cycles();
-                    if (((counter_end - counter_start) / cpu_mhz) > LAT_TARGET_WAIT_TIME * 1000) {
-                        printf("elapsed time is %.2f us\n", (counter_end - counter_start) / cpu_mhz);
-                        //// Give bandwidth back to big flows until another small flow joins
-                        temp = LINE_RATE_MB;
-                        AIMD_off = 1;
-                        started_counting = 0;
-                    }
-#endif
                 }
                 else    // target met
                 {
-                    //printf("Target Met!\n");
-////#ifdef DYNAMIC_NUM_SPLIT_QPS
-#ifdef DYNAMIC_CPU_OPT
-                    if (prev_tail > latency_target && !first_target_met_flag) {
-                        prev_tail = measured_tail;
-                        first_target_met_flag = 1;
-                    }
-                    found_split_level = 0;
-                    num_samples = 0;
-                    num_samples_target_met++;
-                    if (num_samples_target_met == WINDOW_SIZE) {
-                        num_samples_target_met = 0;
-                        split_level = __atomic_load_n(&cb.sb->split_level, __ATOMIC_RELAXED);    // shouldn't need to load from mem. Just to be safe.
-
-                        if (measured_tail < prev_tail) {    // better than before and still below target
-                            //if ((prev_tail - measured_tail)/prev_tail > elasticity_factor) {
-                            if ((prev_tail - measured_tail)/prev_tail > improvement_factor) {
-                                if (split_level > MIN_SPLIT_LEVEL) {
-                                    printf("Target Met; split_level = %d performs well with %.2f improvement. (prev, curr) = (%.2f, %.2f). Decrease split_level to %d to minimize cost\n",
-                                        split_level, (prev_tail - measured_tail)/prev_tail, prev_tail, measured_tail, split_level - 1);
-                                    split_level--;
-                                    __atomic_store_n(&cb.sb->split_level, split_level, __ATOMIC_RELAXED);
-                                }
-                                prev_tail = measured_tail;        
-                            }
-
-                        } else {    // worse than before but still below target
-                            //if ((measured_tail - prev_tail)/prev_tail > elasticity_factor) {
-                            if ((measured_tail - prev_tail)/prev_tail > improvement_factor) {
-                                if (split_level < MAX_SPLIT_LEVEL) {
-                                    printf("After found a level; split_level = %d does not perform well with %.2f degradation. (prev, curr) = (%.2f, %.2f). Increase split_level to %d to improve isolation\n",
-                                        split_level, (prev_tail - measured_tail)/prev_tail, prev_tail, measured_tail, split_level + 1);
-                                    split_level++;
-                                    __atomic_store_n(&cb.sb->split_level, split_level, __ATOMIC_RELAXED);
-                                }
-                                prev_tail = measured_tail;        
-                            }
-                        }
-
-                    }
-#endif
-
                     /* Additive Increase */
                     if (__atomic_load_n(&cb.sb->virtual_link_cap, __ATOMIC_RELAXED) < LINE_RATE_MB) {
                         temp++;
                     }
-//#ifdef DYNAMIC_NUM_SPLIT_QPS
-#ifdef DYNAMIC_CPU_OPT
-                    //// invalidate latency target counter
-                    started_counting_target_unmet = 0;
-#endif
-#ifdef FAVOR_BIG_FLOW
-                    //// invalidate latency target counter
-                    started_counting = 0;
-#endif
                 }
                 if (num_remote_big_reads) {
                     //TODO: fix READ impl later
@@ -609,46 +381,10 @@ void monitor_latency(void *arg)
                 }
                 __atomic_store_n(&cb.sb->virtual_link_cap, temp, __ATOMIC_RELAXED);
 
-////#ifdef DYNAMIC_NUM_SPLIT_QPS
-#ifdef DYNAMIC_CPU_OPT
-                split_level = __atomic_load_n(&cb.sb->split_level, __ATOMIC_RELAXED);    // shouldn't need to load from mem. Just to be safe.
-                if (split_level != 1) {
-                    /* decrease split_level back to 1 when no small flow present; chunk size will change accordingly */
-                    __atomic_store_n(&cb.sb->split_level, 1, __ATOMIC_RELAXED);
-                    split_level = 1;
-                    started_counting_target_unmet = 0;
-                    num_samples = 0;
-                    num_samples_target_met = 0;
-                    found_split_level = 0;
-                    first_target_met_flag = 0;
-                    printf("No small flows are present. Decrease split_level to 1.\n");
-                }
-#endif
             }
             //printf(">>>> virtual link cap: %" PRIu32 "\n", __atomic_load_n(&cb.sb->virtual_link_cap, __ATOMIC_RELAXED));
         }
 
-#ifdef TIMEKEEP
-        if (!stop_timekeep) {
-            loop_end = get_cycles();    
-            loop_time += ((double)(loop_end - loop_start) / cpu_mhz);
-            if (loop_time > SAMPLE_INTERVAL * 1000000) {
-                curr_time += loop_time;
-                loop_time = 0;
-                time_arr[arr_idx] = curr_time / 1000000;
-                lat_arr[arr_idx] = (double)(end_cycle - start_cycle) / cpu_mhz;
-                tail_arr[arr_idx] = tail_99;
-                arr_idx++;
-                if (arr_idx == NUM_SAMPLE) {
-                    stop_timekeep = 1;
-                }
-            }
-            if (!big_flow_flag && (num_active_big_flows > 0)) {
-                big_flow_flag = 1;
-                initial_wait_time = curr_time / 1000000;
-            }
-        }
-#endif
     }
     printf("Out of while loop. exiting...\n");
 
@@ -656,16 +392,5 @@ void monitor_latency(void *arg)
     CMH_Destroy(cmh);
 #endif
 
-#ifdef TIMEKEEP // To get of the while loop, do CTRL+C on the remote side
-    //TODO: write to file...
-    FILE *f = fopen("lat_result.txt", "w");
-    fprintf(f, "Initial Wait Time before Elephant came in: %.2f(s)\n", initial_wait_time);
-    fprintf(f, "sample_cnt\tTime(s)\t\tLatency(us)\tTail(us)\n");
-    int i;
-    for (i = 0; i < NUM_SAMPLE; i++) {
-        fprintf(f, "%d\t\t%.2f\t\t%.2f\t\t%.2f\n", i + 1, time_arr[i], lat_arr[i], tail_arr[i]);
-    }
-    fclose(f);
-#endif
     exit(1);
 }

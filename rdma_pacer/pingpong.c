@@ -8,11 +8,10 @@ static const int ib_dev_idx = 0;
 //static const int ib_dev_idx = 2;  // used in xl170
 
 static struct pingpong_context * alloc_monitor_qp();
-void pp_client_exch_dest(struct pingpong_context *, const char *, struct pingpong_dest *);
-void pp_server_exch_dest(struct pingpong_context *, const struct pingpong_dest *, int);
+static void pp_client_exch_dest(struct pingpong_context *, const char *, struct pingpong_dest *);
+static void pp_server_exch_dest(struct pingpong_context *, const struct pingpong_dest *, int);
 static int pp_connect_ctx(struct pingpong_context *, int, struct pingpong_dest *, int);
 
-//struct pingpong_context *init_monitor_chan(const char *addr, int isclient, int gidx){
 struct pingpong_context *init_monitor_chan(struct monitor_param *params){
     struct pingpong_context *ctx;
     struct pingpong_dest my_dest;
@@ -45,11 +44,6 @@ struct pingpong_context *init_monitor_chan(struct monitor_param *params){
         pp_client_exch_dest(ctx, params->server_addr, &my_dest);
     else {
         pp_server_exch_dest(ctx, &my_dest, params->gid_idx);
-        //int client_count = 0;
-        //while (client_count < params->num_clients) {
-        //    pp_server_exch_dest(ctx, &my_dest, params->gid_idx);
-        //    client_count++;
-        //}
     }
 
     if (params->is_client) {    // seems like we should first let server performs this function call

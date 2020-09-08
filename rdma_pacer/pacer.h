@@ -20,6 +20,7 @@
 
 #define SHARED_MEM_NAME "/rdma-fairness"
 #define MAX_FLOWS 512
+#define MAX_CLIENTS 32
 //#define LINE_RATE_MB 12000 /* MBps */     // 100Gbps
 //#define LINE_RATE_MB 1100 /* MBps */      // 10Gbps
 //#define LINE_RATE_MB 4400 /* MBps */      // 40Gbps
@@ -69,7 +70,8 @@ struct shared_block {
 struct control_block {
     struct shared_block *sb;
 
-    struct pingpong_context *ctx;
+    struct pingpong_context *ctx;           // used by each client
+    struct pingpong_context *ctx_per_client[MAX_CLIENTS];           // used by the server
     pid_t pid_list[MAX_FLOWS];             /* used to map pid to slot; index is the slot number; treat flows from the same process as one */
     uint64_t tokens;                       /* number of available tokens */
     uint64_t tokens_read;
