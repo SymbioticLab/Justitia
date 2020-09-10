@@ -16,10 +16,11 @@
 #include <inttypes.h>
 #include <malloc.h>
 #include <pthread.h>
+#include <signal.h>
 
 #define SHARED_MEM_NAME "/rdma-fairness"
 #define SOCK_PATH "/users/yiwenzhg/rdma_socket"
-#define MSG_LEN 8
+#define MSG_LEN 16
 #define MAX_FLOWS 512
 #define HOSTNAME_PATH "/proc/sys/kernel/hostname"
 
@@ -45,15 +46,20 @@ struct shared_block {
 extern struct flow_info *flow;     /* declaration; initialization in verbs.c */
 extern struct shared_block *sb;    /* declaration; initialization in verbs.c */
 extern int start_flag;             /* Initialized in verbs.c */
+extern unsigned int slot;          /* Initialized in verbs.c */
 extern int start_recv;             /* initialized in qp.c */
 extern int isSmall;                /* initialized in qp.c */
 extern int num_active_small_flows; /* initialized in verbs.c */
 extern int num_active_big_flows;   /* initialized in verbs.c */
 #ifdef CPU_FRIENDLY
-extern unsigned int flow_socket;    /* declaration; initialization in verbs_pacer.h */
+//extern unsigned int flow_socket;    /* declaration; initialization in verbs_pacer.h */
+unsigned int flow_socket;
 extern double cpu_mhz;              /* declaration; initialization in verbs.c */
 #endif
 
 char *get_sock_path();
+void contact_pacer(int join);
+void set_inactive_on_exit();
+void termination_handler(int sig);
 
-#endif
+#endif  /* pacer.h */
