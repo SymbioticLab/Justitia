@@ -17,6 +17,7 @@
 #include <malloc.h>
 #include <pthread.h>
 #include <signal.h>
+#include "mlx4.h"
 
 #define SHARED_MEM_NAME "/rdma-fairness"
 #define SOCK_PATH "/users/yiwenzhg/rdma_socket"

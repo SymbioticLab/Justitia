@@ -1,7 +1,4 @@
 #include "pacer.h"
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <netinet/ip.h>
 
 
 char *get_sock_path() {
@@ -48,7 +45,7 @@ void contact_pacer(int join) {
         exit(1);
     }
 
-    printf("Contacting pacer...\n");
+    printf("Contacting pacer...\n", s);
 
     remote.sun_family = AF_UNIX;
     strcpy(remote.sun_path, sock_path);
@@ -74,6 +71,7 @@ void contact_pacer(int join) {
             perror("send: exit");
             exit(1);
         }
+        close(s);
     } else if (join == 1) {
         /* send join message */
         printf("Sending join message...\n");
@@ -120,7 +118,13 @@ void contact_pacer(int join) {
             exit(1);
         }
         slot = strtol(str, NULL, 10);
-        printf("Received slot number.\n");
+        printf("Received slot number: %d\n", slot);
+
+#ifdef CPU_FRIENDLY
+        flow_socket = s;
+        // don't close (s) in case of join
+        // this connection is the one we use to recv tokens in token_enforcement impl
+#endif
     } else if (join == 2) {
         /* tell daemon about my app type */
         memset(str, 0, MSG_LEN);
@@ -138,12 +142,8 @@ void contact_pacer(int join) {
             perror("send: app type");
             exit(1);
         }
-
+        close(s);
     }
-#ifdef CPU_FRIENDLY
-    flow_socket = s;
-#endif
-    ////close(s);
 }
 
 void set_inactive_on_exit() {
@@ -169,5 +169,5 @@ void set_inactive_on_exit() {
 
 void termination_handler(int sig) {
     set_inactive_on_exit();
-    _exit(1);
+    _exit(1);       // _exit?
 }
