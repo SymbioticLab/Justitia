@@ -37,8 +37,10 @@ struct pingpong_context *init_monitor_chan(struct monitor_param *params){
     }
     my_dest.qpn = ctx->qp->qp_num;
     my_dest.psn = lrand48() & 0xffffff;
-    my_dest.rkey = ctx->recv_mr->rkey;
-    my_dest.vaddr = (uintptr_t)ctx->recv_buf;
+    //my_dest.rkey = ctx->recv_mr->rkey;
+    //my_dest.vaddr = (uintptr_t)ctx->recv_buf;
+    my_dest.rkey = ctx->write_mr->rkey;     // now Ref flow data uses write_mr (sender uses it as local mr to send; receiver uses it to catch sender's data)
+    my_dest.vaddr = (uintptr_t)ctx->write_buf;
 
     if (params->is_client)
         pp_client_exch_dest(ctx, params->server_addr, &my_dest);
@@ -89,6 +91,11 @@ static struct pingpong_context *alloc_monitor_qp() {
     }
     
     /* buffers */
+    ctx->write_buf = memalign(sysconf(_SC_PAGE_SIZE), REF_FLOW_SIZE);
+    if (!ctx->write_buf) {
+        fprintf(stderr, "Couldn't allocate write buf.\n");
+        goto clean_write_buf;
+    }
     ctx->send_buf = memalign(sysconf(_SC_PAGE_SIZE), BUF_SIZE);
     if (!ctx->send_buf) {
         fprintf(stderr, "Couldn't allocate send buf.\n");
@@ -105,7 +112,7 @@ static struct pingpong_context *alloc_monitor_qp() {
     if (!ctx->context) {
         fprintf(stderr, "Couldn't get context for %s\n",
             ibv_get_device_name(ib_dev));
-        goto clean_recv_buf;
+        goto clean_device;
     }
     
     /* montior qp's pd & mr */
@@ -115,13 +122,19 @@ static struct pingpong_context *alloc_monitor_qp() {
         goto clean_pd;
     }
 
+    // if remote write is allowed then local write must also be allowed
+    ctx->write_mr = ibv_reg_mr(ctx->pd, ctx->write_buf, REF_FLOW_SIZE, IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_WRITE);
+    if (!ctx->write_mr) {
+        fprintf(stderr, "Couldn't register WRITE_MR\n");
+        goto clean_write_mr;
+    }
+
     ctx->send_mr = ibv_reg_mr(ctx->pd, ctx->send_buf, BUF_SIZE, IBV_ACCESS_LOCAL_WRITE|IBV_ACCESS_REMOTE_WRITE);
     if (!ctx->send_mr) {
         fprintf(stderr, "Couldn't register SEND_MR\n");
         goto clean_send_mr;
     }
 
-    // if remote write is allowed then local write must also be allowed
     ctx->recv_mr = ibv_reg_mr(ctx->pd, ctx->recv_buf, BUF_SIZE, IBV_ACCESS_REMOTE_WRITE|IBV_ACCESS_LOCAL_WRITE);
     if (!ctx->recv_mr) {
         fprintf(stderr, "Couldn't register RECV_MR\n");
@@ -157,7 +170,7 @@ static struct pingpong_context *alloc_monitor_qp() {
     ctx->recv_cq = ibv_create_cq(ctx->context, 2, NULL, ctx->recv_channel, 0);
     if (!ctx->recv_cq) {
         fprintf(stderr, "Couldn't create CQ\n");
-        goto clean_send_cq;
+        goto clean_recv_cq;
     }
 
     if (ibv_req_notify_cq(ctx->recv_cq, 0)) {
@@ -207,22 +220,26 @@ static struct pingpong_context *alloc_monitor_qp() {
 
 clean_qp:
     ibv_destroy_qp(ctx->qp);
-clean_recv_cq:
-    ibv_destroy_cq(ctx->recv_cq);
 clean_send_cq:
     ibv_destroy_cq(ctx->send_cq);
-clean_recv_mr:
-    ibv_dereg_mr(ctx->recv_mr);
+clean_recv_cq:
+    ibv_destroy_cq(ctx->recv_cq);
+clean_write_mr:
+    ibv_dereg_mr(ctx->send_mr);
 clean_send_mr:
     ibv_dereg_mr(ctx->send_mr);
+clean_recv_mr:
+    ibv_dereg_mr(ctx->recv_mr);
 clean_pd:
     ibv_dealloc_pd(ctx->pd);
 clean_device:
     ibv_close_device(ctx->context);
-clean_recv_buf:
-    free(ctx->recv_buf);
+clean_write_buf:
+    free(ctx->write_buf);
 clean_send_buf:
     free(ctx->send_buf);
+clean_recv_buf:
+    free(ctx->recv_buf);
 clean_ctx:
     free(ctx);
 

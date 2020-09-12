@@ -20,12 +20,12 @@
 
 #define SHARED_MEM_NAME "/rdma-fairness"
 #define MAX_FLOWS 512
-#define MAX_CLIENTS 32
+#define MAX_CLIENTS 16
 //#define LINE_RATE_MB 12000 /* MBps */     // 100Gbps
 //#define LINE_RATE_MB 1100 /* MBps */      // 10Gbps
 //#define LINE_RATE_MB 4400 /* MBps */      // 40Gbps
 #define LINE_RATE_MB 6000 /* MBps */        // 56Gbps
-#define MSG_LEN 8
+#define MSG_LEN 16
 #define SOCK_PATH "/users/yiwenzhg/rdma_socket"
 #define ELEPHANT_HAS_LOWER_BOUND 1  /* whether elephant has a minimum virtual link cap set by AIMD */
 #define TABLE_SIZE 7
@@ -77,7 +77,7 @@ struct control_block {
     uint64_t tokens_read;
     //uint32_t virtual_link_cap;           /* capacity of the virtual link that elephants go through */ /* moved to sb */
     uint32_t remote_read_rate;             /* remote read rate */
-    uint32_t local_read_rate;    
+    uint32_t local_read_rate;
     uint16_t next_slot;
     uint16_t num_big_read_flows;
 };

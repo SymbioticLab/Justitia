@@ -45,7 +45,7 @@ void contact_pacer(int join) {
         exit(1);
     }
 
-    printf("Contacting pacer...\n", s);
+    printf("Contacting pacer...\n");
 
     remote.sun_family = AF_UNIX;
     strcpy(remote.sun_path, sock_path);

@@ -22,11 +22,13 @@
 #include "pingpong_utils.h"
 #include "monitor.h"
 
-static const int BUF_SIZE = 10;	//TODO test size = 16
+static const int BUF_SIZE = 16;		// for SEND/RECV mesg
+static const int REF_FLOW_SIZE = 10;
 
 struct pingpong_context {
 	struct ibv_context		*context;
 	struct ibv_pd			*pd;
+	struct ibv_mr			*write_mr;
 	struct ibv_mr			*send_mr;
 	struct ibv_mr			*recv_mr;
 	struct ibv_comp_channel	*send_channel;
@@ -35,7 +37,8 @@ struct pingpong_context {
 	struct ibv_cq			*send_cq;
 	struct ibv_cq			*recv_cq;
 	struct pingpong_dest 	*rem_dest;
-	void			    	*send_buf;
+    void 					*write_buf;
+	void			    	*send_buf;		// this if for update message with SEND/RECV. size=BUF_SIZE
 	void					*recv_buf;
 	struct ibv_port_attr	portinfo;
 };

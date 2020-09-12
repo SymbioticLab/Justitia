@@ -231,15 +231,17 @@ static void flow_handler(void *arg)
     char buf_pid[MSG_LEN];
     char *sock_path = get_sock_path();
     pid_t pid;
+    int num_comp;
 
     struct ibv_send_wr send_wr, *bad_wr = NULL;
     struct ibv_sge send_sge;
+    struct ibv_wc send_wc;
 
     memset(&send_wr, 0, sizeof send_wr);
     send_wr.opcode = IBV_WR_SEND;
     send_wr.sg_list = &send_sge;
     send_wr.num_sge = 1;
-    send_wr.send_flags = IBV_SEND_INLINE;
+    send_wr.send_flags = (IBV_SEND_SIGNALED | IBV_SEND_INLINE);
 
     memset(&send_sge, 0, sizeof send_sge);
 
@@ -277,6 +279,7 @@ static void flow_handler(void *arg)
         if (strcmp(buf, "join") == 0)
         {
             /* send if the node is a sender or receiver (instead of sending "pid" to prompt for pid) */
+            // ^^ not necessary though
             if (is_client) {
                 if (send(s2, "sender", 6, 0) == -1) {
                     perror("error sending sender info: ");
@@ -324,19 +327,6 @@ static void flow_handler(void *arg)
             */
 
 
-            /* As a sender, tell the receiver (since WRITE operates passively) that I contribute to one of the fan-in (# of sending apps increase by 1) */
-            if (is_client) {
-                send_sge.addr = (uintptr_t)cb.ctx->send_buf;
-                send_sge.length = BUF_SIZE;
-                send_sge.lkey = cb.ctx->send_mr->lkey;
-
-                //sprintf(buf_update, "send_inc=%d", 1);
-                strcpy(cb.ctx->send_buf, "send_inc");
-                if (ibv_post_send(cb.ctx->qp, &send_wr, &bad_wr)) {
-                    perror("ibv_post_send: increment num_sender for remote receiver");
-                }
-                printf("sent a msg to remote receiver on WRITE ARRIVAL\n");
-            }
         }
         else if (strcmp(buf, "read") == 0)
         {
@@ -351,20 +341,34 @@ static void flow_handler(void *arg)
             __atomic_fetch_add(&cb.num_big_read_flows, 1, __ATOMIC_RELAXED);
             */
         }
-        else if (strcmp(buf, "exit") == 0)
-        {
+        else if (strncmp(buf, "exit_app_xxx", 8) == 0) {
             /* As a sender, tell the receriver that # of the sending apps has decreased by 1 */
             if (is_client) {
+                if (strcmp(buf, "exit_app_bw") == 0) {
+                    strcpy(cb.ctx->send_buf, "big_dec");
+                } else if (strcmp(buf, "exit_app_lat") == 0) {
+                    strcpy(cb.ctx->send_buf, "small_dec");
+                } else if (strcmp(buf, "exit_app_tput") == 0) {
+                    strcpy(cb.ctx->send_buf, "big_dec");
+                } else {
+                    printf("Error unrecognized app type. Exit\n");
+                    exit(1);
+                }
+
                 send_sge.addr = (uintptr_t)cb.ctx->send_buf;
                 send_sge.length = BUF_SIZE;
                 send_sge.lkey = cb.ctx->send_mr->lkey;
 
-                //sprintf(buf_update, "send_dec", 1);
-                strcpy(cb.ctx->send_buf, "send_dec");
+
                 if (ibv_post_send(cb.ctx->qp, &send_wr, &bad_wr)) {
-                    perror("ibv_post_send: increment num_sender for remote receiver");
+                    perror("ibv_post_send: decrement num_sender for remote receiver");
                 }
+                
+                do {    // clean up the cq for SEND message
+                    num_comp = ibv_poll_cq(cb.ctx->send_cq, 1, &send_wc);
+                } while (num_comp == 0);
                 printf("sent a msg to remote receiver on WRITE EXIT\n");
+
             }
 
             // TODO: hanlde read exit later
@@ -378,6 +382,31 @@ static void flow_handler(void *arg)
             __atomic_fetch_sub(&cb.num_big_read_flows, 1, __ATOMIC_RELAXED);
             */
 
+        } else if (strncmp(buf, "app_xxx", 4) == 0) {
+            /* As a sender, tell the receiver (since WRITE operates passively) that I contribute to one of the fan-in (# of sending apps increase by 1) */
+            if (is_client) {
+                if (strcmp(buf, "app_bw") == 0) {
+                    strcpy(cb.ctx->send_buf, "big_inc");
+                } else if (strcmp(buf, "app_lat") == 0) {
+                    strcpy(cb.ctx->send_buf, "small_inc");
+                } else if (strcmp(buf, "app_tput") == 0) {
+                    strcpy(cb.ctx->send_buf, "big_inc");
+                } else {
+                    printf("Error unrecognized app type. Exit\n");
+                    exit(1);
+                }
+                send_sge.addr = (uintptr_t)cb.ctx->send_buf;
+                send_sge.length = BUF_SIZE;
+                send_sge.lkey = cb.ctx->send_mr->lkey;
+
+                if (ibv_post_send(cb.ctx->qp, &send_wr, &bad_wr)) {
+                    perror("ibv_post_send: increment num_sender for remote receiver");
+                }
+                do {    // clean up the cq for SEND message
+                    num_comp = ibv_poll_cq(cb.ctx->send_cq, 1, &send_wc);
+                } while (num_comp == 0);
+                printf("sent a msg to remote receiver on WRITE ARRIVAL; %s\n", buf);
+            }
         }
     }
 }
