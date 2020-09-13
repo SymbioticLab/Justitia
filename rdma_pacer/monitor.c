@@ -131,7 +131,7 @@ void monitor_latency(void *arg) {
     uint16_t num_local_big_flows = 0;
     uint16_t num_local_bw_flows = 0;
     uint16_t num_local_small_flows = 0;
-    uint16_t num_receiver_big_flows = 0;        // big: bw + tput
+    uint16_t num_receiver_big_flows = 0;        // big: bw + tput; received from receiver; Note: this value also includes this sender's local big flow
     uint16_t num_receiver_small_flows = 0;      // small: lat
     //TODO: consider a more general case (multi-sender + multi-receiver) when calculating local rate
     // For now, assume 'multi-sender' or 'multi-receiver' case won't appear simultaneously
@@ -289,6 +289,9 @@ void monitor_latency(void *arg) {
                 min_virtual_link_cap = round((double)(num_local_big_flows + num_remote_big_reads) 
                     / (num_receiver_big_flows + 1 + num_remote_big_reads) * LINE_RATE_MB);      // assume a single receiver
 #endif
+                if (min_virtual_link_cap > LINE_RATE_MB) {      // could happen if haven't received info from the receiver
+                    min_virtual_link_cap = LINE_RATE_MB;
+                }
                 temp = __atomic_load_n(&cb.sb->virtual_link_cap, __ATOMIC_RELAXED);
 
                 if (measured_tail > latency_target)
@@ -490,20 +493,17 @@ void server_loop(void *arg) {
 
                 /* broadcast to all clients when there is an update from a client */
 
-                //if (params->num_clients > 1) {      // otherwise don't even bother. The single client knows what to do (unless for a remote READ, which is a TODO)
-                if (params->num_clients >= 1) {      // otherwise don't even bother. The single client knows what to do (unless for a remote READ, which is a TODO)
-                    printf("Broadcasting receiver-side info...\n");
-                    for (j = 0; j < params->num_clients; j++) {
-                        ctx = cb.ctx_per_client[j];
+                printf("Broadcasting receiver-side info...\n");
+                for (j = 0; j < params->num_clients; j++) {
+                    ctx = cb.ctx_per_client[j];
 
-                        sprintf(ctx->send_buf, "INFO:%04hu:%04hu", current_num_big_apps, current_num_small_apps);
-                        if (ibv_post_send(ctx->qp, &send_wr[j], &bad_send_wr[j])) {
-                            perror("ibv_post_send: broadcast info to all senders");
-                        }
-                        do {    // clean up the cq for SEND message
-                            num_comp = ibv_poll_cq(ctx->send_cq, 1, &send_wc[j]);
-                        } while (num_comp == 0);
+                    sprintf(ctx->send_buf, "INFO:%04hu:%04hu", current_num_big_apps, current_num_small_apps);
+                    if (ibv_post_send(ctx->qp, &send_wr[j], &bad_send_wr[j])) {
+                        perror("ibv_post_send: broadcast info to all senders");
                     }
+                    do {    // clean up the cq for SEND message
+                        num_comp = ibv_poll_cq(ctx->send_cq, 1, &send_wc[j]);
+                    } while (num_comp == 0);
                 }
 
             } else if (num_comp < 0) {
