@@ -9,7 +9,7 @@
 
 #define TAIL 2
 
-#define EVENT_POLL 1    // use event-triggered polling (or busy polling) for reference flow
+#define EVENT_POLL 0    // use event-triggered polling (or busy polling) for reference flow
 #define CS_OFFSET 4     // context switch offset
 #define EWMA 0.5
 
