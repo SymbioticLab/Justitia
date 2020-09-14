@@ -9,6 +9,7 @@
 #define DEFAULT_CHUNK_SIZE 1000000
 //#define DEFAULT_CHUNK_SIZE 1048576    // Conflux
 #define SMALL_CHUNK_SIZE 5000
+#define EVEN_SMALLER_CHUNK_SIZE 1000
 //#define SMALL_CHUNK_SIZE 5120     // Conflux
 #define BIG_CHUNK_SIZE 1000000
 //#define BIG_CHUNK_SIZE 1048576    // Conflux
@@ -497,7 +498,11 @@ static void generate_fetch_tokens()
                     chunk_size = chunk_size_table[0];
                 }
                 */
-                chunk_size = SMALL_CHUNK_SIZE;
+                if (temp > (double) LINE_RATE_MB / 3) {
+                    chunk_size = SMALL_CHUNK_SIZE;
+                } else {
+                    chunk_size = EVEN_SMALLER_CHUNK_SIZE;
+                }
             }
             else
             {
