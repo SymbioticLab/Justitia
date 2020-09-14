@@ -482,9 +482,8 @@ static void generate_fetch_tokens()
 
         if ((temp = __atomic_load_n(&cb.sb->virtual_link_cap, __ATOMIC_RELAXED)))   // yiwen: is it necessary to check virtual cap = 0?
         {
-            //if ((num_big = __atomic_load_n(&cb.sb->num_active_big_flows, __ATOMIC_RELAXED)))
-            if ((num_small = __atomic_load_n(&cb.sb->num_active_small_flows, __ATOMIC_RELAXED)))
-            {
+            ////if ((num_small = __atomic_load_n(&cb.sb->num_active_small_flows, __ATOMIC_RELAXED))) {
+            if (cb.num_receiver_small_flows) {
                 //chunk_size = chunk_size_table[temp / num_big / (LINE_RATE_MB/6)];
                 //chunk_size = DEFAULT_CHUNK_SIZE;
 
@@ -498,6 +497,7 @@ static void generate_fetch_tokens()
                     chunk_size = chunk_size_table[0];
                 }
                 */
+                chunk_size = SMALL_CHUNK_SIZE;
                 if (temp > (double) LINE_RATE_MB / 3) {
                     chunk_size = SMALL_CHUNK_SIZE;
                 } else {

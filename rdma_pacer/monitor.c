@@ -131,8 +131,8 @@ void monitor_latency(void *arg) {
     uint16_t num_local_big_flows = 0;
     uint16_t num_local_bw_flows = 0;
     uint16_t num_local_small_flows = 0;
-    uint16_t num_receiver_big_flows = 0;        // big: bw + tput; received from receiver; Note: this value also includes this sender's local big flow
-    uint16_t num_receiver_small_flows = 0;      // small: lat
+    cb.num_receiver_big_flows = 0;        // big: bw + tput; received from receiver; Note: this value also includes this sender's local big flow
+    cb.num_receiver_small_flows = 0;      // small: lat
     //TODO: consider a more general case (multi-sender + multi-receiver) when calculating local rate
     // For now, assume 'multi-sender' or 'multi-receiver' case won't appear simultaneously
     while (1) {
@@ -146,13 +146,13 @@ void monitor_latency(void *arg) {
                 break;
             }
             if (strncmp(ctx->recv_buf, "INFO:xxxx:xxxx", 5) == 0) {
-                sscanf(ctx->recv_buf, "INFO:%hu:%hu", &num_receiver_big_flows, &num_receiver_small_flows);
+                sscanf(ctx->recv_buf, "INFO:%hu:%hu", &cb.num_receiver_big_flows, &cb.num_receiver_small_flows);
             } else {
                 printf("Unrecognized reciever info format. Exit");
                 exit(1);
             }
-            printf("current receiver num big apps: %" PRIu32 "\n", num_receiver_big_flows);
-            printf("current receiver num small apps: %" PRIu32 "\n", num_receiver_small_flows);
+            printf("current receiver num big apps: %" PRIu32 "\n", cb.num_receiver_big_flows);
+            printf("current receiver num small apps: %" PRIu32 "\n", cb.num_receiver_small_flows);
 
             if (ibv_post_recv(ctx->qp, &recv_wr, &bad_recv_wr)) {
                 perror("ibv_post_recv: recv_wr");
@@ -272,7 +272,7 @@ void monitor_latency(void *arg) {
         {
             ////if (num_active_small_flows && (num_active_bw_flows || num_remote_big_reads))    // READ HACK
             ////if (num_active_small_flows && num_active_bw_flows) {            // before receiver-side update
-            if ((num_local_small_flows || num_receiver_small_flows) && num_local_bw_flows) {                // after receiver-side update
+            if ((num_local_small_flows || cb.num_receiver_small_flows) && num_local_bw_flows) {                // after receiver-side update
 /*
 #ifndef TREAT_L_AS_ONE
                 min_virtual_link_cap = round((double)(num_active_big_flows + num_remote_big_reads) 
@@ -284,10 +284,10 @@ void monitor_latency(void *arg) {
 */
 #ifndef TREAT_L_AS_ONE
                 min_virtual_link_cap = round((double)(num_local_big_flows + num_remote_big_reads) 
-                    / (num_receiver_big_flows + num_receiver_small_flows + num_remote_big_reads) * LINE_RATE_MB);   // assume a single receiver
+                    / (cb.num_receiver_big_flows + cb.num_receiver_small_flows + num_remote_big_reads) * LINE_RATE_MB);   // assume a single receiver
 #else
                 min_virtual_link_cap = round((double)(num_local_big_flows + num_remote_big_reads) 
-                    / (num_receiver_big_flows + 1 + num_remote_big_reads) * LINE_RATE_MB);      // assume a single receiver
+                    / (cb.num_receiver_big_flows + 1 + num_remote_big_reads) * LINE_RATE_MB);      // assume a single receiver
 #endif
                 if (min_virtual_link_cap > LINE_RATE_MB) {      // could happen if haven't received info from the receiver
                     min_virtual_link_cap = LINE_RATE_MB;

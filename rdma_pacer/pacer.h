@@ -80,6 +80,8 @@ struct control_block {
     uint32_t local_read_rate;
     uint16_t next_slot;
     uint16_t num_big_read_flows;
+    uint16_t num_receiver_big_flows;        // big: bw + tput; received from receiver; Note: this value also includes this sender's local big flow
+    uint16_t num_receiver_small_flows;      // small: lat
 };
 
 extern struct control_block cb;            /* declaration */
