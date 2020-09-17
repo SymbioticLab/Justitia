@@ -21,7 +21,7 @@
 
 #define SHARED_MEM_NAME "/rdma-fairness"
 #define SOCK_PATH "/users/yiwenzhg/rdma_socket"
-#define MSG_LEN 16
+#define MSG_LEN 24
 #define MAX_FLOWS 512
 #define HOSTNAME_PATH "/proc/sys/kernel/hostname"
 
@@ -59,7 +59,7 @@ extern double cpu_mhz;              /* declaration; initialization in verbs.c */
 #endif
 
 char *get_sock_path();
-void contact_pacer(int join);
+void contact_pacer(int join, uint64_t vaddr);
 void set_inactive_on_exit();
 void termination_handler(int sig);
 

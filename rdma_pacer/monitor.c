@@ -38,11 +38,16 @@ void monitor_latency(void *arg) {
     if (EVENT_POLL) {
         latency_target += CS_OFFSET;
     }
-    double measured_tail = 0;
-    double prev_measured_tail = 0;
+    double measured_tail[MAX_SERVERS];
+    double prev_measured_tail[MAX_SERVERS];
+    int i;
+    for (i = 0; i < MAX_SERVERS; i++) {
+        measured_tail[i] = 0;
+        prev_measured_tail[i] = 0;
+    }
 
     int lat; // in nanoseconds
-    cycles_t start_cycle, end_cycle;
+    cycles_t start_cycle[MAX_SERVERS], end_cycle[MAX_SERVERS];
     //cycles_t prev_start_cycle = 0;
     // cycles_t cmh_start, cmh_end;
     int no_cpu_freq_warn = 1;
@@ -50,10 +55,10 @@ void monitor_latency(void *arg) {
 
     uint64_t seq = 0;
     struct pingpong_context *ctx = NULL;        // managed by each client
-    struct ibv_send_wr wr, *bad_wr = NULL;
-    struct ibv_recv_wr recv_wr, *bad_recv_wr = NULL;
-    struct ibv_sge sge, recv_sge;
-    struct ibv_wc wc, recv_wc;
+    struct ibv_send_wr wr[MAX_SERVERS], *bad_wr[MAX_SERVERS];
+    struct ibv_recv_wr recv_wr[MAX_SERVERS], *bad_recv_wr[MAX_SERVERS];
+    struct ibv_sge sge[MAX_SERVERS], recv_sge[MAX_SERVERS];
+    struct ibv_wc wc[MAX_SERVERS], recv_wc[MAX_SERVERS];
     //struct ibv_send_wr wr, send_wr, *bad_wr = NULL;
     //struct ibv_sge sge, send_sge, recv_sge;
     int num_comp;
@@ -63,57 +68,60 @@ void monitor_latency(void *arg) {
     //uint32_t new_remote_read_rate;
 
     //ctx = init_monitor_chan(servername, isclient, gid_idx);
-    ctx = init_monitor_chan(params);
-    if (!ctx) {
-        fprintf(stderr, "failed to allocate pingpong context. exiting monitor_latency\n");
-        exit(1);
-    }
+    for (i = 0; i < params->num_servers; i++) {
+        ctx = init_monitor_chan(params);
+        if (!ctx) {
+            fprintf(stderr, "failed to allocate pingpong context. exiting monitor_latency\n");
+            exit(1);
+        }
 
-    cb.ctx = ctx;
-    cpu_mhz = get_cpu_mhz(no_cpu_freq_warn);
+        //cb.ctx = ctx;
+        cb.ctx_per_client[i] = ctx;
+        cpu_mhz = get_cpu_mhz(no_cpu_freq_warn);
 
-    /* REF FLOW WRITE WR */
-    memset(&wr, 0, sizeof wr);
-    wr.opcode = IBV_WR_RDMA_WRITE;
-    wr.sg_list = &sge;
-    wr.num_sge = 1;
-    wr.send_flags = (IBV_SEND_SIGNALED | IBV_SEND_INLINE);
-    wr.wr_id = seq;
-    wr.wr.rdma.rkey = ctx->rem_dest->rkey;
-    wr.wr.rdma.remote_addr = ctx->rem_dest->vaddr;
+        /* REF FLOW WRITE WR */
+        memset(&wr[i], 0, sizeof wr[i]);
+        wr[i].opcode = IBV_WR_RDMA_WRITE;
+        wr[i].sg_list = &sge[i];
+        wr[i].num_sge = 1;
+        wr[i].send_flags = (IBV_SEND_SIGNALED | IBV_SEND_INLINE);
+        wr[i].wr_id = seq;
+        wr[i].wr.rdma.rkey = ctx->rem_dest->rkey;
+        wr[i].wr.rdma.remote_addr = ctx->rem_dest->vaddr;
 
-    sge.addr = (uintptr_t)ctx->write_buf;
-    sge.length = REF_FLOW_SIZE;
-    sge.lkey = ctx->write_mr->lkey;
+        sge[i].addr = (uintptr_t)ctx->write_buf;
+        sge[i].length = REF_FLOW_SIZE;
+        sge[i].lkey = ctx->write_mr->lkey;
 
-    /* UPDATE SEND WR */
-    /*
-    memset(&send_wr, 0, sizeof send_wr);
-    send_wr.opcode = IBV_WR_SEND;
-    send_wr.sg_list = &send_sge;
-    send_wr.num_sge = 1;
-    send_wr.send_flags = (IBV_SEND_SIGNALED | IBV_SEND_INLINE);
+        /* UPDATE SEND WR */
+        /*
+        memset(&send_wr, 0, sizeof send_wr);
+        send_wr.opcode = IBV_WR_SEND;
+        send_wr.sg_list = &send_sge;
+        send_wr.num_sge = 1;
+        send_wr.send_flags = (IBV_SEND_SIGNALED | IBV_SEND_INLINE);
 
-    memset(&send_sge, 0, sizeof send_sge);
-    memset((char *)ctx->send_buf, 0, BUF_SIZE);
-    send_sge.addr = (uintptr_t)ctx->send_buf;
-    ////send_sge.addr = (uintptr_t)((char *)ctx->send_buf + BUF_SIZE);
-    send_sge.length = BUF_SIZE;
-    send_sge.lkey = ctx->send_mr->lkey;
-    */
+        memset(&send_sge, 0, sizeof send_sge);
+        memset((char *)ctx->send_buf, 0, BUF_SIZE);
+        send_sge.addr = (uintptr_t)ctx->send_buf;
+        ////send_sge.addr = (uintptr_t)((char *)ctx->send_buf + BUF_SIZE);
+        send_sge.length = BUF_SIZE;
+        send_sge.lkey = ctx->send_mr->lkey;
+        */
 
-    /* UPDATE RECV WR */
-    memset(&recv_wr, 0, sizeof recv_wr);
-    recv_wr.num_sge = 1;
-    recv_wr.sg_list = &recv_sge;
+        /* UPDATE RECV WR */
+        memset(&recv_wr[i], 0, sizeof recv_wr[i]);
+        recv_wr[i].num_sge = 1;
+        recv_wr[i].sg_list = &recv_sge[i];
 
-    memset(&recv_sge, 0, sizeof recv_sge);
-    memset(ctx->recv_buf, 0, BUF_SIZE);
-    recv_sge.addr = (uintptr_t)ctx->recv_buf;
-    recv_sge.length = BUF_SIZE;
-    recv_sge.lkey = ctx->recv_mr->lkey;
-    if (ibv_post_recv(ctx->qp, &recv_wr, &bad_recv_wr)) {
-        perror("ibv_post_recv: recv_wr");
+        memset(&recv_sge[i], 0, sizeof recv_sge[i]);
+        memset(ctx->recv_buf, 0, BUF_SIZE);
+        recv_sge[i].addr = (uintptr_t)ctx->recv_buf;
+        recv_sge[i].length = BUF_SIZE;
+        recv_sge[i].lkey = ctx->recv_mr->lkey;
+        if (ibv_post_recv(ctx->qp, &recv_wr[i], &bad_recv_wr[i])) {
+            perror("ibv_post_recv: recv_wr");
+        }
     }
 
 
@@ -131,95 +139,110 @@ void monitor_latency(void *arg) {
     uint16_t num_local_big_flows = 0;
     uint16_t num_local_bw_flows = 0;
     uint16_t num_local_small_flows = 0;
-    cb.num_receiver_big_flows = 0;        // big: bw + tput; received from receiver; Note: this value also includes this sender's local big flow
-    cb.num_receiver_small_flows = 0;      // small: lat
+    //cb.num_receiver_big_flows = 0;        // big: bw + tput; received from receiver; Note: this value also includes this sender's local big flow
+    //cb.num_receiver_small_flows = 0;      // small: lat
+    for (i = 0; i < params->num_servers; i++) {
+        cb.num_receiver_big_flows[i] = 0;        // big: bw + tput; received from receiver; Note: this value also includes this sender's local big flow
+        cb.num_receiver_small_flows[i] = 0;      // small: lat
+    }
     //TODO: consider a more general case (multi-sender + multi-receiver) when calculating local rate
     // For now, assume 'multi-sender' or 'multi-receiver' case won't appear simultaneously
+    void *ev_ctx[MAX_SERVERS];
     while (1) {
         usleep(200);
 
-        //// check for receiver-side updates
-        num_comp = ibv_poll_cq(ctx->recv_cq, 1, &recv_wc);
-        if (num_comp > 0) {
-            if (recv_wc.status != IBV_WC_SUCCESS) {
-                fprintf(stderr, "error bad recv_wc status: %u.%s\n", recv_wc.status, ibv_wc_status_str(recv_wc.status));
-                break;
+        for (i = 0; i < params->num_servers; i++) {
+            //// check for receiver-side updates
+            ctx = cb.ctx_per_server[i];
+
+            num_comp = ibv_poll_cq(ctx->recv_cq, 1, &recv_wc[i]);
+            if (num_comp > 0) {
+                if (recv_wc[i].status != IBV_WC_SUCCESS) {
+                    fprintf(stderr, "error bad recv_wc status: %u.%s\n", recv_wc[i].status, ibv_wc_status_str(recv_wc[i].status));
+                    break;
+                }
+                if (strncmp(ctx->recv_buf, "INFO:xxxx:xxxx", 5) == 0) {
+                    sscanf(ctx->recv_buf, "INFO:%hu:%hu", &cb.num_receiver_big_flows, &cb.num_receiver_small_flows);
+                } else {
+                    printf("Unrecognized reciever info format. Exit");
+                    exit(1);
+                }
+                printf("current receiver[%d] num big apps: %" PRIu32 "\n", i, cb.num_receiver_big_flows[i]);
+                printf("current receiver[%d] num small apps: %" PRIu32 "\n", i, cb.num_receiver_small_flows[i]);
+
+                if (ibv_post_recv(ctx->qp, &recv_wr[i], &bad_recv_wr[i])) {
+                    perror("ibv_post_recv: recv_wr");
+                }
             }
-            if (strncmp(ctx->recv_buf, "INFO:xxxx:xxxx", 5) == 0) {
-                sscanf(ctx->recv_buf, "INFO:%hu:%hu", &cb.num_receiver_big_flows, &cb.num_receiver_small_flows);
-            } else {
-                printf("Unrecognized reciever info format. Exit");
-                exit(1);
-            }
-            printf("current receiver num big apps: %" PRIu32 "\n", cb.num_receiver_big_flows);
-            printf("current receiver num small apps: %" PRIu32 "\n", cb.num_receiver_small_flows);
+            //// end of receiving receiver-side updates
 
-            if (ibv_post_recv(ctx->qp, &recv_wr, &bad_recv_wr)) {
-                perror("ibv_post_recv: recv_wr");
-            }
-        }
-        //// end of receiving receiver-side updates
-
-        start_cycle = get_cycles();
-        if (ibv_post_send(ctx->qp, &wr, &bad_wr)) {
-            perror("ibv_post_send");
-            break;
-        }
-
-		void *ev_ctx;
-        if (EVENT_POLL) {
-            if (ibv_get_cq_event(ctx->send_channel, &ctx->send_cq, &ev_ctx)) {
-                fprintf(stderr, "Failed to get CQ event.\n");
-                break;
-            }
-
-            ibv_ack_cq_events(ctx->send_cq, 1);
-
-            if (ibv_req_notify_cq(ctx->send_cq, 0)) {
-                fprintf(stderr, "Couldn't request CQ notification\n");
+            // send the ref flow to each server (receiver)
+            start_cycle[i] = get_cycles();
+            if (ibv_post_send(ctx->qp, &wr[i], &bad_wr[i])) {
+                perror("ibv_post_send");
                 break;
             }
         }
 
-        do {
-            num_comp = ibv_poll_cq(ctx->send_cq, 1, &wc);
-        } while (num_comp == 0);
+        // poll wc for ref flow to measure latency
+        for (i = 0; i < params->num_servers; i++) {
+            ctx = cb.ctx_per_server[i];
+            if (EVENT_POLL) {   // not in active use; not necessary
+                if (ibv_get_cq_event(ctx->send_channel, &ctx->send_cq, &ev_ctx[i])) {
+                    fprintf(stderr, "Failed to get CQ event.\n");
+                    break;
+                }
 
-        if (num_comp < 0 || wc.status != IBV_WC_SUCCESS) {
-            perror("ibv_poll_cq");
-            break;
-        }
+                ibv_ack_cq_events(ctx->send_cq, 1);
 
-        end_cycle = get_cycles();
+                if (ibv_req_notify_cq(ctx->send_cq, 0)) {
+                    fprintf(stderr, "Couldn't request CQ notification\n");
+                    break;
+                }
+            }
+
+            do {
+                num_comp = ibv_poll_cq(ctx->send_cq, 1, &wc[i]);
+            } while (num_comp == 0);
+
+            if (num_comp < 0 || wc[i].status != IBV_WC_SUCCESS) {
+                perror("ibv_poll_cq");
+                break;
+            }
+
+            end_cycle[i] = get_cycles();
+
 
 #ifdef USE_CMH
-        lat = round((end_cycle - start_cycle) / cpu_mhz * 1000);
-        if (CMH_Update(cmh, lat)) {
-            fprintf(stderr, "CMH_Update failed\n");
-            break;
-        }
+            lat = round((end_cycle - start_cycle) / cpu_mhz * 1000);
+            if (CMH_Update(cmh, lat)) {
+                fprintf(stderr, "CMH_Update failed\n");
+                break;
+            }
 
-        //cmh_start = get_cycles();
-        measured_tail = round(CMH_Quantile(cmh, CMH_PERCENTILE)/100.0)/10;
+            //cmh_start = get_cycles();
+            measured_tail[i] = round(CMH_Quantile(cmh, CMH_PERCENTILE)/100.0)/10;
 
-        ////tail_99 = (double)lat / 1000;
+            ////tail_99 = (double)lat / 1000;
 
-        //printf("measured_tail = %.1f \n", measured_tail);
-        //cmh_end = get_cycles();
-        //printf("CMH_Quantile 99th takes %.2f us\n", (cmh_end - cmh_start)/cpu_mhz);
-        // if (prev_start_cycle)
-        //     printf("time between two sends %.2f us", (start_cycle - prev_start_cycle)/cpu_mhz);
-        // prev_start_cycle = start_cycle;
-        // printf("median %.1f us 99th %.1f us\n", median, tail_99);
+            //printf("measured_tail = %.1f \n", measured_tail[i]);
+            //cmh_end = get_cycles();
+            //printf("CMH_Quantile 99th takes %.2f us\n", (cmh_end - cmh_start)/cpu_mhz);
+            // if (prev_start_cycle)
+            //     printf("time between two sends %.2f us", (start_cycle - prev_start_cycle)/cpu_mhz);
+            // prev_start_cycle = start_cycle;
+            // printf("median %.1f us 99th %.1f us\n", median, tail_99);
 #else
-        lat = (end_cycle - start_cycle) / cpu_mhz * 1000;
-        measured_tail = (double)lat / 1000;
-        measured_tail = EWMA * measured_tail + (1 - EWMA) * prev_measured_tail;
-        prev_measured_tail = measured_tail;
-        //printf("measured_tail = %.1f \n", measured_tail);
+            lat = (end_cycle[i] - start_cycle[i]) / cpu_mhz * 1000;
+            measured_tail[i] = (double)lat / 1000;
+            measured_tail[i] = EWMA * measured_tail[i] + (1 - EWMA) * prev_measured_tail[i];
+            prev_measured_tail[i] = measured_tail[i];
+            //printf("measured_tail[i] = %.1f \n", measured_tail[i]);
 #endif
-        seq++;
-        wr.wr_id = seq;
+            seq++;
+            wr[i].wr_id = seq;
+
+        }
 
         //TODO: fix READ impl later
         /* check if any remote read is registered or if read rate is received */
@@ -284,17 +307,17 @@ void monitor_latency(void *arg) {
 */
 #ifndef TREAT_L_AS_ONE
                 min_virtual_link_cap = round((double)(num_local_big_flows + num_remote_big_reads) 
-                    / (cb.num_receiver_big_flows + cb.num_receiver_small_flows + num_remote_big_reads) * LINE_RATE_MB);   // assume a single receiver
+                    / (cb.num_receiver_big_flows[0] + cb.num_receiver_small_flows[0] + num_remote_big_reads) * LINE_RATE_MB);   // assume a single receiver
 #else
                 min_virtual_link_cap = round((double)(num_local_big_flows + num_remote_big_reads) 
-                    / (cb.num_receiver_big_flows + 1 + num_remote_big_reads) * LINE_RATE_MB);      // assume a single receiver
+                    / (cb.num_receiver_big_flows[0] + 1 + num_remote_big_reads) * LINE_RATE_MB);      // assume a single receiver
 #endif
                 if (min_virtual_link_cap > LINE_RATE_MB) {      // could happen if haven't received info from the receiver
                     min_virtual_link_cap = LINE_RATE_MB;
                 }
                 temp = __atomic_load_n(&cb.sb->virtual_link_cap, __ATOMIC_RELAXED);
 
-                if (measured_tail > latency_target)
+                if (measured_tail[0] > latency_target)      //HACK
                 {
                     /* Multiplicative Decrease */
                     temp >>= 1;

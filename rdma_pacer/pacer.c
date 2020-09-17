@@ -47,7 +47,8 @@ static void error(char *msg)
 
 static void usage()
 {
-    printf("Usage: program is_client server_addr num_clients [gid_idx]\n");
+    //printf("Usage: program is_client server_addr num_clients [gid_idx]\n");
+    printf("Usage: program is_client server_addr num_clients_or_receiver [gid_idx]\n");
 }
 
 static inline void cpu_relax() __attribute__((always_inline));
@@ -221,6 +222,18 @@ int find_next_slot(pid_t pid)
     return ret_slot;
 }
 
+// Assume only clients keep track of per src/dsr info
+int find_vaddr_idx(int num_servers, uint64_t vaddr)
+{
+    int i;
+    for (i = 0; i < num_servers; i++) {
+        if (vaddr == cb.app_vaddrs[i]) {
+            return i;
+        }
+    }
+    return -1;
+}
+
 /* handle incoming flows one by one; assign a slot to an incoming flow */
 static void flow_handler(void *arg)
 {
@@ -264,10 +277,12 @@ static void flow_handler(void *arg)
 
 
     int is_client = ((struct monitor_param *)arg)->is_client;
+    int num_servers = ((struct monitor_param *)arg)->num_servers;
+    uint64_t vaddr;
+    int vaddr_idx;
 
     /* handling loop */
-    while (1)
-    {
+    while (1) {
         len = sizeof(struct sockaddr_un);
         if ((s2 = accept(s, (struct sockaddr *)&remote, &len)) == -1)
             error("accept");
@@ -277,12 +292,24 @@ static void flow_handler(void *arg)
         printf("receive message of length %d.\n", len);
         buf[len] = '\0';
         printf("message is %s.\n", buf);
-        if (strcmp(buf, "join") == 0)
-        {
+        //if (strcmp(buf, "join") == 0) {
+        if (strncmp(buf, "join:xxxx", 4) == 0) {      // join message now also send dst
+            // assume pacers have established connection between each other before
+            // RDMA applications start to send data (which is reasonable) 
+            // assume only clients need to keep track of per src/pair info
+            sscanf(buf, "join:%Lx", &vaddr);
+            vaddr_idx = find_vaddr_idx(num_servers, vaddr);
+            if (vaddr_idx < 0) {
+                printf("Error finding vaddr idx. Exit\n");
+                exit(1);
+            }
+            printf("Found vaddr idx: %d\n", vaddr_idx);
+
             /* send if the node is a sender or receiver (instead of sending "pid" to prompt for pid) */
-            // ^^ not necessary though
+            // for sender, also send the vaddr_idx
             if (is_client) {
-                if (send(s2, "sender", 6, 0) == -1) {
+                sprintf(buf, "sender:%04x", vaddr_idx);
+                if (send(s2, buf, sizeof(buf), 0) == -1) {
                     perror("error sending sender info: ");
                     exit(1);
                 }
@@ -344,9 +371,13 @@ static void flow_handler(void *arg)
         }
         else if (strncmp(buf, "exit_app_xxx", 8) == 0) {
             /* As a sender, tell the receriver that # of the sending apps has decreased by 1 */
+            int i;
+            for (i = 0; i < num_servers; i++) {
+                //TODO: 
+            }
             if (is_client) {
                 if (strcmp(buf, "exit_app_bw") == 0) {
-                    strcpy(cb.ctx->send_buf, "big_dec");
+                    strcpy(cb.ctx_per_server[->send_buf, "big_dec");
                 } else if (strcmp(buf, "exit_app_lat") == 0) {
                     strcpy(cb.ctx->send_buf, "small_dec");
                 } else if (strcmp(buf, "exit_app_tput") == 0) {
@@ -706,13 +737,21 @@ int main(int argc, char **argv)
     if (argc == 5) {
         params.is_client = strtol(argv[1], &endPtr, 10);
         params.server_addr = argv[2];   // for server, it is DC; type something random
-        params.num_clients = strtol(argv[3], &endPtr, 10);      // for client, it is DC
+        if (params.is_client) {
+            params.num_servers = strtol(argv[3], &endPtr, 10);
+        } else {
+            params.num_clients = strtol(argv[3], &endPtr, 10);
+        }
         params.gid_idx = strtol(argv[4], NULL, 10);
     }
     else if (argc == 4) {
         params.is_client = strtol(argv[1], &endPtr, 10);
         params.server_addr = argv[2];   // for server, it is DC; type something random
-        params.num_clients = strtol(argv[3], &endPtr, 10);      // for client, it is DC
+        if (params.is_client) {
+            params.num_servers = strtol(argv[3], &endPtr, 10);
+        } else {
+            params.num_clients = strtol(argv[3], &endPtr, 10);
+        }
     } else {
         usage();
         exit(1);

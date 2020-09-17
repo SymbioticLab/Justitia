@@ -20,12 +20,13 @@
 
 #define SHARED_MEM_NAME "/rdma-fairness"
 #define MAX_FLOWS 512
-#define MAX_CLIENTS 16
+#define MAX_CLIENTS 16      // clients per server
+#define MAX_SERVERS 4       // servers (receivers) per clients
 //#define LINE_RATE_MB 12000 /* MBps */     // 100Gbps
 //#define LINE_RATE_MB 1100 /* MBps */      // 10Gbps
 //#define LINE_RATE_MB 4400 /* MBps */      // 40Gbps
 #define LINE_RATE_MB 6000 /* MBps */        // 56Gbps
-#define MSG_LEN 16
+#define MSG_LEN 24
 #define SOCK_PATH "/users/yiwenzhg/rdma_socket"
 #define ELEPHANT_HAS_LOWER_BOUND 1  /* whether elephant has a minimum virtual link cap set by AIMD */
 #define TABLE_SIZE 7
@@ -70,18 +71,20 @@ struct shared_block {
 struct control_block {
     struct shared_block *sb;
 
-    struct pingpong_context *ctx;           // used by each client
+    //struct pingpong_context *ctx;           // used by each client
+    struct pingpong_context *ctx_per_server[MAX_SERVERS];           // used by each client
     struct pingpong_context *ctx_per_client[MAX_CLIENTS];           // used by the server
     pid_t pid_list[MAX_FLOWS];             /* used to map pid to slot; index is the slot number; treat flows from the same process as one */
     uint64_t tokens;                       /* number of available tokens */
     uint64_t tokens_read;
+    uint64_t app_vaddrs[MAX_SERVERS];           // used to compare and find which flow/app sends to which direction
     //uint32_t virtual_link_cap;           /* capacity of the virtual link that elephants go through */ /* moved to sb */
     uint32_t remote_read_rate;             /* remote read rate */
     uint32_t local_read_rate;
     uint16_t next_slot;
     uint16_t num_big_read_flows;
-    uint16_t num_receiver_big_flows;        // big: bw + tput; received from receiver; Note: this value also includes this sender's local big flow
-    uint16_t num_receiver_small_flows;      // small: lat
+    uint16_t num_receiver_big_flows[MAX_SERVERS];        // big: bw + tput; received from receiver; Note: this value also includes this sender's local big flow
+    uint16_t num_receiver_small_flows[MAX_SERVERS];      // small: lat
 };
 
 extern struct control_block cb;            /* declaration */

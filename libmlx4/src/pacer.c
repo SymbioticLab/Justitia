@@ -33,12 +33,13 @@ char *get_sock_path() {
 }
 
 // join=0 -> exit; join=1 -> first join and ask pacer for slot; join=2 -> tell pacer about the type of the app (0:bw, 1:lat, 2:tput)
-void contact_pacer(int join) {
+void contact_pacer(int join, uint64_t vaddr) {
     /* prepare unix domain socket */
     char *sock_path = get_sock_path();
     unsigned int s, len;
     struct sockaddr_un remote;
     char str[MSG_LEN];
+    int vaddr_idx;
 
     if ((s = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) {
         perror("socket");
@@ -75,17 +76,20 @@ void contact_pacer(int join) {
     } else if (join == 1) {
         /* send join message */
         printf("Sending join message...\n");
-        strcpy(str, "join");
+        //strcpy(str, "join:");
+        sprintf(str, "join:%016Lx", vaddr);
         if (send(s, str, strlen(str), 0) == -1) {
             perror("send: join");
             exit(1);
         }
 
-        /* recv sender/receiver prompt (instead of "pid") */
+        /* recv sender/receiver prompt (instead of string "pid") */
         if ((len = recv(s, str, MSG_LEN, 0)) > 0) {
             str[len] = '\0';
-            if (strcmp(str, "sender") == 0) {
-                printf("I'm a sender.\n");
+            if (strncmp(str, "sender:xxx", 6) == 0) {
+                sscanf(str, "sender:%x", &vaddr_idx);
+                printf("I'm a sender; vaddr_idx = %d\n", vaddr_idx);
+
             } else if (strcmp(str, "recver") == 0) {
                 printf("I'm a receiver.\n");
             } else {
