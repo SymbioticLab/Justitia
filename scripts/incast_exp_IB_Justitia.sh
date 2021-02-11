@@ -19,10 +19,10 @@ num_senders=$((incast_size-1))
 cmd="$J_daemon 0 $ip_dst $num_senders"
 echo "launch Justitia Daemon (receiver) on $receiver_node: $cmd"
 ssh -o "StrictHostKeyChecking no" -p 22 $receiver_node $cmd &
+sleep 2
 
 # Launch Justitia Daemon (sender)
 for node in $(cat nodes); do
-    sleep 2
     cmd="$J_daemon 1 $ip_dst $num_senders"
     echo "launch Justitia Daemon on $node: $cmd"
     ssh -o "StrictHostKeyChecking no" -p 22 $node $cmd &
@@ -30,6 +30,7 @@ for node in $(cat nodes); do
         break
     fi
     let cnt+=1
+    sleep 2
 done
 
 #./ib_write_bw -F -e -d mlx5_1 -x 3 -s 1000000 -n 10000 -l 1 -t 1 -p 8888 192.168.1.2
