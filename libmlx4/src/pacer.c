@@ -40,7 +40,7 @@ void contact_pacer(int join) {
     unsigned int s, len;
     struct sockaddr_un remote;
     char str[MSG_LEN];
-    uint64_t vaddr = 0;     // hack for now
+    long long unsigned int vaddr = 0;     // hack for now
     int vaddr_idx;
 
     if ((s = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) {
