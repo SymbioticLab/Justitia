@@ -33,12 +33,14 @@ char *get_sock_path() {
 }
 
 // join=0 -> exit; join=1 -> first join and ask pacer for slot; join=2 -> tell pacer about the type of the app (0:bw, 1:lat, 2:tput)
-void contact_pacer(int join, uint64_t vaddr) {
+//void contact_pacer(int join, uint64_t vaddr) {
+void contact_pacer(int join) {
     /* prepare unix domain socket */
     char *sock_path = get_sock_path();
     unsigned int s, len;
     struct sockaddr_un remote;
     char str[MSG_LEN];
+    uint64_t vaddr = 0;     // hack for now
     int vaddr_idx;
 
     if ((s = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) {

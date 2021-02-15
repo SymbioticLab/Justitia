@@ -59,7 +59,8 @@ extern double cpu_mhz;              /* declaration; initialization in verbs.c */
 #endif
 
 char *get_sock_path();
-void contact_pacer(int join, uint64_t vaddr);
+//void contact_pacer(int join, uint64_t vaddr);
+void contact_pacer(int join);
 void set_inactive_on_exit();
 void termination_handler(int sig);
 

@@ -20,7 +20,7 @@
 
 #define SHARED_MEM_NAME "/rdma-fairness"
 #define MAX_FLOWS 512
-#define MAX_CLIENTS 16      // clients per server
+#define MAX_CLIENTS 20      // clients per server
 #define MAX_SERVERS 4       // servers (receivers) per clients
 //#define LINE_RATE_MB 12000 /* MBps */     // 100Gbps
 //#define LINE_RATE_MB 1100 /* MBps */      // 10Gbps
