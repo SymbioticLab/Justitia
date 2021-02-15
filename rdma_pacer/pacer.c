@@ -3,6 +3,7 @@
 #include "get_clock.h"
 //#include <immintrin.h> /* For _mm_pause */
 #include "countmin.h"
+#include "assert.h"
 
 // DEFAULT_CHUNK_SIZE is the initial chunk size when num_split_qps = 1
 //#define DEFAULT_CHUNK_SIZE 10000000
@@ -376,28 +377,29 @@ static void flow_handler(void *arg)
                 //TODO: 
             }
             if (is_client) {
+                struct pingpong_context *ctx = cb.ctx_per_server[0]; // Hack for now
                 if (strcmp(buf, "exit_app_bw") == 0) {
-                    strcpy(cb.ctx_per_server[->send_buf, "big_dec");
+                    strcpy(ctx->send_buf, "big_dec");
                 } else if (strcmp(buf, "exit_app_lat") == 0) {
-                    strcpy(cb.ctx->send_buf, "small_dec");
+                    strcpy(ctx->send_buf, "small_dec");
                 } else if (strcmp(buf, "exit_app_tput") == 0) {
-                    strcpy(cb.ctx->send_buf, "big_dec");
+                    strcpy(ctx->send_buf, "big_dec");
                 } else {
                     printf("Error unrecognized app type. Exit\n");
                     exit(1);
                 }
 
-                send_sge.addr = (uintptr_t)cb.ctx->send_buf;
+                send_sge.addr = (uintptr_t)ctx->send_buf;
                 send_sge.length = BUF_SIZE;
-                send_sge.lkey = cb.ctx->send_mr->lkey;
+                send_sge.lkey = ctx->send_mr->lkey;
 
 
-                if (ibv_post_send(cb.ctx->qp, &send_wr, &bad_wr)) {
+                if (ibv_post_send(ctx->qp, &send_wr, &bad_wr)) {
                     perror("ibv_post_send: decrement num_sender for remote receiver");
                 }
                 
                 do {    // clean up the cq for SEND message
-                    num_comp = ibv_poll_cq(cb.ctx->send_cq, 1, &send_wc);
+                    num_comp = ibv_poll_cq(ctx->send_cq, 1, &send_wc);
                 } while (num_comp == 0);
                 printf("sent a msg to remote receiver on WRITE EXIT\n");
 
@@ -417,25 +419,26 @@ static void flow_handler(void *arg)
         } else if (strncmp(buf, "app_xxx", 4) == 0) {
             /* As a sender, tell the receiver (since WRITE operates passively) that I contribute to one of the fan-in (# of sending apps increase by 1) */
             if (is_client) {
+                struct pingpong_context *ctx = cb.ctx_per_server[0]; // Hack for now
                 if (strcmp(buf, "app_bw") == 0) {
-                    strcpy(cb.ctx->send_buf, "big_inc");
+                    strcpy(ctx->send_buf, "big_inc");
                 } else if (strcmp(buf, "app_lat") == 0) {
-                    strcpy(cb.ctx->send_buf, "small_inc");
+                    strcpy(ctx->send_buf, "small_inc");
                 } else if (strcmp(buf, "app_tput") == 0) {
-                    strcpy(cb.ctx->send_buf, "big_inc");
+                    strcpy(ctx->send_buf, "big_inc");
                 } else {
                     printf("Error unrecognized app type. Exit\n");
                     exit(1);
                 }
-                send_sge.addr = (uintptr_t)cb.ctx->send_buf;
+                send_sge.addr = (uintptr_t)ctx->send_buf;
                 send_sge.length = BUF_SIZE;
-                send_sge.lkey = cb.ctx->send_mr->lkey;
+                send_sge.lkey = ctx->send_mr->lkey;
 
-                if (ibv_post_send(cb.ctx->qp, &send_wr, &bad_wr)) {
+                if (ibv_post_send(ctx->qp, &send_wr, &bad_wr)) {
                     perror("ibv_post_send: increment num_sender for remote receiver");
                 }
                 do {    // clean up the cq for SEND message
-                    num_comp = ibv_poll_cq(cb.ctx->send_cq, 1, &send_wc);
+                    num_comp = ibv_poll_cq(ctx->send_cq, 1, &send_wc);
                 } while (num_comp == 0);
                 printf("sent a msg to remote receiver on WRITE ARRIVAL; %s\n", buf);
             }
@@ -739,6 +742,7 @@ int main(int argc, char **argv)
         params.server_addr = argv[2];   // for server, it is DC; type something random
         if (params.is_client) {
             params.num_servers = strtol(argv[3], &endPtr, 10);
+            assert(params.num_servers == 1);
         } else {
             params.num_clients = strtol(argv[3], &endPtr, 10);
         }
@@ -749,6 +753,7 @@ int main(int argc, char **argv)
         params.server_addr = argv[2];   // for server, it is DC; type something random
         if (params.is_client) {
             params.num_servers = strtol(argv[3], &endPtr, 10);
+            assert(params.num_servers == 1);
         } else {
             params.num_clients = strtol(argv[3], &endPtr, 10);
         }
