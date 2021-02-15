@@ -23,7 +23,7 @@ sleep 2
 
 # Launch Justitia Daemon (sender)
 for node in $(cat nodes); do
-    cmd="$J_daemon 1 $ip_dst $num_senders"
+    cmd="$J_daemon 1 $ip_dst 1
     echo "launch Justitia Daemon on $node: $cmd"
     ssh -o "StrictHostKeyChecking no" -p 22 $node $cmd &
     if [[ $cnt -eq $num_senders ]]; then
