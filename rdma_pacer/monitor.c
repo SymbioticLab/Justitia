@@ -76,7 +76,7 @@ void monitor_latency(void *arg) {
         }
 
         //cb.ctx = ctx;
-        cb.ctx_per_client[i] = ctx;
+        cb.ctx_per_server[i] = ctx;
         cpu_mhz = get_cpu_mhz(no_cpu_freq_warn);
 
         /* REF FLOW WRITE WR */
@@ -162,7 +162,7 @@ void monitor_latency(void *arg) {
                     break;
                 }
                 if (strncmp(ctx->recv_buf, "INFO:xxxx:xxxx", 5) == 0) {
-                    sscanf(ctx->recv_buf, "INFO:%hu:%hu", &cb.num_receiver_big_flows, &cb.num_receiver_small_flows);
+                    sscanf(ctx->recv_buf, "INFO:%hu:%hu", &cb.num_receiver_big_flows[i], &cb.num_receiver_small_flows[i]);
                 } else {
                     printf("Unrecognized reciever info format. Exit");
                     exit(1);
