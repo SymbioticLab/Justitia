@@ -1,29 +1,30 @@
 #!/bin/bash
+## CloudLab m510 RoCEv2
 ## "nodes" file should also include the last receiving node
 ib_write_bw=/users/yiwenzhg/frdma/perftest-4.2/ib_write_bw
 ib_write_lat=/users/yiwenzhg/frdma/perftest-4.2/ib_write_lat
 J_daemon=/users/yiwenzhg/frdma/rdma_pacer/pacer
 out_dir=/tmp
 receiver_node=$(tail -n 1 nodes)
-ip_dst=192.168.0.18     # hardcoded
+ip_dst=128.110.154.46     # hardcoded
 bw_size=1000000
 lat_size=16
-bw_iters=200000
-lat_iter=2000000
-port_base=7000
+bw_iters=10000
+lat_iter=1000000
+port_base=5200
 cnt=1
 incast_size=$(wc -l < nodes)
 num_senders=$((incast_size-1))
 
-# Launch Justitia Daemon (receiver)
-cmd="$J_daemon 0 $ip_dst $num_senders"
+# Launch Justitia Daemon (receiver) (gidx = 3)
+cmd="$J_daemon 0 $ip_dst $num_senders 3"
 echo "launch Justitia Daemon (receiver) on $receiver_node: $cmd"
 ssh -o "StrictHostKeyChecking no" -p 22 $receiver_node $cmd &
 sleep 2
 
-# Launch Justitia Daemon (sender)
+# Launch Justitia Daemon (sender) (gidx = 3)
 for node in $(cat nodes); do
-    cmd="$J_daemon 1 $ip_dst 1"
+    cmd="$J_daemon 1 $ip_dst 1 3"
     echo "launch Justitia Daemon on $node: $cmd"
     ssh -o "StrictHostKeyChecking no" -p 22 $node $cmd &
     if [[ $cnt -eq $num_senders ]]; then
@@ -41,12 +42,13 @@ cnt=1
 for node in $(cat nodes); do
     let port="$port_base + $cnt"
     if [[ $cnt -eq $num_senders ]]; then
-        cmd="export LD_LIBRARY_PATH=/usr/lib64; $ib_write_lat -F -s $lat_size -n $lat_iter -l 1 -t 1 -p $port &> /dev/null"
-        else
-        cmd="export LD_LIBRARY_PATH=/usr/lib64; $ib_write_bw -F -e -s $bw_size -n $bw_iters -l 1 -t 1 -p $port &> /dev/null"
+        cmd="export LD_LIBRARY_PATH=/usr/lib64; $ib_write_lat -F -s $lat_size -n $lat_iter -x 3 -l 1 -t 1 -p $port &> /dev/null"
+    else
+        cmd="export LD_LIBRARY_PATH=/usr/lib64; $ib_write_bw -F -e -s $bw_size -n $bw_iters -x 3 -l 1 -t 1 -p $port &> /dev/null"
     fi
     echo "On $receiver_node: execute $cmd"
     ssh -o "StrictHostKeyChecking no" -p 22 $receiver_node $cmd &
+    sleep 1
     if [[ $cnt -eq $num_senders ]]; then
         break
     fi
@@ -61,13 +63,13 @@ for node in $(cat nodes); do
     let port="$port_base + $cnt"
     if [[ $cnt -eq $num_senders ]]; then
         sleep 3
-        output="$out_dir/lat_result_incast_$node.txt"
-        cmd="export LD_LIBRARY_PATH=/usr/lib64; $ib_write_lat -F -s $lat_size -n $lat_iter --log_off -l 1 -t 1 -p $port $ip_dst |tee $output"
+        output="$out_dir/lat_result_incast_J_$node.txt"
+        cmd="export LD_LIBRARY_PATH=/usr/lib64; $ib_write_lat -F -s $lat_size -n $lat_iter -x 3 --log_off -l 1 -t 1 -p $port $ip_dst |tee $output"
     else
-        sleep 0.2
-        output="$out_dir/bw_result_incast_$node.txt"
-        log="$out_dir/bw_log_incast_$node.txt"
-        cmd="export LD_LIBRARY_PATH=/usr/lib64; $ib_write_bw -F -e -s $bw_size -n $bw_iters -l 1 -t 1 -p $port $ip_dst -L $log |tee $output"
+        sleep 1
+        output="$out_dir/bw_result_incast_J_$node.txt"
+        log="$out_dir/bw_log_incast_J_$node.txt"
+        cmd="export LD_LIBRARY_PATH=/usr/lib64; $ib_write_bw -F -e -s $bw_size -n $bw_iters -x 3 -l 1 -t 1 -p $port $ip_dst -L $log |tee $output"
     fi
     echo "On $node: execute $cmd"
     ssh -o "StrictHostKeyChecking no" -p 22 $node $cmd &
