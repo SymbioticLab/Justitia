@@ -5,12 +5,12 @@ ib_write_bw=/users/yiwenzhg/frdma/perftest-4.2/ib_write_bw
 ib_write_lat=/users/yiwenzhg/frdma/perftest-4.2/ib_write_lat
 out_dir=/tmp
 receiver_node=$(tail -n 1 nodes)
-ip_dst=128.110.154.46     # hardcoded
+ip_dst=192.168.0.5     # hardcoded
 bw_size=1000000
 lat_size=16
-bw_iters=10000
-lat_iter=100000
-port_base=5200
+bw_iters=20000
+lat_iter=50000
+port_base=5000
 cnt=1
 incast_size=$(wc -l < nodes)
 num_senders=$((incast_size-1))
@@ -21,9 +21,9 @@ num_senders=$((incast_size-1))
 for node in $(cat nodes); do
     let port="$port_base + $cnt"
     if [[ $cnt -eq $num_senders ]]; then
-        cmd="$ib_write_lat -F -s $lat_size -n $lat_iter -x 3 -l 1 -t 1 -p $port &> /dev/null"
+        cmd="$ib_write_lat -F -s $lat_size -n $lat_iter -x 3 -i 2 -l 1 -t 1 -p $port &> /dev/null"
     else
-        cmd="$ib_write_bw -F -e -s $bw_size -n $bw_iters -x 3 -l 1 -t 1 -p $port &> /dev/null"
+        cmd="$ib_write_bw -F -e -s $bw_size -n $bw_iters -x 3 -i 2 -l 1 -t 1 -p $port &> /dev/null"
     fi
     echo "On $receiver_node: execute $cmd"
     ssh -o "StrictHostKeyChecking no" -p 22 $receiver_node $cmd &
@@ -43,12 +43,12 @@ for node in $(cat nodes); do
     if [[ $cnt -eq $num_senders ]]; then
         sleep 3
         output="$out_dir/lat_result_incast_$node.txt"
-        cmd="$ib_write_lat -F -s $lat_size -n $lat_iter -x 3 --log_off -l 1 -t 1 -p $port $ip_dst |tee $output"
+        cmd="$ib_write_lat -F -s $lat_size -n $lat_iter -x 3 -i 2 --log_off -l 1 -t 1 -p $port $ip_dst |tee $output"
     else
         sleep 1
         output="$out_dir/bw_result_incast_$node.txt"
         log="$out_dir/bw_log_incast_$node.txt"
-        cmd="$ib_write_bw -F -e -s $bw_size -n $bw_iters -x 3 -l 1 -t 1 -p $port $ip_dst -L $log |tee $output"
+        cmd="$ib_write_bw -F -e -s $bw_size -n $bw_iters -x 3 -i 2 -l 1 -t 1 -p $port $ip_dst -L $log |tee $output"
     fi
     echo "On $node: execute $cmd"
     ssh -o "StrictHostKeyChecking no" -p 22 $node $cmd &
