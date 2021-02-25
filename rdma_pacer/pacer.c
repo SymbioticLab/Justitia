@@ -225,6 +225,7 @@ int find_next_slot(pid_t pid)
 }
 
 // Assume only clients keep track of per src/dsr info
+// TODO: fix this impl; where did the app_vaddrs get added?
 int find_vaddr_idx(int num_servers, uint64_t vaddr)
 {
     int i;
@@ -746,6 +747,7 @@ int main(int argc, char **argv)
             assert(params.num_servers == 1);
         } else {
             params.num_clients = strtol(argv[3], &endPtr, 10);
+            params.num_servers = 1;
         }
         params.gid_idx = strtol(argv[4], NULL, 10);
     }
@@ -757,6 +759,7 @@ int main(int argc, char **argv)
             assert(params.num_servers == 1);
         } else {
             params.num_clients = strtol(argv[3], &endPtr, 10);
+            params.num_servers = 1;
         }
     } else {
         usage();
