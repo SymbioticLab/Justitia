@@ -7,13 +7,14 @@
 
 // DEFAULT_CHUNK_SIZE is the initial chunk size when num_split_qps = 1
 //#define DEFAULT_CHUNK_SIZE 10000000
-#define DEFAULT_CHUNK_SIZE 1000000
-//#define DEFAULT_CHUNK_SIZE 1048576    // Conflux
-#define SMALL_CHUNK_SIZE 5000
-#define EVEN_SMALLER_CHUNK_SIZE 1000
-//#define SMALL_CHUNK_SIZE 5120     // Conflux
-#define BIG_CHUNK_SIZE 1000000
-//#define BIG_CHUNK_SIZE 1048576    // Conflux
+//#define DEFAULT_CHUNK_SIZE 1000000
+#define DEFAULT_CHUNK_SIZE 1048576
+//#define SMALL_CHUNK_SIZE 5000
+#define SMALL_CHUNK_SIZE 5120
+//#define EVEN_SMALLER_CHUNK_SIZE 1000
+#define EVEN_SMALLER_CHUNK_SIZE 1024
+//#define BIG_CHUNK_SIZE 1000000
+#define BIG_CHUNK_SIZE 1048576
 //#define DEFAULT_BATCH_OPS 5000    // xl170 (when using 10Gbps link)
 //#define DEFAULT_BATCH_OPS 1000     // Conflux
 //#define DEFAULT_BATCH_OPS 1500    // c6220
@@ -33,7 +34,7 @@ struct control_block cb;
 ////uint32_t chunk_size_table[] = {1000000, 1000000, 1000000, 1000000, 1000000, 1000000, 1000000};	// Use 1048576 in Conflux
 //uint32_t chunk_size_table[] = {1000000, 5000, 2000, 1000};	// adjusted based on number of split qps
 //uint32_t chunk_size_table[] = {5000, 5000, 5000, 5000};	// adjusted based on number of split qps
-uint32_t chunk_size_table[] = {1000000, 5000};	// adjusted based on split_level ; don't delete for now for RDMA READ's sake
+uint32_t chunk_size_table[] = {1000000, 5000};	// adjusted based on split_level ; don't delete for now for RDMA READ's sake; not currently in use
 //// UDS_IMPL
 #ifdef CPU_FRIENDLY
 unsigned int flow_sockets[MAX_FLOWS];
