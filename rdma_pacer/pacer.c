@@ -519,7 +519,7 @@ static void generate_fetch_tokens()
         if ((temp = __atomic_load_n(&cb.sb->virtual_link_cap, __ATOMIC_RELAXED)))   // yiwen: is it necessary to check virtual cap = 0?
         {
             ////if ((num_small = __atomic_load_n(&cb.sb->num_active_small_flows, __ATOMIC_RELAXED))) {
-            if (cb.num_receiver_small_flows) {
+            if (cb.num_receiver_small_flows[0]) {   // hack
                 //chunk_size = chunk_size_table[temp / num_big / (LINE_RATE_MB/6)];
                 //chunk_size = DEFAULT_CHUNK_SIZE;
 
@@ -797,11 +797,15 @@ int main(int argc, char **argv)
 #endif
     cb.sb->num_active_big_flows = 0;
     cb.sb->num_active_small_flows = 0; /* cancel out pacer's monitor flow */
-    for (i = 0; i < MAX_FLOWS; i++)
-    {
+    for (i = 0; i < MAX_FLOWS; i++) {
         cb.sb->flows[i].pending = 0;
         cb.sb->flows[i].active = 0;
         cb.pid_list[i] = -1;
+    }
+    for (i = 0; i < MAX_SERVERS; i++) {
+        cb.app_vaddrs[i] = 0;
+        cb.num_receiver_big_flows[i] = 0;
+        cb.num_receiver_small_flows[i] = 0;
     }
 
     /* start thread handling incoming flows */

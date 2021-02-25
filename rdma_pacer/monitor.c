@@ -295,7 +295,7 @@ void monitor_latency(void *arg) {
         {
             ////if (num_active_small_flows && (num_active_bw_flows || num_remote_big_reads))    // READ HACK
             ////if (num_active_small_flows && num_active_bw_flows) {            // before receiver-side update
-            if ((num_local_small_flows || cb.num_receiver_small_flows) && num_local_bw_flows) {                // after receiver-side update
+            if ((num_local_small_flows || cb.num_receiver_small_flows[0]) && num_local_bw_flows) {                // after receiver-side update
 /*
 #ifndef TREAT_L_AS_ONE
                 min_virtual_link_cap = round((double)(num_active_big_flows + num_remote_big_reads) 
