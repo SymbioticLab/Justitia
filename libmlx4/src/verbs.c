@@ -1465,7 +1465,8 @@ int mlx4_modify_qp(struct ibv_qp *qp, struct ibv_qp_attr *attr,
 			}
 
 			split_dest_qp_num -= SPLIT_QP_NUM_DIFF;
-			split_attr2.dest_qp_num -= split_dest_qp_num;
+			////split_attr2.dest_qp_num -= split_dest_qp_num; // wrong!
+			split_attr2.dest_qp_num = split_dest_qp_num;
 			split_attr2.rq_psn = 10083;
 			if (__mlx4_modify_qp(mqp->split_qp2, &split_attr2, split_mask)) {
 				fprintf(stderr, "Failed to modify SPLIT QP to RTR State\n");
