@@ -3298,7 +3298,8 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
             //swr.wr.rdma.remote_addr = wr->wr.rdma.remote_addr + split_chunk_size * num_wrs_to_split_qp;
 	        swr.wr.rdma.remote_addr += split_chunk_size;
             swr.wr.rdma.rkey = wr->wr.rdma.rkey;
-            swr.next = NULL;
+            ////swr.next = NULL;    // wrong!
+            swr.next = wr->next;    //TODO: fix this in all other verbs/cases
             //printf("DDDDDDD:  i = %d; current_length = %d\n", num_wrs_to_split_qp, current_length);
             //printf("last: swr.wr.rdma.remote_addr:%" PRIu64 "\n", swr.wr.rdma.remote_addr);
 

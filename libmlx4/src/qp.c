@@ -2361,7 +2361,8 @@ int mlx4_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
             //swr.wr.rdma.remote_addr = wr->wr.rdma.remote_addr + split_chunk_size * i;
             swr.wr.rdma.remote_addr += split_chunk_size;
             swr.wr.rdma.rkey = wr->wr.rdma.rkey;
-            swr.next = NULL;
+            ////swr.next = NULL;	// wrong!
+			swr.next = wr->next;    //TODO: fix this in all other verbs/cases
 
             sge.length = current_length;
             //sge.addr = wr->sg_list->addr + split_chunk_size * i;
