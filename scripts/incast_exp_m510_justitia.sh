@@ -9,7 +9,8 @@ receiver_node=$(tail -n 1 nodes)
 ip_dst=192.168.0.5     # hardcoded
 bw_size=1000000
 lat_size=16
-bw_iters=20000
+bw_iters=10000
+#lat_iter=10000000
 lat_iter=1000000
 port_base=5200
 cnt=1
@@ -17,14 +18,16 @@ incast_size=$(wc -l < nodes)
 num_senders=$((incast_size-1))
 
 # Launch Justitia Daemon (receiver) (gidx = 3)
-cmd="$J_daemon 0 $ip_dst $num_senders 3"
+output="$out_dir/Jdaemon_incast_recver_output_$receiver_node.txt"
+cmd="$J_daemon 0 $ip_dst $num_senders 3 > $output"
 echo "launch Justitia Daemon (receiver) on $receiver_node: $cmd"
 ssh -o "StrictHostKeyChecking no" -p 22 $receiver_node $cmd &
 sleep 2
 
 # Launch Justitia Daemon (sender) (gidx = 3)
 for node in $(cat nodes); do
-    cmd="$J_daemon 1 $ip_dst 1 3"
+    output="$out_dir/Jdaemon_incast_sender_output_$node.txt"
+    cmd="$J_daemon 1 $ip_dst 1 3 > $output"
     echo "launch Justitia Daemon on $node: $cmd"
     ssh -o "StrictHostKeyChecking no" -p 22 $node $cmd &
     if [[ $cnt -eq $num_senders ]]; then
