@@ -41,14 +41,16 @@
 #define CPU_FRIENDLY                //// Don't not use busy-wait checking for "pending" in shared memory. Use UDS with token enforcement.
 //#define DYNAMIC_CPU_OPT           // dymanically change shaper local busy waiting interval; similar to dynamical num split qps adjustment
 #define MAX_SPLIT_LEVEL 5           // maximum possible split level
-#define DEFAULT_SPLIT_LEVEL 2       // default split level used when DYNAMIC_CPU_OPT is OFF
+#define DEFAULT_SPLIT_LEVEL 2       // default split level used when DYNAMIC_CPU_OPT is OFF; Note: this is DC now; all SPLIT_LEVEL = 1
 #define MIN_SPLIT_LEVEL 2           // minimun split level when small flows are present (so always use smaller chunks in such cases)
 //#define INCAST_HACK
 #define INCAST_ACTIVE_CHUNK_SIZE 1000
 #define INCAST_SAFEUTIL 550
-//#define INCAST_SAFEUTIL 1100
 #define INCAST_SPLIT_LEVEL 2
 #define TREAT_L_AS_ONE
+#define HACK_APP_NUMS               // for easy debugging purposes
+#define HACK_NUM_BW_APP 8
+#define HACK_NUM_LAT_APP 1
 
 struct flow_info {
     uint8_t pending;

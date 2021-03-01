@@ -518,6 +518,9 @@ static void generate_fetch_tokens()
 
         if ((temp = __atomic_load_n(&cb.sb->virtual_link_cap, __ATOMIC_RELAXED)))   // yiwen: is it necessary to check virtual cap = 0?
         {
+#ifdef HACK_APP_NUMS
+            cb.num_receiver_small_flows[0] = HACK_NUM_LAT_APP;
+#endif
             ////if ((num_small = __atomic_load_n(&cb.sb->num_active_small_flows, __ATOMIC_RELAXED))) {
             if (cb.num_receiver_small_flows[0]) {   // hack
                 //chunk_size = chunk_size_table[temp / num_big / (LINE_RATE_MB/6)];

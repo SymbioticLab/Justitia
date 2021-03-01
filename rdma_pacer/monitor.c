@@ -282,6 +282,13 @@ void monitor_latency(void *arg) {
         num_local_small_flows = __atomic_load_n(&cb.sb->num_active_small_flows, __ATOMIC_RELAXED);
         num_local_bw_flows = __atomic_load_n(&cb.sb->num_active_bw_flows, __ATOMIC_RELAXED);
 
+#ifdef HACK_APP_NUMS
+        num_local_big_flows = HACK_NUM_BW_APP;
+        num_local_small_flows = HACK_NUM_LAT_APP;
+        num_local_bw_flows = HACK_NUM_BW_APP;
+        cb.num_receiver_big_flows[0] = HACK_NUM_BW_APP;
+        cb.num_receiver_small_flows[0] = HACK_NUM_LAT_APP;
+#endif
 
         // TODO: remove this hardcode for bw write vs lat read
         //// READ HACK
