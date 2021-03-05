@@ -2,7 +2,7 @@
 ## CloudLab m510 RoCEv2
 ## "nodes" file should also include the last receiving node
 ## This is the version without launching the pacer (for debugging the pacer manually)
-## If used for only doing no-pacer run and you encounter an error, do a quick complete run with pacer first (you may decrese the interations) ; the error should go away after that.
+## If used for only doing no-pacer run and you encounter an error, run cleanup_shm.sh
 ib_write_bw=/users/yiwenzhg/frdma/perftest-4.2/ib_write_bw
 ib_write_lat=/users/yiwenzhg/frdma/perftest-4.2/ib_write_lat
 J_daemon=/users/yiwenzhg/frdma/rdma_pacer/pacer

@@ -1,0 +1,9 @@
+Make sure file 'nodes' have all the nodes we want to use (or set up at this time)
+Call those scripts in order {
+configure_m510_p1.sh
+configure_m510_p2.sh or configure_m510_p2_v2.sh (use latter if openibd restart hangs, which it usually does)
+configure_m510_p3.sh
+setup_frdma.sh
+compile_pacer.sh
+}
+Note: 'compile_X3_driver.sh' is only used when we the X3 code has been build once, and we need to make some modification to the code and re-compile
