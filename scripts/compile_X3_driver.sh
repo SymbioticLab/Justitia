@@ -1,4 +1,5 @@
 #!/bin/bash
+# will cause error when recompling. TODO: may add a make clean?
 
 for node in $(cat nodes); do
     echo "compile and install X3 driver code in $node..."

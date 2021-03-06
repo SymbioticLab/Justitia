@@ -64,8 +64,8 @@ for (( i=1; i<=$num_justitia_flow; i++ )); do
         cmd="$ib_write_lat -F -s $lat_size -n $lat_iter -x 3 -i 2 --log_off -l 1 -t 1 -p $port $ip_dst |tee $output"
     else
         sleep 1
-        output="$out_dir/bw_result_large_$sender_node.txt"
-        log="$out_dir/bw_log_large_$sender_node.txt"
+        output="$out_dir/bw_result_large_$sender_node_$i.txt"
+        log="$out_dir/bw_log_large_$sender_node_$i.txt"
         cmd="$ib_write_bw -F -e -s $bw_size -n $bw_iters -x 3 -i 2 -l 1 -t 1 -p $port $ip_dst -L $log |tee $output"
     fi
     echo "On $sender_node: execute $cmd"
