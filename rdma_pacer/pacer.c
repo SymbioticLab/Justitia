@@ -8,8 +8,8 @@
 // DEFAULT_CHUNK_SIZE is the initial chunk size when num_split_qps = 1
 // NOTE: from Crail exp: use 1048576 & 5120 since 1048576 is Crail's default slice size
 //#define DEFAULT_CHUNK_SIZE 10000000
-//#define DEFAULT_CHUNK_SIZE 1000000
-#define DEFAULT_CHUNK_SIZE 1048576
+#define DEFAULT_CHUNK_SIZE 1000000
+//#define DEFAULT_CHUNK_SIZE 1048576
 #define SMALL_CHUNK_SIZE 5000
 //#define SMALL_CHUNK_SIZE 5120
 //#define EVEN_SMALLER_CHUNK_SIZE 1000
