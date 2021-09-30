@@ -33,11 +33,11 @@ cd rdma_pacer
 make
 ```
 
+Use ```setup_X4.sh``` for ConnectX-4 and ConnectX-5 devices.
 If the build is successful, the new drivers should be installed under /usr/lib64.
 
 # Run Justitia
 
-## Launch Justitia Pacer
 To launch Justitia, assuming a sender node (IP: 192.168.0.11) and a receiver node (IP: 192.168.0.12):
 
 Launch the receiver-side Justiita first on the receiver node:
