@@ -16,8 +16,12 @@ For more details of Justitia design, please refer to our NSDI '22 paper "[Justit
 
 Justitia is built based on MLNX driver prior to version 5.0. So make sure a MLNX driver v4.x is installed.
 
-
 # Build Justitia
+
+Before building Justitia, confirm and adjust the following parameters based on you network settings:
+
+* ```LINE_RATE_MB``` in ```rdma_pacer/pacer.h``` to match your NIC speed
+* ```ib_dev_idx``` in ```rdma_pacer/pingpong.c``` to match your NIC device index
 
 Depending on the actual RDMA NIC you are using, choose the corresponding installation script (for libmlx4 or libmlx5). For ConnectX-3 NICs:
 
@@ -50,6 +54,8 @@ cd Justitia/rdma_pacer
 ./pacer 1 192.168.0.12 1
 ```
 
+Note Justitia pacer needs to be run with unmodified driver so it does not get identified as a user application itself.
+
 Justitia supports multiple senders (for an incast scenario). Launch the server with the last parameter set to the number of senders, and then start the sender Justitia instances.
 In case of RoCE, add the GID index as an additional input parameter at the end to the pacer binary.
 
@@ -61,7 +67,7 @@ On the receiver node, possibly in another set of terminal windows:
 ```
 cd Justitia/perftest-4.2
 export LD_LIBRARY_PATH=/usr/lib64:$LD_LIBRARY_PATH
-./ib_write_bw -F -s 1048576 -n 500000 -l 1 -t 1 -p 8888 &
+./ib_write_bw -F -s 1000000 -n 500000 -l 1 -t 1 -p 8888 &
 ./ib_write_lat -F -s 16 -n 10000000 -l 1 -t 1 -p 8889 &
 ```
 
@@ -69,7 +75,7 @@ Then on the sender node:
 ```
 cd Justitia/perftest-4.2
 export LD_LIBRARY_PATH=/usr/lib64:$LD_LIBRARY_PATH
-./ib_write_bw -F -s 1048576 -n 500000 -l 1 -t 1 -p 8888 192.168.0.12 &
+./ib_write_bw -F -s 1000000 -n 500000 -l 1 -t 1 -p 8888 192.168.0.12 &
 ./ib_write_lat -F -s 16 -n 10000000 -l 1 -t 1 --log_off -p 8889 192.168.0.12 &
 ```
 
