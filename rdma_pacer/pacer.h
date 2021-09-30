@@ -38,7 +38,7 @@
 //#define DEFAULT_NUM_SPLIT_QPS 2     // default vaule when not use DYNAMIC_NUM_SPLIT_QPS
 #define DEFAULT_NUM_SPLIT_QPS 1     // Now never use more than 1 SQPs
 #define MAX_NUM_SPLIT_QPS 4         // qp = 3, 4 or above is not very helpful
-#define CPU_FRIENDLY                //// Don't not use busy-wait checking for "pending" in shared memory. Use UDS with token enforcement.
+//#define CPU_FRIENDLY                //// Don't not use busy-wait checking for "pending" in shared memory. Use UDS with token enforcement.
 //#define DYNAMIC_CPU_OPT           // dymanically change shaper local busy waiting interval; similar to dynamical num split qps adjustment
 #define MAX_SPLIT_LEVEL 5           // maximum possible split level
 #define DEFAULT_SPLIT_LEVEL 2       // default split level used when DYNAMIC_CPU_OPT is OFF; Note: this is DC now; all SPLIT_LEVEL = 1
@@ -48,7 +48,7 @@
 #define INCAST_SAFEUTIL 550
 #define INCAST_SPLIT_LEVEL 2
 #define TREAT_L_AS_ONE
-#define HACK_APP_NUMS               // for easy debugging purposes
+//#define HACK_APP_NUMS               // for easy debugging purposes
 #define HACK_NUM_BW_APP 8
 #define HACK_NUM_LAT_APP 1
 

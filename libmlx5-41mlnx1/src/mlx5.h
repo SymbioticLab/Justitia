@@ -69,7 +69,7 @@
 #define SPLIT_MAX_RECV_WR 		6000
 #define SPLIT_MAX_CQE			10000
 #define RR_BUFFER_INIT_CAP		1000
-#define CPU_FRIENDLY                            //// Don't not use busy-wait checking for "pending" in shared memory. Use UDS with token enforcement.
+//#define CPU_FRIENDLY                            //// Don't not use busy-wait checking for "pending" in shared memory. Use UDS with token enforcement.
 #define SPLIT_BIG_CHUNK_SIZE    1000000	        //// The big chunk size used in CPU_FRIENDLY version. Should be consistent with the value used in Pacer.
 //#define SPLIT_BIG_CHUNK_SIZE    10485760	        //// The big chunk size used in CPU_FRIENDLY version. Should be consistent with the value used in Pacer.
 ////
