@@ -47,7 +47,8 @@
 #include "wqe.h"
 
 /* isolation */
-#include "qp_pacer.h"
+//#include "qp_pacer.h"
+#include "pacer.h"
 #include <inttypes.h>
 #include <sys/time.h>
 int isSmall = 1; /* 0: elephant flow, 1: mouse flow */
@@ -2432,7 +2433,6 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 		start_flag = 0;
 		if (flow)
 		{
-			printf("DEBUG: split_mlx5_post_send: qp->isSmall = %d\n", qp->isSmall);
 			switch (qp->isSmall)
 			{
 			case 0:
@@ -2441,11 +2441,12 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 				if (wr->opcode == IBV_WR_RDMA_READ)
 				{
 					__atomic_store_n(&flow->read, 1, __ATOMIC_RELAXED);
-					contact_pacer_read();
+					//contact_pacer_read();		//TODO: fix read later
 				}
 				else
 				{
 					num_active_big_flows++;
+					contact_pacer(2);
 					printf("DEBUG POST SEND: INDEED increment BIG flow counter\n");
 					__atomic_fetch_add(&sb->num_active_big_flows, 1, __ATOMIC_RELAXED);
 				    __atomic_fetch_add(&sb->num_active_bw_flows, 1, __ATOMIC_RELAXED);
@@ -2455,17 +2456,18 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 			case 1:
 			{
 				isSmall = 1;
+				contact_pacer(2);
 				num_active_small_flows++;
 				printf("DEBUG POST SEND: INDEED increment SMALL flow counter\n");
 				__atomic_fetch_add(&sb->num_active_small_flows, 1, __ATOMIC_RELAXED);
-				printf("current num small flows = %d\n", __atomic_load_n(&sb->num_active_small_flows, __ATOMIC_RELAXED));
 				break;
 			}
 			case 2:
 			{
 				isSmall = 2;
+				contact_pacer(2);
 				num_active_big_flows++;
-				__atomic_fetch_add(&sb->num_active_big_flows, 1, __ATOMIC_RELAXED);
+                __atomic_fetch_add(&sb->num_active_big_flows, 1, __ATOMIC_RELAXED);
 				// num_active_small_flows++;
 				// printf("DEBUG POST SEND: INDEED increment SMALL flow counter\n");
 				// __atomic_fetch_add(&sb->num_active_small_flows, 1, __ATOMIC_RELAXED);
@@ -2474,7 +2476,7 @@ int split_mlx5_post_send(struct ibv_qp *ibqp, struct ibv_send_wr *wr,
 			}
 			}
 		}
-	}	
+	}
 	/* end */
 
 	int ret = 0;
