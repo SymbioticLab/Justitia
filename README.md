@@ -81,6 +81,17 @@ export LD_LIBRARY_PATH=/usr/lib64:$LD_LIBRARY_PATH
 
 Adjust the number of iterations accordingly based on the link speed in use.
 
+# Reference
+Please consider citing our paper if you find Justitia related to your research project.
+```bibtex
+@inproceedings{justitia-nsdi22,
+  title={Justitia: Software Multi-Tenancy in Hardware Kernel-Bypass Networks},
+  author={Yiwen Zhang and Yue Tan and Brent Stephens and Mosharaf Chowdhury},
+  booktitle={NSDI},
+  year={2022}
+}
+```
+
 # Contact
 Yiwen Zhang (yiwenzhg@umich.edu)
 
